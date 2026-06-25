@@ -23,13 +23,13 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
 
   Future<void> _pickAndUpload() async {
     final coupleId = ref.read(coupleIdProvider);
-    if (coupleId == null) return;
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (coupleId == null || authUser == null) return;
     final picker = ImagePicker();
     final xfile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (xfile == null) return;
     setState(() => _uploading = true);
     try {
-      final uid = FirebaseAuth.instance.currentUser!.uid;
       final id = const Uuid().v4();
       final bytes = await xfile.readAsBytes();
       final url = await CloudinaryService.uploadImage(bytes, folder: 'two_hearts/$coupleId');
@@ -37,7 +37,7 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
         coupleId,
         MemoryModel(
           id: id,
-          uploaderUid: uid,
+          uploaderUid: authUser.uid,
           imageUrl: url,
           createdAt: DateTime.now(),
         ),
@@ -53,65 +53,90 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     final accent = ref.watch(accentColorProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Memory Wall'),
-        actions: [
-          if (_uploading)
-            const Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              onPressed: _pickAndUpload,
-            ),
-        ],
-      ),
-      body: memoriesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (memories) {
-          if (memories.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.photo_library_outlined, size: 64, color: AppColors.warmGray),
-                  const SizedBox(height: 12),
-                  Text('Start adding memories ♡', style: Theme.of(context).textTheme.bodyMedium),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    onPressed: _pickAndUpload,
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                    label: const Text('Add First Memory'),
-                  ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: AppColors.bgGradient,
+          ),
+        ),
+        child: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: Colors.transparent,
+                title: const Text('Memory Wall'),
+                actions: [
+                  _uploading
+                      ? const Padding(
+                          padding: EdgeInsets.only(right: 16),
+                          child: Center(child: SizedBox(width: 20, height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))))
+                      : IconButton(
+                          icon: const Icon(Icons.add_photo_alternate_outlined, color: AppColors.textPrimary),
+                          onPressed: _pickAndUpload,
+                        ),
                 ],
               ),
-            );
-          }
-          return GridView.builder(
-            padding: const EdgeInsets.all(12),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: 0.85,
-            ),
-            itemCount: memories.length,
-            itemBuilder: (context, i) => _MemoryCard(
-              memory: memories[i],
-              accent: accent,
-              onTap: () => context.go('/memory/${memories[i].id}'),
-              onFavorite: () async {
-                final coupleId = ref.read(coupleIdProvider)!;
-                await ref.read(firestoreServiceProvider).toggleFavoriteMemory(
-                  coupleId, memories[i].id, !memories[i].favorite,
-                );
-              },
-            ).animate().fadeIn(delay: Duration(milliseconds: i * 60)),
-          );
-        },
+              memoriesAsync.when(
+                loading: () => const SliverFillRemaining(
+                    child: Center(child: CircularProgressIndicator(color: AppColors.rose))),
+                error: (e, _) => SliverFillRemaining(
+                    child: Center(child: Text('Error: $e', style: const TextStyle(color: AppColors.textSecondary)))),
+                data: (memories) {
+                  if (memories.isEmpty) {
+                    return SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('📸', style: TextStyle(fontSize: 64)),
+                            const SizedBox(height: 16),
+                            const Text('Your memories will live here',
+                                style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+                            const SizedBox(height: 24),
+                            GradientButton(
+                              label: 'Add First Memory',
+                              width: 200,
+                              onTap: _pickAndUpload,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  return SliverPadding(
+                    padding: const EdgeInsets.all(12),
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 0.85,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, i) => _MemoryCard(
+                          memory: memories[i],
+                          accent: accent,
+                          onTap: () => context.go('/memory/${memories[i].id}'),
+                          onFavorite: () async {
+                            final coupleId = ref.read(coupleIdProvider);
+                            if (coupleId == null) return;
+                            await ref.read(firestoreServiceProvider).toggleFavoriteMemory(
+                                coupleId, memories[i].id, !memories[i].favorite);
+                          },
+                        ).animate().fadeIn(delay: Duration(milliseconds: i * 50)),
+                        childCount: memories.length,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -135,54 +160,45 @@ class _MemoryCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: Stack(
           fit: StackFit.expand,
           children: [
             CachedNetworkImage(
               imageUrl: memory.imageUrl,
               fit: BoxFit.cover,
-              placeholder: (_, __) => Container(
-                color: AppColors.softPeach,
-                child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-              ),
+              placeholder: (_, __) => Container(color: AppColors.bgCard,
+                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))),
+              errorWidget: (_, __, ___) => Container(color: AppColors.bgCard,
+                  child: const Icon(Icons.broken_image_outlined, color: AppColors.textMuted)),
             ),
             if (memory.caption != null)
               Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
+                bottom: 0, left: 0, right: 0,
                 child: Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
-                      colors: [Colors.black54, Colors.transparent],
+                      colors: [Colors.black87, Colors.transparent],
                     ),
                   ),
-                  child: Text(
-                    memory.caption!,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(memory.caption!,
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
                 ),
               ),
             Positioned(
-              top: 8,
-              right: 8,
+              top: 8, right: 8,
               child: GestureDetector(
                 onTap: onFavorite,
                 child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    shape: BoxShape.circle,
-                  ),
+                  padding: const EdgeInsets.all(7),
+                  decoration: const BoxDecoration(color: Colors.black38, shape: BoxShape.circle),
                   child: Icon(
-                    memory.favorite ? Icons.favorite : Icons.favorite_border,
-                    color: memory.favorite ? Colors.red : Colors.white,
+                    memory.favorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    color: memory.favorite ? AppColors.rose : Colors.white,
                     size: 18,
                   ),
                 ),

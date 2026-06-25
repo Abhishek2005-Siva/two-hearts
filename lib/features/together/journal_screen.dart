@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/firebase/firestore_service.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -18,21 +17,23 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
   bool _submitted = false;
 
   String get _todayKey {
-    final now = DateTime.now();
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final n = DateTime.now();
+    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
   }
 
   Future<void> _submit() async {
     if (_ctrl.text.trim().isEmpty) return;
-    final coupleId = ref.read(coupleIdProvider)!;
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
     final partner = ref.read(partnerUserProvider).valueOrNull;
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) return;
     setState(() => _submitting = true);
     try {
       await ref.read(firestoreServiceProvider).submitJournalEntry(
         coupleId, _todayKey, _ctrl.text.trim(), partner?.uid ?? '',
       );
-      setState(() { _submitted = true; });
+      setState(() => _submitted = true);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -40,141 +41,167 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+
     final accent = ref.watch(accentColorProvider);
-    final journalAsync = ref.watch(journalProvider);
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final todayEntry = journalAsync.valueOrNull
-        ?.where((j) => j.id == _todayKey)
-        .firstOrNull;
+    final journal = ref.watch(journalProvider).valueOrNull ?? [];
+    final uid = authUser.uid;
+    final todayEntry = journal.where((j) => j.id == _todayKey).firstOrNull;
 
     final myEntry = todayEntry?.uidA == uid ? todayEntry?.entryA : todayEntry?.entryB;
-    final hasMyEntry = myEntry != null && myEntry.isNotEmpty;
-    if (hasMyEntry && !_submitted) {
+    if (myEntry != null && myEntry.isNotEmpty && !_submitted && _ctrl.text.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _ctrl.text = myEntry;
-          setState(() => _submitted = true);
-        }
+        if (mounted) { _ctrl.text = myEntry; setState(() => _submitted = true); }
       });
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(_todayKey)),
-      body: Column(
-        children: [
-          // Status banner
-          if (todayEntry != null)
-            Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: todayEntry.bothSubmitted
-                    ? accent.withOpacity(0.1)
-                    : AppColors.softPeach,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    todayEntry.bothSubmitted ? Icons.lock_open_rounded : Icons.lock_outline,
-                    color: accent,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    todayEntry.bothSubmitted
-                        ? '1 of 2 submitted — both unlocked ♡'
-                        : '1 of 2 submitted — waiting for your partner',
-                    style: TextStyle(color: accent, fontSize: 13, fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-            ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (todayEntry?.bothSubmitted == true) ...[
-                    // Show both entries
-                    Expanded(
-                      child: ListView(
-                        children: [
-                          _EntryCard(
-                            label: 'You wrote',
-                            entry: todayEntry!.uidA == uid
-                                ? todayEntry.entryA ?? ''
-                                : todayEntry.entryB ?? '',
-                            accent: accent,
-                          ),
-                          const SizedBox(height: 16),
-                          _EntryCard(
-                            label: 'They wrote',
-                            entry: todayEntry.uidA == uid
-                                ? todayEntry.entryB ?? ''
-                                : todayEntry.entryA ?? '',
-                            accent: accent,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ] else ...[
-                    Text(
-                      _submitted ? 'Your entry (submitted)' : "What's on your mind today?",
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: _ctrl,
-                        enabled: !_submitted,
-                        maxLines: null,
-                        expands: true,
-                        textAlignVertical: TextAlignVertical.top,
-                        decoration: InputDecoration(
-                          hintText: 'Write freely — your partner sees this only after they write too…',
-                          hintStyle: TextStyle(color: AppColors.warmGray.withOpacity(0.7), height: 1.7),
-                          filled: true,
-                          fillColor: _submitted ? AppColors.softPeach : Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: AppColors.divider),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: AppColors.divider),
-                          ),
-                          contentPadding: const EdgeInsets.all(18),
-                        ),
-                        style: const TextStyle(fontSize: 16, height: 1.7),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (!_submitted)
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _submitting ? null : _submit,
-                          child: _submitting
-                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : const Text('Submit Entry'),
-                        ),
-                      )
-                    else
-                      Center(
-                        child: Text(
-                          'Waiting for your partner ♡',
-                          style: TextStyle(color: accent, fontSize: 14, fontStyle: FontStyle.italic),
-                        ),
-                      ),
-                    const SizedBox(height: 24),
-                  ],
-                ],
-              ),
-            ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: AppColors.bgGradient,
           ),
-        ],
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // App bar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textPrimary),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    Expanded(
+                      child: Text(_todayKey,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium),
+                    ),
+                    const SizedBox(width: 48),
+                  ],
+                ),
+              ),
+
+              // Status banner
+              if (todayEntry != null)
+                Container(
+                  margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: todayEntry.bothSubmitted
+                        ? accent.withValues(alpha: 0.12)
+                        : AppColors.bgCard,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: todayEntry.bothSubmitted ? accent.withValues(alpha: 0.4) : AppColors.divider,
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(todayEntry.bothSubmitted ? '🔓' : '🔒', style: const TextStyle(fontSize: 18)),
+                      const SizedBox(width: 10),
+                      Text(
+                        todayEntry.bothSubmitted
+                            ? 'Both written — unlocked ♡'
+                            : '1 of 2 — waiting for partner',
+                        style: TextStyle(color: accent, fontSize: 13, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: todayEntry?.bothSubmitted == true
+                      ? ListView(
+                          children: [
+                            _EntryCard(
+                              label: 'YOU WROTE',
+                              entry: todayEntry!.uidA == uid
+                                  ? todayEntry.entryA ?? ''
+                                  : todayEntry.entryB ?? '',
+                              accent: accent,
+                            ),
+                            const SizedBox(height: 16),
+                            _EntryCard(
+                              label: 'THEY WROTE',
+                              entry: todayEntry.uidA == uid
+                                  ? todayEntry.entryB ?? ''
+                                  : todayEntry.entryA ?? '',
+                              accent: accent,
+                            ),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _submitted ? 'Your entry' : "What's on your mind?",
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 12),
+                            Expanded(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.bgCard,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: _submitted ? accent.withValues(alpha: 0.3) : AppColors.divider,
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: TextField(
+                                  controller: _ctrl,
+                                  enabled: !_submitted,
+                                  maxLines: null,
+                                  expands: true,
+                                  textAlignVertical: TextAlignVertical.top,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 16,
+                                    height: 1.7,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    hintText: 'Write freely — only unlocks when your partner writes too…',
+                                    hintStyle: TextStyle(color: AppColors.textMuted),
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.all(18),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            if (!_submitted)
+                              GradientButton(
+                                label: 'Submit Entry',
+                                onTap: _submit,
+                                loading: _submitting,
+                              )
+                            else
+                              Center(
+                                child: Text(
+                                  'Waiting for your partner ♡',
+                                  style: TextStyle(
+                                    color: accent,
+                                    fontSize: 14,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -192,16 +219,20 @@ class _EntryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.divider),
+        color: AppColors.bgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.divider, width: 0.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: accent, letterSpacing: 1)),
-          const SizedBox(height: 10),
-          Text(entry, style: const TextStyle(fontSize: 16, height: 1.7)),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.bold, color: accent, letterSpacing: 1.5)),
+          const SizedBox(height: 12),
+          Text(entry,
+              style: const TextStyle(
+                  fontSize: 16, height: 1.7, color: AppColors.textPrimary)),
         ],
       ),
     );

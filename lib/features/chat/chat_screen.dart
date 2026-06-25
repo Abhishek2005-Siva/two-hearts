@@ -1,9 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:uuid/uuid.dart';
-import '../../core/firebase/firestore_service.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -24,8 +24,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     final coupleId = ref.read(coupleIdProvider);
-    if (coupleId == null) return;
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (coupleId == null || authUser == null) return;
     _controller.clear();
     setState(() => _sending = true);
     try {
@@ -33,7 +33,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         coupleId,
         MessageModel(
           id: const Uuid().v4(),
-          senderId: uid,
+          senderId: authUser.uid,
           content: text,
           type: MessageType.text,
           sentAt: DateTime.now(),
@@ -54,70 +54,120 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+
     final messagesAsync = ref.watch(messagesProvider);
-    final uid = FirebaseAuth.instance.currentUser!.uid;
     final accent = ref.watch(accentColorProvider);
     final partner = ref.watch(partnerUserProvider).valueOrNull;
+    final uid = authUser.uid;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(partner?.displayName ?? 'Chat'),
-        actions: [
-          if (partner != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: accent.withOpacity(0.2),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: AppColors.bgGradient,
+          ),
+        ),
+        child: Column(
+          children: [
+            _ChatAppBar(partner: partner, accent: accent),
+            Expanded(
+              child: messagesAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator(color: AppColors.rose)),
+                error: (e, _) => Center(child: Text('Error: $e', style: const TextStyle(color: AppColors.textSecondary))),
+                data: (messages) {
+                  if (messages.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('💌', style: TextStyle(fontSize: 56)),
+                          const SizedBox(height: 16),
+                          Text('Send your first message ♡',
+                              style: Theme.of(context).textTheme.bodyMedium),
+                        ],
+                      ),
+                    );
+                  }
+                  return ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    itemCount: messages.length,
+                    itemBuilder: (context, i) => _MessageBubble(
+                      msg: messages[i],
+                      isMe: messages[i].senderId == uid,
+                      accent: accent,
+                    ).animate().fadeIn(delay: Duration(milliseconds: i < 10 ? i * 30 : 0)),
+                  );
+                },
+              ),
+            ),
+            _ChatInput(
+              controller: _controller,
+              sending: _sending,
+              accent: accent,
+              onSend: _send,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAppBar extends StatelessWidget {
+  final dynamic partner;
+  final Color accent;
+  const _ChatAppBar({this.partner, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        decoration: BoxDecoration(
+          color: AppColors.bgMid,
+          border: const Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [accent, AppColors.coral],
+                ),
+              ),
+              child: Center(
                 child: Text(
-                  partner.displayName.isNotEmpty
-                      ? partner.displayName[0].toUpperCase()
-                      : '?',
-                  style: TextStyle(color: accent, fontWeight: FontWeight.bold),
+                  partner?.displayName.isNotEmpty == true
+                      ? partner!.displayName[0].toUpperCase()
+                      : '♡',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
                 ),
               ),
             ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: messagesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
-              data: (messages) {
-                if (messages.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.chat_bubble_outline, size: 64, color: AppColors.warmGray),
-                        const SizedBox(height: 12),
-                        Text('Say hello ♡', style: Theme.of(context).textTheme.bodyMedium),
-                      ],
-                    ),
-                  );
-                }
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: messages.length,
-                  itemBuilder: (context, i) {
-                    final msg = messages[i];
-                    final isMe = msg.senderId == uid;
-                    return _MessageBubble(msg: msg, isMe: isMe, accent: accent);
-                  },
-                );
-              },
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    partner?.displayName ?? 'Your person',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text('Just for you two', style: Theme.of(context).textTheme.bodyMedium),
+                ],
+              ),
             ),
-          ),
-          _ChatInput(
-            controller: _controller,
-            sending: _sending,
-            accent: accent,
-            onSend: _send,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -133,62 +183,70 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          Column(
-            crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-              Container(
-                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isMe ? accent : Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(18),
-                    topRight: const Radius.circular(18),
-                    bottomLeft: Radius.circular(isMe ? 18 : 4),
-                    bottomRight: Radius.circular(isMe ? 4 : 18),
-                  ),
-                  border: isMe ? null : Border.all(color: AppColors.divider),
+      padding: EdgeInsets.only(
+        top: 4, bottom: 4,
+        left: isMe ? 60 : 0,
+        right: isMe ? 0 : 60,
+      ),
+      child: Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              decoration: BoxDecoration(
+                gradient: isMe
+                    ? LinearGradient(colors: [accent, AppColors.coral])
+                    : null,
+                color: isMe ? null : AppColors.bgCard,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(20),
+                  topRight: const Radius.circular(20),
+                  bottomLeft: Radius.circular(isMe ? 20 : 4),
+                  bottomRight: Radius.circular(isMe ? 4 : 20),
                 ),
-                child: Text(
-                  msg.content,
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: isMe ? Colors.white : AppColors.darkBrown,
-                    height: 1.4,
-                  ),
+                border: isMe ? null : Border.all(color: AppColors.divider, width: 0.5),
+                boxShadow: isMe
+                    ? [BoxShadow(color: accent.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))]
+                    : null,
+              ),
+              child: Text(
+                msg.content,
+                style: TextStyle(
+                  fontSize: 15,
+                  color: isMe ? Colors.white : AppColors.textPrimary,
+                  height: 1.4,
                 ),
               ),
-              if (msg.reactionEmoji != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                  child: Text(msg.reactionEmoji!, style: const TextStyle(fontSize: 18)),
-                ),
+            ),
+            if (msg.reactionEmoji != null)
               Padding(
-                padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
-                child: Row(
-                  children: [
-                    Text(
-                      timeago.format(msg.sentAt, locale: 'en_short'),
-                      style: const TextStyle(fontSize: 10, color: AppColors.warmGray),
-                    ),
-                    if (isMe) ...[
-                      const SizedBox(width: 4),
-                      Icon(
-                        msg.readByPartner ? Icons.done_all : Icons.done,
-                        size: 12,
-                        color: msg.readByPartner ? accent : AppColors.warmGray,
-                      ),
-                    ],
-                  ],
-                ),
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(msg.reactionEmoji!, style: const TextStyle(fontSize: 16)),
               ),
-            ],
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    timeago.format(msg.sentAt, locale: 'en_short'),
+                    style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
+                  ),
+                  if (isMe) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      msg.readByPartner ? Icons.done_all_rounded : Icons.done_rounded,
+                      size: 12,
+                      color: msg.readByPartner ? accent : AppColors.textMuted,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -211,45 +269,53 @@ class _ChatInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.only(
-        left: 16,
-        right: 8,
-        top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
+        left: 16, right: 12, top: 10,
+        bottom: MediaQuery.of(context).padding.bottom + 10,
       ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.divider)),
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
       ),
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                hintText: 'Say something sweet…',
-                hintStyle: const TextStyle(color: AppColors.warmGray),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: AppColors.warmCream,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: AppColors.divider, width: 0.5),
               ),
-              maxLines: null,
-              textCapitalization: TextCapitalization.sentences,
-              onSubmitted: (_) => onSend(),
+              child: TextField(
+                controller: controller,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                decoration: const InputDecoration(
+                  hintText: 'Say something sweet…',
+                  hintStyle: TextStyle(color: AppColors.textMuted),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                ),
+                maxLines: null,
+                textCapitalization: TextCapitalization.sentences,
+                onSubmitted: (_) => onSend(),
+              ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           GestureDetector(
             onTap: sending ? null : onSend,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.all(12),
+              width: 46,
+              height: 46,
               decoration: BoxDecoration(
-                color: sending ? AppColors.warmGray : accent,
+                gradient: sending
+                    ? null
+                    : LinearGradient(colors: [accent, AppColors.coral]),
+                color: sending ? AppColors.bgCard : null,
                 shape: BoxShape.circle,
+                boxShadow: sending
+                    ? null
+                    : [BoxShadow(color: accent.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
               ),
               child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
             ),

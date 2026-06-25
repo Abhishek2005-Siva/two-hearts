@@ -2,10 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/firebase/firestore_service.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../shared/widgets/app_logo.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   const RoomScreen({super.key});
@@ -18,30 +18,32 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     with TickerProviderStateMixin {
   bool _heartVisible = false;
   late AnimationController _heartCtrl;
+  double _heartX = 0.5;
 
   @override
   void initState() {
     super.initState();
-    _heartCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 2));
-    _watchSignals();
+    _heartCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 3));
+    _listenSignals();
   }
 
-  void _watchSignals() {
-    final coupleId = ref.read(coupleIdProvider);
-    if (coupleId == null) return;
-    ref.read(firestoreServiceProvider).watchSignals(coupleId).listen((snap) {
-      if (snap.docs.isNotEmpty) {
-        final data = snap.docs.first.data() as Map<String, dynamic>;
-        final uid = FirebaseAuth.instance.currentUser!.uid;
-        if (data['fromUid'] != uid) {
-          _showHeart();
+  void _listenSignals() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final coupleId = ref.read(coupleIdProvider);
+      if (coupleId == null) return;
+      ref.read(firestoreServiceProvider).watchSignals(coupleId).listen((snap) {
+        if (!mounted) return;
+        if (snap.docs.isNotEmpty) {
+          final data = snap.docs.first.data() as Map<String, dynamic>;
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid != null && data['fromUid'] != uid) _showHeart();
         }
-      }
+      });
     });
   }
 
   void _showHeart() {
-    setState(() => _heartVisible = true);
+    setState(() { _heartVisible = true; _heartX = 0.3 + (0.4 * (DateTime.now().millisecond / 1000)); });
     _heartCtrl.forward(from: 0);
     Future.delayed(const Duration(seconds: 4), () {
       if (mounted) setState(() => _heartVisible = false);
@@ -52,14 +54,15 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     final coupleId = ref.read(coupleIdProvider);
     if (coupleId == null) return;
     await ref.read(firestoreServiceProvider).sendThinkingOfYou(coupleId);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('♡ Sent to your person'),
-        backgroundColor: ref.read(accentColorProvider),
+        backgroundColor: AppColors.bgCard,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        margin: const EdgeInsets.all(16),
+      ));
+    }
   }
 
   @override
@@ -74,163 +77,189 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     final me = ref.watch(currentUserProvider).valueOrNull;
     final partner = ref.watch(partnerUserProvider).valueOrNull;
     final couple = ref.watch(coupleProvider).valueOrNull;
-    final roomObjects = ref.watch(roomObjectsProvider).valueOrNull ?? [];
     final memories = ref.watch(memoriesProvider).valueOrNull ?? [];
     final letters = ref.watch(lettersProvider).valueOrNull ?? [];
+    final roomObjects = ref.watch(roomObjectsProvider).valueOrNull ?? [];
+    final daysTogether = couple != null ? DateTime.now().difference(couple.createdAt).inDays : 0;
 
     return Scaffold(
       body: Stack(
         children: [
-          // Room background gradient
+          // Background
           Container(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+              gradient: RadialGradient(
+                center: const Alignment(0, -0.5),
+                radius: 1.2,
                 colors: [
-                  accent.withOpacity(0.08),
-                  AppColors.warmCream,
-                  AppColors.softPeach.withOpacity(0.4),
+                  accent.withValues(alpha: 0.15),
+                  AppColors.bg,
+                  AppColors.bg,
                 ],
               ),
             ),
           ),
+          // Top glow
+          Positioned(
+            top: -100,
+            left: -100,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: accent.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+
           SafeArea(
             child: CustomScrollView(
               slivers: [
+                // App bar
                 SliverAppBar(
                   pinned: true,
                   backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  title: couple != null
-                      ? Text(
-                          '${me?.displayName.split(' ').first ?? '?'} & ${partner?.displayName.split(' ').first ?? '?'}',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        )
-                      : const Text('Our Room'),
+                  title: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const TwoHeartsLogo(size: 28),
+                      const SizedBox(width: 10),
+                      Text(
+                        couple != null
+                            ? '${me?.displayName.split(' ').first ?? '?'} & ${partner?.displayName.split(' ').first ?? '?'}'
+                            : 'Two Hearts',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ],
+                  ),
                   actions: [
                     IconButton(
-                      icon: const Icon(Icons.settings_outlined),
-                      onPressed: () => _showSettingsSheet(context),
+                      icon: const Icon(Icons.tune_rounded, color: AppColors.textSecondary),
+                      onPressed: () => _showSettings(context),
                     ),
                   ],
                 ),
+
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  sliver: SliverToBoxAdapter(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Avatars row
-                        _AvatarRow(
-                          me: me,
-                          partner: partner,
-                          accent: accent,
-                        ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.1),
-                        const SizedBox(height: 24),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
 
-                        // Stats row
-                        _StatsRow(
-                          memories: memories.length,
-                          letters: letters.length,
-                          roomObjects: roomObjects.length,
-                          couple: couple,
-                          accent: accent,
-                        ).animate().fadeIn(delay: 200.ms),
-                        const SizedBox(height: 24),
+                      // Avatars card
+                      _AvatarCard(me: me, partner: partner, accent: accent)
+                          .animate().fadeIn(duration: 600.ms).slideY(begin: 0.1),
+                      const SizedBox(height: 16),
 
-                        // Room object gallery
-                        if (roomObjects.isNotEmpty) ...[
-                          Text('In your room',
-                              style: Theme.of(context).textTheme.titleMedium),
-                          const SizedBox(height: 12),
-                          _RoomObjectsGrid(objects: roomObjects, accent: accent),
-                          const SizedBox(height: 24),
+                      // Stats row
+                      Row(
+                        children: [
+                          _StatPill(value: '$daysTogether', label: 'days', accent: accent),
+                          const SizedBox(width: 10),
+                          _StatPill(value: '${memories.length}', label: 'memories', accent: accent),
+                          const SizedBox(width: 10),
+                          _StatPill(value: '${letters.length}', label: 'letters', accent: accent),
                         ],
+                      ).animate().fadeIn(delay: 150.ms),
+                      const SizedBox(height: 16),
 
-                        // Quick actions
-                        Text('Quick moments',
-                            style: Theme.of(context).textTheme.titleMedium),
-                        const SizedBox(height: 12),
-                        _QuickActions(accent: accent, onThinkingOfYou: _sendThinkingOfYou),
-                        const SizedBox(height: 32),
+                      // Thinking of you — big hero button
+                      _ThinkingOfYouButton(accent: accent, onTap: _sendThinkingOfYou)
+                          .animate().fadeIn(delay: 200.ms).slideY(begin: 0.05),
+                      const SizedBox(height: 16),
+
+                      // Room objects
+                      if (roomObjects.isNotEmpty) ...[
+                        _SectionHeader(title: 'In your room', count: roomObjects.length),
+                        const SizedBox(height: 10),
+                        _RoomObjectsRow(objects: roomObjects, accent: accent)
+                            .animate().fadeIn(delay: 250.ms),
+                        const SizedBox(height: 16),
                       ],
-                    ),
+
+                      // Recent memories preview
+                      if (memories.isNotEmpty) ...[
+                        _SectionHeader(title: 'Recent memories', count: memories.length),
+                        const SizedBox(height: 10),
+                        _MemoryPreview(memories: memories.take(4).toList())
+                            .animate().fadeIn(delay: 300.ms),
+                      ],
+                    ]),
                   ),
                 ),
               ],
             ),
           ),
-          // Floating heart animation
+
+          // Floating heart
           if (_heartVisible)
-            Positioned(
-              left: MediaQuery.of(context).size.width / 2 - 30,
-              bottom: 120,
-              child: AnimatedBuilder(
-                animation: _heartCtrl,
-                builder: (_, __) => Transform.translate(
-                  offset: Offset(0, -200 * _heartCtrl.value),
+            AnimatedBuilder(
+              animation: _heartCtrl,
+              builder: (_, __) {
+                final t = _heartCtrl.value;
+                return Positioned(
+                  left: MediaQuery.of(context).size.width * _heartX,
+                  bottom: 100 + 300 * t,
                   child: Opacity(
-                    opacity: 1 - _heartCtrl.value,
-                    child: const Text('♡', style: TextStyle(fontSize: 60)),
+                    opacity: (1 - t).clamp(0.0, 1.0),
+                    child: Transform.scale(
+                      scale: 1.0 + t * 0.5,
+                      child: const Text('♡', style: TextStyle(fontSize: 40, color: AppColors.rose)),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
         ],
       ),
     );
   }
 
-  void _showSettingsSheet(BuildContext context) {
-    final couple = ref.read(coupleProvider).valueOrNull;
+  void _showSettings(BuildContext context) {
+    final container = ProviderScope.containerOf(context);
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.warmCream,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => _SettingsSheet(couple: couple),
-    );
-  }
-}
-
-class _AvatarRow extends StatelessWidget {
-  final UserModel? me;
-  final UserModel? partner;
-  final Color accent;
-
-  const _AvatarRow({this.me, this.partner, required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Row(
-        children: [
-          Expanded(child: _AvatarCard(user: me, accent: accent, isMe: true)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text('♡', style: TextStyle(fontSize: 28, color: accent)),
-          ),
-          Expanded(child: _AvatarCard(user: partner, accent: accent, isMe: false)),
-        ],
+      backgroundColor: Colors.transparent,
+      builder: (_) => UncontrolledProviderScope(
+        container: container,
+        child: const _SettingsSheet(),
       ),
     );
   }
 }
 
 class _AvatarCard extends StatelessWidget {
-  final UserModel? user;
+  final dynamic me;
+  final dynamic partner;
+  final Color accent;
+  const _AvatarCard({this.me, this.partner, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      padding: const EdgeInsets.all(28),
+      child: Row(
+        children: [
+          Expanded(child: _Avatar(user: me, accent: accent, isMe: true)),
+          Column(
+            children: [
+              TwoHeartsLogo(size: 32),
+              const SizedBox(height: 4),
+              Text('together', style: TextStyle(fontSize: 10, color: accent, letterSpacing: 1)),
+            ],
+          ),
+          Expanded(child: _Avatar(user: partner, accent: accent, isMe: false)),
+        ],
+      ),
+    );
+  }
+}
+
+class _Avatar extends StatelessWidget {
+  final dynamic user;
   final Color accent;
   final bool isMe;
-
-  const _AvatarCard({this.user, required this.accent, required this.isMe});
+  const _Avatar({this.user, required this.accent, required this.isMe});
 
   @override
   Widget build(BuildContext context) {
@@ -241,94 +270,79 @@ class _AvatarCard extends StatelessWidget {
           height: 72,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: accent.withOpacity(0.15),
-            border: Border.all(color: accent.withOpacity(0.4), width: 2),
+            gradient: LinearGradient(
+              colors: isMe
+                  ? [accent, AppColors.coral]
+                  : [AppColors.lavender, const Color(0xFF7B5EA7)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: (isMe ? accent : AppColors.lavender).withValues(alpha: 0.4),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
           child: Center(
             child: Text(
-              user?.displayName.isNotEmpty == true
+              user?.displayName?.isNotEmpty == true
                   ? user!.displayName[0].toUpperCase()
-                  : '?',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: accent,
-              ),
+                  : isMe ? 'Y' : '?',
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Text(
-          user?.displayName.split(' ').first ?? (isMe ? 'You' : 'Partner'),
+          user?.displayName?.split(' ')?.first ?? (isMe ? 'You' : 'Partner'),
           style: Theme.of(context).textTheme.bodyMedium,
           overflow: TextOverflow.ellipsis,
         ),
-        if (isMe)
-          Text('Lv.${user?.level ?? 1}',
-              style: TextStyle(fontSize: 11, color: accent, fontWeight: FontWeight.w600)),
+        if (isMe && user != null)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text('Lv ${user!.level}',
+                style: TextStyle(fontSize: 10, color: accent, fontWeight: FontWeight.bold)),
+          ),
       ],
     );
   }
 }
 
-class _StatsRow extends StatelessWidget {
-  final int memories;
-  final int letters;
-  final int roomObjects;
-  final CoupleModel? couple;
-  final Color accent;
-
-  const _StatsRow({
-    required this.memories,
-    required this.letters,
-    required this.roomObjects,
-    this.couple,
-    required this.accent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final daysTogether = couple != null
-        ? DateTime.now().difference(couple!.createdAt).inDays
-        : 0;
-    return Row(
-      children: [
-        _StatChip(label: 'Days', value: '$daysTogether', accent: accent),
-        const SizedBox(width: 8),
-        _StatChip(label: 'Memories', value: '$memories', accent: accent),
-        const SizedBox(width: 8),
-        _StatChip(label: 'Letters', value: '$letters', accent: accent),
-      ],
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  final String label;
+class _StatPill extends StatelessWidget {
   final String value;
+  final String label;
   final Color accent;
-
-  const _StatChip({required this.label, required this.value, required this.accent});
+  const _StatPill({required this.value, required this.label, required this.accent});
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: accent.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(16),
+          color: AppColors.bgCard,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.divider, width: 0.5),
         ),
         child: Column(
           children: [
-            Text(value,
-                style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: accent)),
+            ShaderMask(
+              shaderCallback: (b) => LinearGradient(
+                colors: [accent, AppColors.coral],
+              ).createShader(b),
+              child: Text(value,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+            ),
             const SizedBox(height: 2),
-            Text(label,
-                style: const TextStyle(fontSize: 11, color: AppColors.warmGray)),
+            Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
           ],
         ),
       ),
@@ -336,96 +350,53 @@ class _StatChip extends StatelessWidget {
   }
 }
 
-class _RoomObjectsGrid extends StatelessWidget {
-  final List<RoomObject> objects;
+class _ThinkingOfYouButton extends StatelessWidget {
   final Color accent;
-
-  const _RoomObjectsGrid({required this.objects, required this.accent});
-
-  IconData _iconFor(RoomObjectType type) {
-    switch (type) {
-      case RoomObjectType.photoFrame: return Icons.image_outlined;
-      case RoomObjectType.letterEnvelope: return Icons.mail_outline;
-      case RoomObjectType.journalBook: return Icons.menu_book_rounded;
-      case RoomObjectType.bucketTrophy: return Icons.emoji_events_outlined;
-      case RoomObjectType.gift: return Icons.card_giftcard_outlined;
-    }
-  }
-
-  String _labelFor(RoomObjectType type) {
-    switch (type) {
-      case RoomObjectType.photoFrame: return 'Photo';
-      case RoomObjectType.letterEnvelope: return 'Letter';
-      case RoomObjectType.journalBook: return 'Journal';
-      case RoomObjectType.bucketTrophy: return 'Trophy';
-      case RoomObjectType.gift: return 'Gift';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final shown = objects.take(6).toList();
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: shown.map((obj) {
-        return Container(
-          width: (MediaQuery.of(context).size.width - 60) / 3,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.divider),
-          ),
-          child: Column(
-            children: [
-              Icon(_iconFor(obj.type), color: accent, size: 28),
-              const SizedBox(height: 4),
-              Text(_labelFor(obj.type),
-                  style: const TextStyle(fontSize: 11, color: AppColors.warmGray)),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-}
-
-class _QuickActions extends StatelessWidget {
-  final Color accent;
-  final VoidCallback onThinkingOfYou;
-
-  const _QuickActions({required this.accent, required this.onThinkingOfYou});
+  final VoidCallback onTap;
+  const _ThinkingOfYouButton({required this.accent, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onThinkingOfYou,
+      onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [accent.withOpacity(0.15), accent.withOpacity(0.05)],
+            colors: [accent.withValues(alpha: 0.2), AppColors.coral.withValues(alpha: 0.1)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: accent.withOpacity(0.3)),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: accent.withValues(alpha: 0.3), width: 0.5),
         ),
         child: Row(
           children: [
-            Text('♡', style: TextStyle(fontSize: 36, color: accent)),
-            const SizedBox(width: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [accent, AppColors.coral]),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(color: accent.withValues(alpha: 0.5), blurRadius: 16, offset: const Offset(0, 6)),
+                ],
+              ),
+              child: const Text('♡', style: TextStyle(fontSize: 24)),
+            ),
+            const SizedBox(width: 18),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Thinking Of You',
                       style: Theme.of(context).textTheme.titleMedium),
-                  Text('Tap to send a heart',
+                  const SizedBox(height: 3),
+                  Text('Tap to send a heart that floats in their room',
                       style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
             ),
-            Icon(Icons.send_rounded, color: accent),
+            Icon(Icons.send_rounded, color: accent, size: 20),
           ],
         ),
       ),
@@ -433,76 +404,170 @@ class _QuickActions extends StatelessWidget {
   }
 }
 
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final int count;
+  const _SectionHeader({required this.title, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppColors.bgCard,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text('$count', style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoomObjectsRow extends StatelessWidget {
+  final List<RoomObject> objects;
+  final Color accent;
+  const _RoomObjectsRow({required this.objects, required this.accent});
+
+  String _emojiFor(RoomObjectType t) {
+    switch (t) {
+      case RoomObjectType.photoFrame: return '🖼️';
+      case RoomObjectType.letterEnvelope: return '💌';
+      case RoomObjectType.journalBook: return '📖';
+      case RoomObjectType.bucketTrophy: return '🏆';
+      case RoomObjectType.gift: return '🎁';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 80,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: objects.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final obj = objects[i];
+          return Container(
+            width: 72,
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.divider, width: 0.5),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(_emojiFor(obj.type), style: const TextStyle(fontSize: 26)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MemoryPreview extends StatelessWidget {
+  final List<dynamic> memories;
+  const _MemoryPreview({required this.memories});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 100,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: memories.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              width: 100,
+              color: AppColors.bgCard,
+              child: memories[i].imageUrl.isNotEmpty
+                  ? Image.network(memories[i].imageUrl, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.image_outlined, color: AppColors.textMuted))
+                  : const Icon(Icons.image_outlined, color: AppColors.textMuted),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _SettingsSheet extends ConsumerWidget {
-  final CoupleModel? couple;
-  const _SettingsSheet({this.couple});
+  const _SettingsSheet();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
+    final couple = ref.watch(coupleProvider).valueOrNull;
+    return Container(
       padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
+          Center(child: Container(width: 36, height: 4, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 20),
-          Text('Settings', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 20),
-          Text('Couple accent color', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
+          Text('Your colour', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 16),
           Wrap(
-            spacing: 10,
+            spacing: 12,
+            runSpacing: 12,
             children: kCoupleAccents.map((a) {
               final color = a['color'] as Color;
-              final isSelected = couple?.themeColor == color.value;
+              final selected = couple?.themeColor == color.value;
               return GestureDetector(
                 onTap: () async {
                   if (couple != null) {
-                    await ref
-                        .read(firestoreServiceProvider)
-                        .updateCoupleTheme(couple!.id, color.value);
+                    await ref.read(firestoreServiceProvider).updateCoupleTheme(couple.id, color.toARGB32());
                   }
                   if (context.mounted) Navigator.pop(context);
                 },
-                child: Container(
-                  width: 44,
-                  height: 44,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 48, height: 48,
                   decoration: BoxDecoration(
                     color: color,
                     shape: BoxShape.circle,
-                    border: isSelected
-                        ? Border.all(color: Colors.white, width: 3)
-                        : null,
-                    boxShadow: isSelected
-                        ? [BoxShadow(color: color.withOpacity(0.5), blurRadius: 8)]
-                        : null,
+                    border: selected ? Border.all(color: Colors.white, width: 3) : null,
+                    boxShadow: selected ? [BoxShadow(color: color.withValues(alpha: 0.6), blurRadius: 12)] : null,
                   ),
-                  child: isSelected
-                      ? const Icon(Icons.check, color: Colors.white, size: 20)
-                      : null,
+                  child: selected ? const Icon(Icons.check_rounded, color: Colors.white, size: 22) : null,
                 ),
               );
             }).toList(),
           ),
           const SizedBox(height: 24),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.logout_outlined, color: AppColors.warmGray),
-            title: const Text('Sign out'),
-            onTap: () {
-              FirebaseAuth.instance.signOut();
-              Navigator.pop(context);
-            },
+          GestureDetector(
+            onTap: () { FirebaseAuth.instance.signOut(); Navigator.pop(context); },
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.divider, width: 0.5),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.logout_rounded, color: AppColors.textMuted, size: 20),
+                  SizedBox(width: 12),
+                  Text('Sign out', style: TextStyle(color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
           ),
         ],
       ),
