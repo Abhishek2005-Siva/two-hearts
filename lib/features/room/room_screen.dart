@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/firebase/models.dart';
@@ -535,7 +536,13 @@ class _SettingsSheet extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
           GestureDetector(
-            onTap: () { FirebaseAuth.instance.signOut(); Navigator.pop(context); },
+            onTap: () async {
+              await FirebaseAuth.instance.signOut();
+              if (context.mounted) {
+                Navigator.pop(context);
+                context.go('/auth');
+              }
+            },
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(

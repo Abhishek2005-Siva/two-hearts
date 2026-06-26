@@ -1,3 +1,5 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,18 +17,35 @@ import '../../features/memory/memory_detail_screen.dart';
 import '../providers/providers.dart';
 import '../shell/main_shell.dart';
 
+// Notifier that fires whenever auth state or coupleId changes,
+// so GoRouter re-evaluates its redirect without recreating the router instance.
+class _RouterNotifier extends ChangeNotifier {
+  String? _coupleId;
+
+  _RouterNotifier(Ref ref) {
+    FirebaseAuth.instance.authStateChanges().listen((_) => notifyListeners());
+    ref.listen<String?>(coupleIdProvider, (_, next) {
+      _coupleId = next;
+      notifyListeners();
+    });
+  }
+
+  String? get coupleId => _coupleId;
+}
+
+final _routerNotifierProvider = Provider<_RouterNotifier>((ref) {
+  return _RouterNotifier(ref);
+});
+
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
-  final userState = ref.watch(currentUserProvider);
+  final notifier = ref.read(_routerNotifierProvider);
 
   return GoRouter(
     initialLocation: '/room',
+    refreshListenable: notifier,
     redirect: (context, state) {
-      final isAuth = authState.valueOrNull != null;
-      final hasCoupleId = userState.valueOrNull?.coupleId != null;
-      final isLoading = authState.isLoading || userState.isLoading;
-
-      if (isLoading) return null;
+      final isAuth = FirebaseAuth.instance.currentUser != null;
+      final hasCoupleId = notifier.coupleId != null;
 
       final onAuth = state.matchedLocation.startsWith('/auth') ||
           state.matchedLocation.startsWith('/pair') ||
@@ -38,30 +57,30 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/auth', builder: (_, __) => const AuthScreen()),
-      GoRoute(path: '/pair', builder: (_, __) => const PairingScreen()),
-      GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
+      GoRoute(path: '/auth', builder: (_, _) => const AuthScreen()),
+      GoRoute(path: '/pair', builder: (_, _) => const PairingScreen()),
+      GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
       ShellRoute(
         builder: (context, state, child) => MainShell(child: child),
         routes: [
-          GoRoute(path: '/room', builder: (_, __) => const RoomScreen()),
-          GoRoute(path: '/chat', builder: (_, __) => const ChatScreen()),
-          GoRoute(path: '/memory', builder: (_, __) => const MemoryWallScreen()),
+          GoRoute(path: '/room', builder: (_, _) => const RoomScreen()),
+          GoRoute(path: '/chat', builder: (_, _) => const ChatScreen()),
+          GoRoute(path: '/memory', builder: (_, _) => const MemoryWallScreen()),
           GoRoute(
             path: '/memory/:id',
             builder: (_, state) =>
                 MemoryDetailScreen(memoryId: state.pathParameters['id']!),
           ),
-          GoRoute(path: '/together', builder: (_, __) => const TogetherScreen()),
+          GoRoute(path: '/together', builder: (_, _) => const TogetherScreen()),
           GoRoute(
             path: '/together/letter/new',
-            builder: (_, __) => const LetterComposeScreen(),
+            builder: (_, _) => const LetterComposeScreen(),
           ),
           GoRoute(
             path: '/together/journal',
-            builder: (_, __) => const JournalScreen(),
+            builder: (_, _) => const JournalScreen(),
           ),
-          GoRoute(path: '/you', builder: (_, __) => const YouAndMeScreen()),
+          GoRoute(path: '/you', builder: (_, _) => const YouAndMeScreen()),
         ],
       ),
     ],
