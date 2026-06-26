@@ -65,8 +65,8 @@ class FirestoreService {
     final coupleDoc = snap.docs.first;
     final couple = CoupleModel.fromDoc(coupleDoc);
 
-    if (couple.members.length >= 2) return null; // already paired
-    if (couple.members.contains(_uid)) return null; // same person
+    if (couple.members.length >= 2) return null;
+    if (couple.members.contains(_uid)) return null;
 
     await coupleDoc.reference.update({
       'members': FieldValue.arrayUnion([_uid]),
@@ -136,13 +136,14 @@ class FirestoreService {
 
   // ── Thinking Of You ───────────────────────────────────────────────────────
 
-  Future<void> sendThinkingOfYou(String coupleId) => _db
+  Future<void> sendThinkingOfYou(String coupleId, {String? message}) => _db
       .collection('couples')
       .doc(coupleId)
       .collection('signals')
       .add({
         'type': 'thinkingOfYou',
         'fromUid': _uid,
+        'message': message,
         'sentAt': FieldValue.serverTimestamp(),
       });
 
@@ -246,14 +247,37 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(MemoryModel.fromDoc).toList());
 
-  Future<void> toggleFavoriteMemory(
-      String coupleId, String memoryId, bool fav) =>
+  Future<void> toggleFavoriteMemory(String coupleId, String memoryId, bool fav) =>
       _db
           .collection('couples')
           .doc(coupleId)
           .collection('memories')
           .doc(memoryId)
           .update({'favorite': fav});
+
+  Future<void> requestMemoryDeletion(String coupleId, String memoryId) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('memories')
+          .doc(memoryId)
+          .update({'deletionRequestedBy': _uid});
+
+  Future<void> cancelMemoryDeletion(String coupleId, String memoryId) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('memories')
+          .doc(memoryId)
+          .update({'deletionRequestedBy': FieldValue.delete()});
+
+  Future<void> approveMemoryDeletion(String coupleId, String memoryId) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('memories')
+          .doc(memoryId)
+          .delete();
 
   // ── Bucket List ───────────────────────────────────────────────────────────
 
@@ -306,6 +330,38 @@ class FirestoreService {
       .collection('roomObjects')
       .snapshots()
       .map((s) => s.docs.map(RoomObject.fromDoc).toList());
+
+  // ── Games (Would You Rather) ──────────────────────────────────────────────
+
+  Future<void> setTodayGame(String coupleId, GameRound game) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('games')
+      .doc(game.date)
+      .set(game.toMap());
+
+  Future<void> pickGameOption(String coupleId, String date, String option) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('games')
+      .doc(date)
+      .update({'picks.$_uid': option});
+
+  Stream<GameRound?> watchTodayGame(String coupleId) {
+    final today = _todayKey();
+    return _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('games')
+        .doc(today)
+        .snapshots()
+        .map((d) => d.exists ? GameRound.fromDoc(d) : null);
+  }
+
+  String _todayKey() {
+    final n = DateTime.now();
+    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+  }
 
   double _randomPos() => (Random().nextDouble() * 4 - 2);
 }

@@ -6,8 +6,7 @@ class UserModel {
   final String uid;
   final String displayName;
   final String email;
-  final String? avatarUrl; // Ready Player Me glTF URL
-  final int level;
+  final String? avatarUrl;
   final String? coupleId;
 
   const UserModel({
@@ -15,7 +14,6 @@ class UserModel {
     required this.displayName,
     required this.email,
     this.avatarUrl,
-    this.level = 1,
     this.coupleId,
   });
 
@@ -26,7 +24,6 @@ class UserModel {
       displayName: d['displayName'] ?? '',
       email: d['email'] ?? '',
       avatarUrl: d['avatarUrl'],
-      level: d['level'] ?? 1,
       coupleId: d['coupleId'],
     );
   }
@@ -35,22 +32,15 @@ class UserModel {
         'displayName': displayName,
         'email': email,
         'avatarUrl': avatarUrl,
-        'level': level,
         'coupleId': coupleId,
       };
 
-  UserModel copyWith({
-    String? displayName,
-    String? avatarUrl,
-    int? level,
-    String? coupleId,
-  }) =>
+  UserModel copyWith({String? displayName, String? avatarUrl, String? coupleId}) =>
       UserModel(
         uid: uid,
         displayName: displayName ?? this.displayName,
         email: email,
         avatarUrl: avatarUrl ?? this.avatarUrl,
-        level: level ?? this.level,
         coupleId: coupleId ?? this.coupleId,
       );
 }
@@ -59,7 +49,7 @@ class UserModel {
 
 class CoupleModel {
   final String id;
-  final List<String> members; // exactly 2 uids
+  final List<String> members;
   final int themeColor;
   final DateTime? anniversary;
   final DateTime createdAt;
@@ -105,7 +95,7 @@ enum MessageType { text, image, voice, reaction }
 class MessageModel {
   final String id;
   final String senderId;
-  final String content; // text or storage URL
+  final String content;
   final MessageType type;
   final DateTime sentAt;
   final bool readByPartner;
@@ -172,6 +162,42 @@ extension MoodEmoji on MoodType {
       case MoodType.inLove: return 'In Love';
     }
   }
+
+  String get color {
+    switch (this) {
+      case MoodType.happy: return '#FFD166';
+      case MoodType.excited: return '#FF6B8A';
+      case MoodType.tired: return '#B8A0D9';
+      case MoodType.sad: return '#5B9BD5';
+      case MoodType.angry: return '#FF5252';
+      case MoodType.stressed: return '#FF8C42';
+      case MoodType.inLove: return '#FF6B8A';
+    }
+  }
+}
+
+// Combination message for two moods shown together
+String moodComboMessage(MoodType a, MoodType b) {
+  if (a == b) {
+    switch (a) {
+      case MoodType.happy: return "You're both glowing today ✨";
+      case MoodType.excited: return 'Double the energy! Go do something wild 🎉';
+      case MoodType.tired: return 'Movie night, blankets, no plans 🛋️';
+      case MoodType.sad: return "Hold each other tight. You'll get through it 💙";
+      case MoodType.angry: return 'Mutual chaos mode. Breathe together 🌊';
+      case MoodType.stressed: return 'Tag team stress — you handle it better together 💪';
+      case MoodType.inLove: return "You're BOTH head over heels. Disgusting. Perfect. 💕";
+    }
+  }
+  final combo = {a, b};
+  if (combo.containsAll([MoodType.inLove, MoodType.tired])) return 'Tired but still completely in love 🥰';
+  if (combo.containsAll([MoodType.happy, MoodType.sad])) return "One sunshine, one rain — you balance each other 🌦️";
+  if (combo.containsAll([MoodType.excited, MoodType.tired])) return 'One is ready to GO, one needs coffee ☕';
+  if (combo.containsAll([MoodType.stressed, MoodType.inLove])) return "Stressed but still thinking of them 💌";
+  if (combo.containsAll([MoodType.angry, MoodType.inLove])) return 'Annoyed at the world, but not at each other 💪';
+  if (combo.containsAll([MoodType.sad, MoodType.inLove])) return 'Love is the comfort on hard days 💙';
+  if (combo.containsAll([MoodType.happy, MoodType.tired])) return "One's caffeinated, one's napping — perfect team ☀️";
+  return 'Two different worlds, one shared heart 💫';
 }
 
 class MoodEntry {
@@ -254,7 +280,7 @@ class LetterModel {
 // ──────────────── Journal ────────────────
 
 class JournalDay {
-  final String id; // YYYY-MM-DD
+  final String id;
   final String? entryA;
   final String? entryB;
   final String? uidA;
@@ -302,6 +328,7 @@ class MemoryModel {
   final String? location;
   final bool favorite;
   final DateTime createdAt;
+  final String? deletionRequestedBy; // uid of whoever wants to delete
 
   const MemoryModel({
     required this.id,
@@ -312,6 +339,7 @@ class MemoryModel {
     this.location,
     this.favorite = false,
     required this.createdAt,
+    this.deletionRequestedBy,
   });
 
   factory MemoryModel.fromDoc(DocumentSnapshot doc) {
@@ -325,6 +353,7 @@ class MemoryModel {
       location: d['location'],
       favorite: d['favorite'] ?? false,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      deletionRequestedBy: d['deletionRequestedBy'],
     );
   }
 
@@ -336,6 +365,7 @@ class MemoryModel {
         'location': location,
         'favorite': favorite,
         'createdAt': Timestamp.fromDate(createdAt),
+        'deletionRequestedBy': deletionRequestedBy,
       };
 }
 
@@ -388,8 +418,8 @@ enum RoomObjectType { photoFrame, letterEnvelope, journalBook, bucketTrophy, gif
 class RoomObject {
   final String id;
   final RoomObjectType type;
-  final String sourceRef; // id of the source document
-  final Map<String, double> position; // x, y, z
+  final String sourceRef;
+  final Map<String, double> position;
   final DateTime createdAt;
 
   const RoomObject({
@@ -421,5 +451,44 @@ class RoomObject {
         'sourceRef': sourceRef,
         'position': position,
         'createdAt': Timestamp.fromDate(createdAt),
+      };
+}
+
+// ──────────────── Game Round (Would You Rather) ────────────────
+
+class GameRound {
+  final String date; // YYYY-MM-DD — document ID
+  final int questionIndex;
+  final String optionA;
+  final String optionB;
+  final Map<String, String> picks; // {uid: 'A' | 'B'}
+
+  const GameRound({
+    required this.date,
+    required this.questionIndex,
+    required this.optionA,
+    required this.optionB,
+    required this.picks,
+  });
+
+  bool get bothPicked => picks.length >= 2;
+  bool get matched => bothPicked && picks.values.toSet().length == 1;
+
+  factory GameRound.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return GameRound(
+      date: doc.id,
+      questionIndex: d['questionIndex'] ?? 0,
+      optionA: d['optionA'] ?? '',
+      optionB: d['optionB'] ?? '',
+      picks: Map<String, String>.from(d['picks'] ?? {}),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'questionIndex': questionIndex,
+        'optionA': optionA,
+        'optionB': optionB,
+        'picks': picks,
       };
 }

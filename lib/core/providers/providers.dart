@@ -110,3 +110,11 @@ final partnerUserProvider = StreamProvider<UserModel?>((ref) {
   if (partnerUid.isEmpty) return const Stream.empty();
   return ref.read(firestoreServiceProvider).watchUser(partnerUid);
 });
+
+// ── Today's Game (Would You Rather) ──────────────────────────────────────
+
+final todayGameProvider = StreamProvider<GameRound?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchTodayGame(coupleId);
+});

@@ -22,6 +22,7 @@ class YouAndMeScreen extends ConsumerWidget {
 
     final myMood = moods.where((m) => m.uid == uid).firstOrNull;
     final partnerMood = moods.where((m) => m.uid != uid).firstOrNull;
+    final bothHaveMood = myMood != null && partnerMood != null;
 
     return Scaffold(
       body: Container(
@@ -45,8 +46,19 @@ class YouAndMeScreen extends ConsumerWidget {
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
 
-                    // My mood
-                    _SectionLabel(label: 'YOUR MOOD'),
+                    // Mood match banner when both have set a mood
+                    if (bothHaveMood) ...[
+                      _MoodMatchCard(
+                        myMood: myMood.mood,
+                        partnerMood: partnerMood.mood,
+                        partnerName: partner?.displayName.split(' ').first ?? 'Partner',
+                        accent: accent,
+                      ).animate().fadeIn().scale(begin: const Offset(0.95, 0.95)),
+                      const SizedBox(height: 20),
+                    ],
+
+                    // My mood picker
+                    _SectionLabel(label: 'HOW ARE YOU FEELING?'),
                     const SizedBox(height: 10),
                     GlassCard(
                       child: _MoodPicker(
@@ -61,17 +73,29 @@ class YouAndMeScreen extends ConsumerWidget {
                     ).animate().fadeIn(),
                     const SizedBox(height: 20),
 
-                    // Partner mood
+                    // Partner mood display
                     if (partner != null) ...[
-                      _SectionLabel(label: '${partner.displayName.split(' ').first.toUpperCase()}\'S MOOD'),
+                      _SectionLabel(
+                          label: '${partner.displayName.split(' ').first.toUpperCase()}\'S VIBE'),
                       const SizedBox(height: 10),
                       GlassCard(
                         child: partnerMood != null
                             ? Row(
                                 children: [
-                                  Text(partnerMood.mood.emoji,
-                                      style: const TextStyle(fontSize: 48)),
-                                  const SizedBox(width: 20),
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: AppColors.bgCard,
+                                      border: Border.all(color: AppColors.divider, width: 0.5),
+                                    ),
+                                    child: Center(
+                                      child: Text(partnerMood.mood.emoji,
+                                          style: const TextStyle(fontSize: 34)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 18),
                                   Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -85,15 +109,18 @@ class YouAndMeScreen extends ConsumerWidget {
                                 ],
                               )
                             : Center(
-                                child: Text('They haven\'t set a mood yet',
-                                    style: Theme.of(context).textTheme.bodyMedium),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Text('They haven\'t shared their mood yet',
+                                      style: Theme.of(context).textTheme.bodyMedium),
+                                ),
                               ),
                       ).animate().fadeIn(delay: 100.ms),
                       const SizedBox(height: 20),
                     ],
 
-                    // Profile card
-                    _SectionLabel(label: 'YOU'),
+                    // Profile card (no level)
+                    _SectionLabel(label: 'YOUR PROFILE'),
                     const SizedBox(height: 10),
                     GlassCard(
                       child: Row(
@@ -103,9 +130,7 @@ class YouAndMeScreen extends ConsumerWidget {
                             height: 60,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [accent, AppColors.coral],
-                              ),
+                              gradient: LinearGradient(colors: [accent, AppColors.coral]),
                               boxShadow: [
                                 BoxShadow(color: accent.withValues(alpha: 0.4),
                                     blurRadius: 12, offset: const Offset(0, 4)),
@@ -131,17 +156,6 @@ class YouAndMeScreen extends ConsumerWidget {
                                 const SizedBox(height: 2),
                                 Text(me?.email ?? '',
                                     style: Theme.of(context).textTheme.bodyMedium),
-                                const SizedBox(height: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: accent.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text('Level ${me?.level ?? 1}',
-                                      style: TextStyle(fontSize: 11, color: accent,
-                                          fontWeight: FontWeight.bold)),
-                                ),
                               ],
                             ),
                           ),
@@ -167,6 +181,107 @@ class YouAndMeScreen extends ConsumerWidget {
   }
 }
 
+// ── Mood Match Banner ─────────────────────────────────────────────────────
+
+class _MoodMatchCard extends StatelessWidget {
+  final MoodType myMood;
+  final MoodType partnerMood;
+  final String partnerName;
+  final Color accent;
+
+  const _MoodMatchCard({
+    required this.myMood,
+    required this.partnerMood,
+    required this.partnerName,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final matched = myMood == partnerMood;
+    final message = moodComboMessage(myMood, partnerMood);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: matched
+              ? [accent.withValues(alpha: 0.25), AppColors.rose.withValues(alpha: 0.15)]
+              : [AppColors.bgCard.withValues(alpha: 0.9), AppColors.bgMid.withValues(alpha: 0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: matched ? accent.withValues(alpha: 0.4) : AppColors.divider,
+          width: matched ? 1.5 : 0.5,
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _MoodBubble(mood: myMood, label: 'You', accent: accent),
+              const SizedBox(width: 16),
+              matched
+                  ? const Text('💞', style: TextStyle(fontSize: 28))
+                  : const Text('↔️', style: TextStyle(fontSize: 24)),
+              const SizedBox(width: 16),
+              _MoodBubble(mood: partnerMood, label: partnerName, accent: accent),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(
+              message,
+              style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoodBubble extends StatelessWidget {
+  final MoodType mood;
+  final String label;
+  final Color accent;
+
+  const _MoodBubble({required this.mood, required this.label, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.bgCard,
+            border: Border.all(color: AppColors.divider, width: 0.5),
+          ),
+          child: Center(child: Text(mood.emoji, style: const TextStyle(fontSize: 32))),
+        ),
+        const SizedBox(height: 6),
+        Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+        Text(mood.label,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+      ],
+    );
+  }
+}
+
+// ── Section Label ─────────────────────────────────────────────────────────
+
 class _SectionLabel extends StatelessWidget {
   final String label;
   const _SectionLabel({required this.label});
@@ -179,6 +294,8 @@ class _SectionLabel extends StatelessWidget {
             color: AppColors.textMuted, letterSpacing: 1.5));
   }
 }
+
+// ── Mood Picker ───────────────────────────────────────────────────────────
 
 class _MoodPicker extends StatelessWidget {
   final MoodType? current;
@@ -198,7 +315,7 @@ class _MoodPicker extends StatelessWidget {
           onTap: () => onSelect(mood),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               gradient: selected
                   ? LinearGradient(colors: [accent.withValues(alpha: 0.3), AppColors.coral.withValues(alpha: 0.2)])
@@ -209,11 +326,15 @@ class _MoodPicker extends StatelessWidget {
                 color: selected ? accent : AppColors.divider,
                 width: selected ? 1.5 : 0.5,
               ),
+              boxShadow: selected
+                  ? [BoxShadow(color: accent.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 2))]
+                  : null,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(mood.emoji, style: const TextStyle(fontSize: 20)),
+                Text(mood.emoji,
+                    style: TextStyle(fontSize: selected ? 22 : 20)),
                 const SizedBox(width: 6),
                 Text(mood.label,
                     style: TextStyle(

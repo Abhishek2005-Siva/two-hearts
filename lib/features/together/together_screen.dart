@@ -81,12 +81,11 @@ class TogetherScreen extends ConsumerWidget {
                     ).animate().fadeIn(delay: 160.ms).slideX(begin: -0.05),
                     const SizedBox(height: 14),
                     _TogetherTile(
-                      emoji: '❓',
-                      title: 'Question of the Day',
-                      subtitle: 'Coming soon',
+                      emoji: '🎮',
+                      title: 'Games',
+                      subtitle: 'Would You Rather — new question daily',
                       accent: accent,
-                      onTap: null,
-                      disabled: true,
+                      onTap: () => context.go('/games'),
                     ).animate().fadeIn(delay: 240.ms).slideX(begin: -0.05),
                   ]),
                 ),
@@ -137,7 +136,6 @@ class _TogetherTile extends StatelessWidget {
   final String? badge;
   final Color accent;
   final VoidCallback? onTap;
-  final bool disabled;
 
   const _TogetherTile({
     required this.emoji,
@@ -146,14 +144,11 @@ class _TogetherTile extends StatelessWidget {
     this.badge,
     required this.accent,
     this.onTap,
-    this.disabled = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: disabled ? 0.4 : 1,
-      child: GestureDetector(
+    return GestureDetector(
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(20),
@@ -195,7 +190,6 @@ class _TogetherTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }

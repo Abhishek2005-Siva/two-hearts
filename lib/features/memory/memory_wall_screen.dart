@@ -47,10 +47,104 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     }
   }
 
+  void _onLongPress(MemoryModel memory, String myUid, String coupleId) {
+    if (memory.deletionRequestedBy == null) {
+      // I want to request deletion
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Request Deletion', style: TextStyle(color: AppColors.textPrimary)),
+          content: const Text(
+            'Ask your partner to approve deleting this memory. It will only be removed when they agree.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await ref.read(firestoreServiceProvider)
+                    .requestMemoryDeletion(coupleId, memory.id);
+              },
+              child: const Text('Request', style: TextStyle(color: AppColors.rose)),
+            ),
+          ],
+        ),
+      );
+    } else if (memory.deletionRequestedBy == myUid) {
+      // I requested — offer to cancel
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Cancel Request?', style: TextStyle(color: AppColors.textPrimary)),
+          content: const Text(
+            'This will withdraw your deletion request.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Keep', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await ref.read(firestoreServiceProvider)
+                    .cancelMemoryDeletion(coupleId, memory.id);
+              },
+              child: const Text('Cancel Request', style: TextStyle(color: AppColors.rose)),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Partner requested — approve or reject
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Partner Wants to Delete', style: TextStyle(color: AppColors.textPrimary)),
+          content: const Text(
+            'Your partner has requested to delete this memory. Do you agree?',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await ref.read(firestoreServiceProvider)
+                    .cancelMemoryDeletion(coupleId, memory.id);
+              },
+              child: const Text('Reject', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await ref.read(firestoreServiceProvider)
+                    .approveMemoryDeletion(coupleId, memory.id);
+              },
+              child: const Text('Delete It', style: TextStyle(color: AppColors.rose)),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final memoriesAsync = ref.watch(memoriesProvider);
     final accent = ref.watch(accentColorProvider);
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final coupleId = ref.watch(coupleIdProvider) ?? '';
 
     return Scaffold(
       body: Container(
@@ -120,13 +214,16 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                         (context, i) => _MemoryCard(
                           memory: memories[i],
                           accent: accent,
+                          myUid: myUid,
                           onTap: () => context.go('/memory/${memories[i].id}'),
                           onFavorite: () async {
-                            final coupleId = ref.read(coupleIdProvider);
-                            if (coupleId == null) return;
+                            if (coupleId.isEmpty) return;
                             await ref.read(firestoreServiceProvider).toggleFavoriteMemory(
                                 coupleId, memories[i].id, !memories[i].favorite);
                           },
+                          onLongPress: coupleId.isNotEmpty
+                              ? () => _onLongPress(memories[i], myUid, coupleId)
+                              : null,
                         ).animate().fadeIn(delay: Duration(milliseconds: i * 50)),
                         childCount: memories.length,
                       ),
@@ -145,20 +242,28 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
 class _MemoryCard extends StatelessWidget {
   final MemoryModel memory;
   final Color accent;
+  final String myUid;
   final VoidCallback onTap;
   final VoidCallback onFavorite;
+  final VoidCallback? onLongPress;
 
   const _MemoryCard({
     required this.memory,
     required this.accent,
+    required this.myUid,
     required this.onTap,
     required this.onFavorite,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasDeletionRequest = memory.deletionRequestedBy != null;
+    final partnerRequested = hasDeletionRequest && memory.deletionRequestedBy != myUid;
+
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Stack(
@@ -167,9 +272,9 @@ class _MemoryCard extends StatelessWidget {
             CachedNetworkImage(
               imageUrl: memory.imageUrl,
               fit: BoxFit.cover,
-              placeholder: (_, __) => Container(color: AppColors.bgCard,
+              placeholder: (context, url) => Container(color: AppColors.bgCard,
                   child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))),
-              errorWidget: (_, __, ___) => Container(color: AppColors.bgCard,
+              errorWidget: (context, url, error) => Container(color: AppColors.bgCard,
                   child: const Icon(Icons.broken_image_outlined, color: AppColors.textMuted)),
             ),
             if (memory.caption != null)
@@ -187,6 +292,24 @@ class _MemoryCard extends StatelessWidget {
                   child: Text(memory.caption!,
                       style: const TextStyle(color: Colors.white, fontSize: 12),
                       maxLines: 2, overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            // Deletion request badge
+            if (hasDeletionRequest)
+              Positioned(
+                bottom: 8, left: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: partnerRequested
+                        ? Colors.orange.withValues(alpha: 0.9)
+                        : Colors.red.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    partnerRequested ? '🗑 Delete?' : '🗑 Pending',
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             Positioned(

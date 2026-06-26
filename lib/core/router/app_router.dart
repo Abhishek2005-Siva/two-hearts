@@ -14,6 +14,7 @@ import '../../features/you_and_me/you_and_me_screen.dart';
 import '../../features/together/letter_compose_screen.dart';
 import '../../features/together/journal_screen.dart';
 import '../../features/memory/memory_detail_screen.dart';
+import '../../features/games/games_screen.dart';
 import '../firebase/models.dart';
 import '../providers/providers.dart';
 import '../shell/main_shell.dart';
@@ -85,6 +86,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, _) => const JournalScreen(),
           ),
           GoRoute(path: '/you', builder: (_, _) => const YouAndMeScreen()),
+          GoRoute(path: '/games', builder: (_, _) => const GamesScreen()),
         ],
       ),
     ],

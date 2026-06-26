@@ -47,7 +47,7 @@ class _CharacterAvatarState extends State<CharacterAvatar>
         widget.name.isNotEmpty ? widget.name[0].toUpperCase() : '♡';
     return AnimatedBuilder(
       animation: _float,
-      builder: (_, __) => Transform.translate(
+      builder: (context, child) => Transform.translate(
         offset: Offset(0, _float.value),
         child: SizedBox(
           width: widget.size,

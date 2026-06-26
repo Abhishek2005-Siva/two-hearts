@@ -38,33 +38,99 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
         if (snap.docs.isNotEmpty) {
           final data = snap.docs.first.data() as Map<String, dynamic>;
           final uid = FirebaseAuth.instance.currentUser?.uid;
-          if (uid != null && data['fromUid'] != uid) _showHeart();
+          if (uid != null && data['fromUid'] != uid) {
+            final message = data['message'] as String?;
+            _showHeart(message: message);
+          }
         }
       });
     });
   }
 
-  void _showHeart() {
-    setState(() { _heartVisible = true; _heartX = 0.3 + (0.4 * (DateTime.now().millisecond / 1000)); });
+  void _showHeart({String? message}) {
+    setState(() {
+      _heartVisible = true;
+      _heartX = 0.3 + (0.4 * (DateTime.now().millisecond / 1000));
+    });
     _heartCtrl.forward(from: 0);
     Future.delayed(const Duration(seconds: 4), () {
       if (mounted) setState(() => _heartVisible = false);
     });
-  }
-
-  Future<void> _sendThinkingOfYou() async {
-    final coupleId = ref.read(coupleIdProvider);
-    if (coupleId == null) return;
-    await ref.read(firestoreServiceProvider).sendThinkingOfYou(coupleId);
-    if (mounted) {
+    if (message != null && message.isNotEmpty && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('♡ Sent to your person'),
+        content: Row(children: [
+          const Text('♡  ', style: TextStyle(fontSize: 16)),
+          Expanded(child: Text(message, style: const TextStyle(color: Colors.white))),
+        ]),
         backgroundColor: AppColors.bgCard,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 5),
       ));
     }
+  }
+
+  void _sendThinkingOfYou() {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => Dialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('♡', style: TextStyle(fontSize: 52, color: AppColors.rose)),
+                const SizedBox(height: 12),
+                Text('Thinking Of You',
+                    style: Theme.of(ctx).textTheme.titleLarge),
+                const SizedBox(height: 6),
+                Text('Send a little love to their screen',
+                    style: Theme.of(ctx).textTheme.bodyMedium,
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: ctrl,
+                  maxLength: 80,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: const InputDecoration(
+                    hintText: 'Add a note (optional)',
+                    counterText: '',
+                  ),
+                ),
+                const SizedBox(height: 20),
+                GradientButton(
+                  label: 'Send ♡',
+                  onTap: () async {
+                    final msg = ctrl.text.trim();
+                    Navigator.pop(ctx);
+                    await ref.read(firestoreServiceProvider).sendThinkingOfYou(
+                      coupleId,
+                      message: msg.isEmpty ? null : msg,
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: const Text('♡ Sent to your person'),
+                        backgroundColor: AppColors.bgCard,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        margin: const EdgeInsets.all(16),
+                      ));
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -283,18 +349,6 @@ class _CharCol extends StatelessWidget {
           textAlign: TextAlign.center,
           overflow: TextOverflow.ellipsis,
         ),
-        if (isMe && user != null)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text('Lv ${user!.level}',
-                style: TextStyle(
-                    fontSize: 10, color: color, fontWeight: FontWeight.bold)),
-          ),
       ],
     );
   }
@@ -477,7 +531,7 @@ class _MemoryPreview extends StatelessWidget {
               color: AppColors.bgCard,
               child: memories[i].imageUrl.isNotEmpty
                   ? Image.network(memories[i].imageUrl, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.image_outlined, color: AppColors.textMuted))
+                      errorBuilder: (_, _, _) => const Icon(Icons.image_outlined, color: AppColors.textMuted))
                   : const Icon(Icons.image_outlined, color: AppColors.textMuted),
             ),
           );
