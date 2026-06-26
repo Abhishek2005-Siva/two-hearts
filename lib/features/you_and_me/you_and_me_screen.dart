@@ -57,6 +57,11 @@ class YouAndMeScreen extends ConsumerWidget {
                       const SizedBox(height: 20),
                     ],
 
+                    // Compatibility score
+                    _CompatibilityCard(accent: accent, ref: ref)
+                        .animate().fadeIn(delay: 50.ms),
+                    const SizedBox(height: 20),
+
                     // Mood picker
                     _SectionLabel(label: 'HOW ARE YOU FEELING?'),
                     const SizedBox(height: 10),
@@ -529,6 +534,95 @@ class _MoodPicker extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+// ── Compatibility Card ────────────────────────────────────────────────────
+
+class _CompatibilityCard extends ConsumerWidget {
+  final Color accent;
+  final WidgetRef ref;
+  const _CompatibilityCard({required this.accent, required this.ref});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statsAsync = ref.watch(compatibilityStatsProvider);
+
+    return GlassCard(
+      child: statsAsync.when(
+        loading: () => const Center(child: SizedBox(height: 60,
+            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))),
+        error: (_, _) => const SizedBox.shrink(),
+        data: (stats) {
+          final total = stats['total'] ?? 0;
+          final matched = stats['matched'] ?? 0;
+          final pct = total == 0 ? 0.0 : matched / total;
+          final pctInt = (pct * 100).round();
+
+          String label;
+          String emoji;
+          if (total == 0) {
+            label = 'Play Would You Rather to see your score!';
+            emoji = '🎯';
+          } else if (pctInt >= 80) {
+            label = 'You two are basically the same person 💕';
+            emoji = '💞';
+          } else if (pctInt >= 60) {
+            label = 'Beautifully compatible ✨';
+            emoji = '✨';
+          } else if (pctInt >= 40) {
+            label = 'Wonderfully different — opposites attract!';
+            emoji = '🤝';
+          } else {
+            label = 'You keep each other interesting 😄';
+            emoji = '🌟';
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(emoji, style: const TextStyle(fontSize: 28)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Compatibility Score',
+                            style: TextStyle(fontSize: 11, color: accent,
+                                fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                        const SizedBox(height: 2),
+                        Text(label, style: const TextStyle(
+                            fontSize: 13, color: AppColors.textSecondary, height: 1.3)),
+                      ],
+                    ),
+                  ),
+                  if (total > 0)
+                    Text('$pctInt%', style: TextStyle(
+                        fontSize: 28, fontWeight: FontWeight.w800, color: accent)),
+                ],
+              ),
+              if (total > 0) ...[
+                const SizedBox(height: 14),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: pct,
+                    minHeight: 8,
+                    backgroundColor: AppColors.divider,
+                    valueColor: AlwaysStoppedAnimation(accent),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text('Matched $matched of $total questions',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+              ],
+            ],
+          );
+        },
+      ),
     );
   }
 }

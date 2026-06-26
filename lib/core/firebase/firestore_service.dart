@@ -336,6 +336,109 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(RoomObject.fromDoc).toList());
 
+  // ── Typing indicator ─────────────────────────────────────────────────────
+
+  Future<void> setTyping(String coupleId, bool typing) => _db
+      .collection('couples').doc(coupleId)
+      .update({'typing.$_uid': typing ? Timestamp.now() : FieldValue.delete()});
+
+  Stream<bool> watchPartnerTyping(String coupleId, String partnerUid) => _db
+      .collection('couples').doc(coupleId)
+      .snapshots()
+      .map((d) {
+        final ts = d.data()?['typing']?[partnerUid];
+        if (ts == null) return false;
+        final t = (ts as Timestamp).toDate();
+        return DateTime.now().difference(t).inSeconds < 8;
+      });
+
+  Future<void> markMessagesRead(String coupleId, List<String> msgIds) async {
+    final batch = _db.batch();
+    for (final id in msgIds) {
+      batch.update(_db.collection('couples').doc(coupleId).collection('messages').doc(id),
+          {'readByPartner': true});
+    }
+    await batch.commit();
+  }
+
+  // ── Signals (extended) ────────────────────────────────────────────────────
+
+  Future<void> sendSignal(String coupleId, String type, {String? message}) => _db
+      .collection('couples').doc(coupleId).collection('signals').add({
+        'type': type,
+        'fromUid': _uid,
+        if (message != null) 'message': message,
+        'sentAt': FieldValue.serverTimestamp(),
+      });
+
+  // ── FCM token ─────────────────────────────────────────────────────────────
+
+  Future<void> saveFCMToken(String token) => _db
+      .collection('users').doc(_uid)
+      .update({'fcmToken': token});
+
+  // ── Truth Jar game ────────────────────────────────────────────────────────
+
+  Future<void> submitTruth(String coupleId, String date, String answer) async {
+    final ref = _db.collection('couples').doc(coupleId).collection('truths').doc(date);
+    final doc = await ref.get();
+    if (!doc.exists) {
+      await ref.set({_uid: answer});
+    } else {
+      await ref.update({_uid: answer});
+    }
+  }
+
+  Stream<Map<String, String>> watchTodayTruths(String coupleId) {
+    final today = _todayKey();
+    return _db.collection('couples').doc(coupleId).collection('truths').doc(today)
+        .snapshots()
+        .map((d) {
+          if (!d.exists) return {};
+          return Map<String, String>.from(
+            (d.data() as Map<String, dynamic>).map((k, v) => MapEntry(k, v as String)));
+        });
+  }
+
+  // ── Date Wheel ────────────────────────────────────────────────────────────
+
+  Future<void> setDateWheelResult(String coupleId, String weekKey, int index) => _db
+      .collection('couples').doc(coupleId).collection('dateWheel').doc(weekKey)
+      .set({'index': index, 'chosenAt': FieldValue.serverTimestamp()});
+
+  Stream<int?> watchDateWheelResult(String coupleId) {
+    final now = DateTime.now();
+    final weekKey = '${now.year}-W${_weekOfYear(now)}';
+    return _db.collection('couples').doc(coupleId).collection('dateWheel').doc(weekKey)
+        .snapshots()
+        .map((d) => d.exists ? (d.data() as Map)['index'] as int? : null);
+  }
+
+  int _weekOfYear(DateTime date) {
+    final startOfYear = DateTime(date.year, 1, 1);
+    return ((date.difference(startOfYear).inDays) / 7).ceil();
+  }
+
+  String get currentWeekKey {
+    final now = DateTime.now();
+    return '${now.year}-W${_weekOfYear(now)}';
+  }
+
+  // ── Compatibility score ───────────────────────────────────────────────────
+
+  Future<Map<String, int>> getCompatibilityStats(String coupleId) async {
+    final snap = await _db.collection('couples').doc(coupleId).collection('games').get();
+    int total = 0, matched = 0;
+    for (final doc in snap.docs) {
+      final picks = (doc.data()['picks'] as Map<String, dynamic>?) ?? {};
+      if (picks.length >= 2) {
+        total++;
+        if (picks.values.toSet().length == 1) matched++;
+      }
+    }
+    return {'total': total, 'matched': matched};
+  }
+
   // ── Games (Would You Rather) ──────────────────────────────────────────────
 
   Future<void> setTodayGame(String coupleId, GameRound game) => _db

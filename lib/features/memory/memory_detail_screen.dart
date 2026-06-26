@@ -37,7 +37,10 @@ class MemoryDetailScreen extends ConsumerWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          CachedNetworkImage(imageUrl: memory.imageUrl, fit: BoxFit.cover),
+          Hero(
+            tag: 'memory_${memory.id}',
+            child: CachedNetworkImage(imageUrl: memory.imageUrl, fit: BoxFit.cover),
+          ),
           if (memory.caption != null)
             Positioned(
               bottom: hasDeletion ? 108 : 0,

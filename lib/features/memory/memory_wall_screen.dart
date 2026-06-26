@@ -264,7 +264,9 @@ class _MemoryCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: ClipRRect(
+      child: Hero(
+        tag: 'memory_${memory.id}',
+        child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Stack(
           fit: StackFit.expand,
@@ -330,6 +332,7 @@ class _MemoryCard extends StatelessWidget {
           ],
         ),
       ),
+      ), // Hero
     );
   }
 }

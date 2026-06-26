@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,9 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
   await Firebase.initializeApp();
+  // Disable disk cache so switching accounts never causes stale-permission errors.
+  // This is a live-connection app — all data is streamed in real time.
+  FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);
   runApp(const ProviderScope(child: TwoHeartsApp()));
 }
 

@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,15 +40,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
           final data = snap.docs.first.data() as Map<String, dynamic>;
           final uid = FirebaseAuth.instance.currentUser?.uid;
           if (uid != null && data['fromUid'] != uid) {
+            final type = data['type'] as String? ?? 'thinkingOfYou';
             final message = data['message'] as String?;
-            _showHeart(message: message);
+            _showSignal(type: type, message: message);
           }
         }
       });
     });
   }
 
-  void _showHeart({String? message}) {
+  void _showSignal({required String type, String? message}) {
+    HapticFeedback.mediumImpact();
     setState(() {
       _heartVisible = true;
       _heartX = 0.3 + (0.4 * (DateTime.now().millisecond / 1000));
@@ -56,11 +59,19 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     Future.delayed(const Duration(seconds: 4), () {
       if (mounted) setState(() => _heartVisible = false);
     });
-    if (message != null && message.isNotEmpty && mounted) {
+
+    final (emoji, text) = switch (type) {
+      'goodMorning'  => ('☀️', 'Good morning from your person!'),
+      'goodNight'    => ('🌙', 'Good night — sweet dreams ♡'),
+      'gratitude'    => ('🙏', 'Your person is grateful for you today ♡'),
+      _              => ('♡', message ?? 'Thinking of you ♡'),
+    };
+
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Row(children: [
-          const Text('♡  ', style: TextStyle(fontSize: 16)),
-          Expanded(child: Text(message, style: const TextStyle(color: Colors.white))),
+          Text('$emoji  ', style: const TextStyle(fontSize: 18)),
+          Expanded(child: Text(text, style: const TextStyle(color: Colors.white))),
         ]),
         backgroundColor: AppColors.bgCard,
         behavior: SnackBarBehavior.floating,
@@ -70,6 +81,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
       ));
     }
   }
+
 
   void _sendThinkingOfYou() {
     final coupleId = ref.read(coupleIdProvider);
@@ -149,6 +161,13 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     final letters = ref.watch(lettersProvider).valueOrNull ?? [];
     final roomObjects = ref.watch(roomObjectsProvider).valueOrNull ?? [];
     final daysTogether = couple != null ? DateTime.now().difference(couple.createdAt).inDays : 0;
+
+    // On This Day: memories created on today's month/day in a prior year
+    final now = DateTime.now();
+    final onThisDay = memories.where((m) =>
+        m.createdAt.month == now.month &&
+        m.createdAt.day == now.day &&
+        m.createdAt.year < now.year).toList();
 
     return Scaffold(
       body: Stack(
@@ -231,9 +250,64 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                       ).animate().fadeIn(delay: 150.ms),
                       const SizedBox(height: 16),
 
+                      // On This Day banner
+                      if (onThisDay.isNotEmpty) ...[
+                        _OnThisDayBanner(memory: onThisDay.first, accent: accent)
+                            .animate().fadeIn(delay: 180.ms).slideY(begin: -0.05),
+                        const SizedBox(height: 16),
+                      ],
+
                       // Thinking of you — big hero button
                       _ThinkingOfYouButton(accent: accent, onTap: _sendThinkingOfYou)
                           .animate().fadeIn(delay: 200.ms).slideY(begin: 0.05),
+                      const SizedBox(height: 12),
+
+                      // Quick send row: Good Morning / Good Night / Gratitude
+                      _QuickSendRow(
+                        accent: accent,
+                        onMorning: () {
+                          HapticFeedback.lightImpact();
+                          final coupleId = ref.read(coupleIdProvider);
+                          if (coupleId == null) return;
+                          ref.read(firestoreServiceProvider)
+                              .sendSignal(coupleId, 'goodMorning').ignore();
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: const Text('☀️ Good morning sent!'),
+                            backgroundColor: AppColors.bgCard,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            margin: const EdgeInsets.all(16),
+                          ));
+                        },
+                        onNight: () {
+                          HapticFeedback.lightImpact();
+                          final coupleId = ref.read(coupleIdProvider);
+                          if (coupleId == null) return;
+                          ref.read(firestoreServiceProvider)
+                              .sendSignal(coupleId, 'goodNight').ignore();
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: const Text('🌙 Good night sent!'),
+                            backgroundColor: AppColors.bgCard,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            margin: const EdgeInsets.all(16),
+                          ));
+                        },
+                        onGratitude: () {
+                          HapticFeedback.lightImpact();
+                          final coupleId = ref.read(coupleIdProvider);
+                          if (coupleId == null) return;
+                          ref.read(firestoreServiceProvider)
+                              .sendSignal(coupleId, 'gratitude').ignore();
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: const Text('🙏 Gratitude sent!'),
+                            backgroundColor: AppColors.bgCard,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            margin: const EdgeInsets.all(16),
+                          ));
+                        },
+                      ).animate().fadeIn(delay: 220.ms),
                       const SizedBox(height: 16),
 
                       // Room objects
@@ -560,6 +634,7 @@ class _SettingsSheet extends ConsumerWidget {
           Center(child: Container(width: 36, height: 4, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 20),
           Text('Your colour', style: Theme.of(context).textTheme.titleLarge),
+
           const SizedBox(height: 16),
           Wrap(
             spacing: 12,
@@ -614,6 +689,129 @@ class _SettingsSheet extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── On This Day Banner ────────────────────────────────────────────────────
+
+class _OnThisDayBanner extends StatelessWidget {
+  final MemoryModel memory;
+  final Color accent;
+  const _OnThisDayBanner({required this.memory, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    final yearsAgo = DateTime.now().year - memory.createdAt.year;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withValues(alpha: 0.4)),
+        gradient: LinearGradient(
+          colors: [accent.withValues(alpha: 0.12), AppColors.bgCard],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.horizontal(left: Radius.circular(19)),
+            child: Image.network(
+              memory.imageUrl,
+              width: 80, height: 80,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Container(
+                width: 80, height: 80, color: AppColors.bgCard,
+                child: const Icon(Icons.photo_outlined, color: AppColors.textMuted),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  const Text('📅 ', style: TextStyle(fontSize: 14)),
+                  Text('$yearsAgo year${yearsAgo == 1 ? '' : 's'} ago today',
+                      style: TextStyle(color: accent, fontSize: 12,
+                          fontWeight: FontWeight.w600)),
+                ]),
+                const SizedBox(height: 4),
+                Text(
+                  memory.caption?.isNotEmpty == true ? memory.caption! : 'A memory from this day',
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Quick Send Row ────────────────────────────────────────────────────────
+
+class _QuickSendRow extends StatelessWidget {
+  final Color accent;
+  final VoidCallback onMorning;
+  final VoidCallback onNight;
+  final VoidCallback onGratitude;
+
+  const _QuickSendRow({
+    required this.accent,
+    required this.onMorning,
+    required this.onNight,
+    required this.onGratitude,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: _QuickBtn(emoji: '☀️', label: 'Morning', onTap: onMorning, accent: accent)),
+        const SizedBox(width: 8),
+        Expanded(child: _QuickBtn(emoji: '🌙', label: 'Night', onTap: onNight, accent: accent)),
+        const SizedBox(width: 8),
+        Expanded(child: _QuickBtn(emoji: '🙏', label: 'Grateful', onTap: onGratitude, accent: accent)),
+      ],
+    );
+  }
+}
+
+class _QuickBtn extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final VoidCallback onTap;
+  final Color accent;
+  const _QuickBtn({required this.emoji, required this.label,
+      required this.onTap, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.bgCard,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.divider, width: 0.5),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 22)),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 11)),
+          ],
+        ),
       ),
     );
   }

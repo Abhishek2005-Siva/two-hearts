@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -19,6 +20,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   bool _sending = false;
+  bool _isTyping = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTextChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
+  }
+
+  void _onTextChanged() {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
+    final typing = _controller.text.isNotEmpty;
+    if (typing != _isTyping) {
+      _isTyping = typing;
+      ref.read(firestoreServiceProvider).setTyping(coupleId, typing).ignore();
+    }
+  }
+
+  void _markRead() {
+    final coupleId = ref.read(coupleIdProvider);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final messages = ref.read(messagesProvider).valueOrNull;
+    if (coupleId == null || uid == null || messages == null) return;
+    final unread = messages
+        .where((m) => m.senderId != uid && !m.readByPartner)
+        .map((m) => m.id)
+        .toList();
+    if (unread.isNotEmpty) {
+      ref.read(firestoreServiceProvider).markMessagesRead(coupleId, unread).ignore();
+    }
+  }
 
   Future<void> _send() async {
     final text = _controller.text.trim();
@@ -27,7 +60,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
     _controller.clear();
+    _isTyping = false;
+    ref.read(firestoreServiceProvider).setTyping(coupleId, false).ignore();
     setState(() => _sending = true);
+    HapticFeedback.lightImpact();
     try {
       await ref.read(firestoreServiceProvider).sendMessage(
         coupleId,
@@ -53,6 +89,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   @override
+  void dispose() {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId != null) {
+      ref.read(firestoreServiceProvider).setTyping(coupleId, false).ignore();
+    }
+    _controller.removeListener(_onTextChanged);
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final authUser = FirebaseAuth.instance.currentUser;
     if (authUser == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -60,7 +108,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final messagesAsync = ref.watch(messagesProvider);
     final accent = ref.watch(accentColorProvider);
     final partner = ref.watch(partnerUserProvider).valueOrNull;
+    final isTyping = ref.watch(partnerTypingProvider).valueOrNull ?? false;
     final uid = authUser.uid;
+
+    // Mark newly arrived messages as read
+    ref.listen(messagesProvider, (_, next) {
+      if (next.valueOrNull != null) _markRead();
+    });
 
     return Scaffold(
       body: Container(
@@ -73,7 +127,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
         child: Column(
           children: [
-            _ChatAppBar(partner: partner, accent: accent),
+            _ChatAppBar(partner: partner, accent: accent, isTyping: isTyping),
             Expanded(
               child: messagesAsync.when(
                 loading: () => const Center(child: CircularProgressIndicator(color: AppColors.rose)),
@@ -90,13 +144,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               style: const TextStyle(fontSize: 44)),
                           const SizedBox(height: 14),
                           Text(
-                            isPermission
-                                ? 'Firestore access blocked'
-                                : 'Could not load messages',
-                            style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600),
+                            isPermission ? 'Firestore access blocked' : 'Could not load messages',
+                            style: const TextStyle(color: AppColors.textPrimary,
+                                fontSize: 16, fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -104,8 +154,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 ? 'Go to Firebase Console → Firestore → Rules and paste the firestore.rules from the repo, then click Publish.'
                                 : e.toString(),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: AppColors.textSecondary, fontSize: 13, height: 1.5),
+                            style: const TextStyle(color: AppColors.textSecondary,
+                                fontSize: 13, height: 1.5),
                           ),
                         ],
                       ),
@@ -134,7 +184,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       msg: messages[i],
                       isMe: messages[i].senderId == uid,
                       accent: accent,
-                    ).animate().fadeIn(delay: Duration(milliseconds: i < 10 ? i * 30 : 0)),
+                      onReact: (emoji) {
+                        HapticFeedback.selectionClick();
+                        final coupleId = ref.read(coupleIdProvider);
+                        if (coupleId == null) return;
+                        ref.read(firestoreServiceProvider)
+                            .reactToMessage(coupleId, messages[i].id, emoji).ignore();
+                      },
+                    ).animate().fadeIn(delay: Duration(milliseconds: i < 10 ? i * 20 : 0)),
                   );
                 },
               ),
@@ -152,10 +209,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 }
 
+// ── App Bar ───────────────────────────────────────────────────────────────
+
 class _ChatAppBar extends StatelessWidget {
   final dynamic partner;
   final Color accent;
-  const _ChatAppBar({this.partner, required this.accent});
+  final bool isTyping;
+  const _ChatAppBar({this.partner, required this.accent, required this.isTyping});
 
   @override
   Widget build(BuildContext context) {
@@ -163,27 +223,24 @@ class _ChatAppBar extends StatelessWidget {
       bottom: false,
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: AppColors.bgMid,
-          border: const Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+          border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
         ),
         child: Row(
           children: [
             Container(
-              width: 42,
-              height: 42,
+              width: 42, height: 42,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [accent, AppColors.coral],
-                ),
+                gradient: LinearGradient(colors: [accent, AppColors.coral]),
               ),
               child: Center(
                 child: Text(
                   partner?.displayName.isNotEmpty == true
-                      ? partner!.displayName[0].toUpperCase()
-                      : '♡',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                      ? partner!.displayName[0].toUpperCase() : '♡',
+                  style: const TextStyle(color: Colors.white,
+                      fontWeight: FontWeight.bold, fontSize: 18),
                 ),
               ),
             ),
@@ -192,11 +249,28 @@ class _ChatAppBar extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    partner?.displayName ?? 'Your person',
-                    style: Theme.of(context).textTheme.titleMedium,
+                  Text(partner?.displayName ?? 'Your person',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: isTyping
+                        ? Row(
+                            key: const ValueKey('typing'),
+                            children: [
+                              _TypingDot(delay: 0),
+                              _TypingDot(delay: 150),
+                              _TypingDot(delay: 300),
+                              const SizedBox(width: 6),
+                              const Text('typing…',
+                                  style: TextStyle(
+                                      color: AppColors.rose, fontSize: 12,
+                                      fontStyle: FontStyle.italic)),
+                            ],
+                          )
+                        : Text('Just for you two',
+                            key: const ValueKey('idle'),
+                            style: Theme.of(context).textTheme.bodyMedium),
                   ),
-                  Text('Just for you two', style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
             ),
@@ -207,12 +281,67 @@ class _ChatAppBar extends StatelessWidget {
   }
 }
 
+class _TypingDot extends StatelessWidget {
+  final int delay;
+  const _TypingDot({required this.delay});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 5, height: 5,
+      margin: const EdgeInsets.only(right: 3),
+      decoration: const BoxDecoration(color: AppColors.rose, shape: BoxShape.circle),
+    ).animate(onPlay: (c) => c.repeat())
+        .fadeIn(delay: Duration(milliseconds: delay), duration: 400.ms)
+        .then().fadeOut(duration: 400.ms);
+  }
+}
+
+// ── Message Bubble ────────────────────────────────────────────────────────
+
 class _MessageBubble extends StatelessWidget {
   final MessageModel msg;
   final bool isMe;
   final Color accent;
+  final void Function(String emoji) onReact;
 
-  const _MessageBubble({required this.msg, required this.isMe, required this.accent});
+  const _MessageBubble({
+    required this.msg, required this.isMe,
+    required this.accent, required this.onReact,
+  });
+
+  void _showReactionPicker(BuildContext context) {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.bgCard,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('React', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: ['❤️', '😂', '😢', '😮', '🔥', '💕', '🥺', '✨']
+                  .map((e) => GestureDetector(
+                        onTap: () { Navigator.pop(context); onReact(e); },
+                        child: Text(e, style: const TextStyle(fontSize: 28)),
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -227,37 +356,47 @@ class _MessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-              decoration: BoxDecoration(
-                gradient: isMe
-                    ? LinearGradient(colors: [accent, AppColors.coral])
-                    : null,
-                color: isMe ? null : AppColors.bgCard,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(20),
-                  topRight: const Radius.circular(20),
-                  bottomLeft: Radius.circular(isMe ? 20 : 4),
-                  bottomRight: Radius.circular(isMe ? 4 : 20),
+            GestureDetector(
+              onLongPress: () => _showReactionPicker(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                decoration: BoxDecoration(
+                  gradient: isMe ? LinearGradient(colors: [accent, AppColors.coral]) : null,
+                  color: isMe ? null : AppColors.bgCard,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(20),
+                    topRight: const Radius.circular(20),
+                    bottomLeft: Radius.circular(isMe ? 20 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 20),
+                  ),
+                  border: isMe ? null : Border.all(color: AppColors.divider, width: 0.5),
+                  boxShadow: isMe
+                      ? [BoxShadow(color: accent.withValues(alpha: 0.3),
+                            blurRadius: 12, offset: const Offset(0, 4))]
+                      : null,
                 ),
-                border: isMe ? null : Border.all(color: AppColors.divider, width: 0.5),
-                boxShadow: isMe
-                    ? [BoxShadow(color: accent.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))]
-                    : null,
-              ),
-              child: Text(
-                msg.content,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: isMe ? Colors.white : AppColors.textPrimary,
-                  height: 1.4,
+                child: Text(
+                  msg.content,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: isMe ? Colors.white : AppColors.textPrimary,
+                    height: 1.4,
+                  ),
                 ),
               ),
             ),
             if (msg.reactionEmoji != null)
               Padding(
                 padding: const EdgeInsets.only(top: 3),
-                child: Text(msg.reactionEmoji!, style: const TextStyle(fontSize: 16)),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.bgCard,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.divider, width: 0.5),
+                  ),
+                  child: Text(msg.reactionEmoji!, style: const TextStyle(fontSize: 14)),
+                ),
               ),
             Padding(
               padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
@@ -286,6 +425,8 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
+// ── Chat Input ────────────────────────────────────────────────────────────
+
 class _ChatInput extends StatelessWidget {
   final TextEditingController controller;
   final bool sending;
@@ -293,19 +434,15 @@ class _ChatInput extends StatelessWidget {
   final VoidCallback onSend;
 
   const _ChatInput({
-    required this.controller,
-    required this.sending,
-    required this.accent,
-    required this.onSend,
+    required this.controller, required this.sending,
+    required this.accent, required this.onSend,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.only(
-        left: 16, right: 12, top: 10,
-        bottom: MediaQuery.of(context).padding.bottom + 10,
-      ),
+      padding: EdgeInsets.fromLTRB(16, 10, 16,
+          MediaQuery.of(context).padding.bottom + 10),
       decoration: const BoxDecoration(
         color: AppColors.bgMid,
         border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
@@ -322,15 +459,16 @@ class _ChatInput extends StatelessWidget {
               child: TextField(
                 controller: controller,
                 style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                maxLines: 4,
+                minLines: 1,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => onSend(),
                 decoration: const InputDecoration(
                   hintText: 'Say something sweet…',
                   hintStyle: TextStyle(color: AppColors.textMuted),
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
-                maxLines: null,
-                textCapitalization: TextCapitalization.sentences,
-                onSubmitted: (_) => onSend(),
               ),
             ),
           ),
@@ -339,19 +477,21 @@ class _ChatInput extends StatelessWidget {
             onTap: sending ? null : onSend,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              width: 46,
-              height: 46,
+              width: 46, height: 46,
               decoration: BoxDecoration(
-                gradient: sending
-                    ? null
-                    : LinearGradient(colors: [accent, AppColors.coral]),
-                color: sending ? AppColors.bgCard : null,
+                gradient: LinearGradient(colors: [accent, AppColors.coral]),
                 shape: BoxShape.circle,
-                boxShadow: sending
-                    ? null
-                    : [BoxShadow(color: accent.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
+                boxShadow: [
+                  BoxShadow(color: accent.withValues(alpha: 0.4),
+                      blurRadius: 12, offset: const Offset(0, 4)),
+                ],
               ),
-              child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+              child: sending
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
             ),
           ),
         ],

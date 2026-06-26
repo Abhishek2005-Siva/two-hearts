@@ -118,3 +118,39 @@ final todayGameProvider = StreamProvider<GameRound?>((ref) {
   if (coupleId == null) return const Stream.empty();
   return ref.read(firestoreServiceProvider).watchTodayGame(coupleId);
 });
+
+// ── Partner typing indicator ──────────────────────────────────────────────
+
+final partnerTypingProvider = StreamProvider<bool>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final couple = ref.watch(coupleProvider).valueOrNull;
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  if (coupleId == null || couple == null || me == null) return Stream.value(false);
+  final partnerUid = couple.partnerUid(me.uid);
+  if (partnerUid.isEmpty) return Stream.value(false);
+  return ref.read(firestoreServiceProvider).watchPartnerTyping(coupleId, partnerUid);
+});
+
+// ── Today's Truths (Truth Jar) ────────────────────────────────────────────
+
+final todayTruthsProvider = StreamProvider<Map<String, String>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return Stream.value({});
+  return ref.read(firestoreServiceProvider).watchTodayTruths(coupleId);
+});
+
+// ── Date Wheel result ─────────────────────────────────────────────────────
+
+final dateWheelProvider = StreamProvider<int?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return Stream.value(null);
+  return ref.read(firestoreServiceProvider).watchDateWheelResult(coupleId);
+});
+
+// ── Compatibility stats ───────────────────────────────────────────────────
+
+final compatibilityStatsProvider = FutureProvider<Map<String, int>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return Future.value({'total': 0, 'matched': 0});
+  return ref.read(firestoreServiceProvider).getCompatibilityStats(coupleId);
+});
