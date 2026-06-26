@@ -46,7 +46,7 @@ class YouAndMeScreen extends ConsumerWidget {
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
 
-                    // Mood match banner when both have set a mood
+                    // Mood match banner
                     if (bothHaveMood) ...[
                       _MoodMatchCard(
                         myMood: myMood.mood,
@@ -57,7 +57,7 @@ class YouAndMeScreen extends ConsumerWidget {
                       const SizedBox(height: 20),
                     ],
 
-                    // My mood picker
+                    // Mood picker
                     _SectionLabel(label: 'HOW ARE YOU FEELING?'),
                     const SizedBox(height: 10),
                     GlassCard(
@@ -73,7 +73,7 @@ class YouAndMeScreen extends ConsumerWidget {
                     ).animate().fadeIn(),
                     const SizedBox(height: 20),
 
-                    // Partner mood display
+                    // Partner mood
                     if (partner != null) ...[
                       _SectionLabel(
                           label: '${partner.displayName.split(' ').first.toUpperCase()}\'S VIBE'),
@@ -83,8 +83,7 @@ class YouAndMeScreen extends ConsumerWidget {
                             ? Row(
                                 children: [
                                   Container(
-                                    width: 64,
-                                    height: 64,
+                                    width: 64, height: 64,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       color: AppColors.bgCard,
@@ -119,49 +118,21 @@ class YouAndMeScreen extends ConsumerWidget {
                       const SizedBox(height: 20),
                     ],
 
-                    // Profile card (no level)
+                    // Profile / personal details
                     _SectionLabel(label: 'YOUR PROFILE'),
                     const SizedBox(height: 10),
-                    GlassCard(
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(colors: [accent, AppColors.coral]),
-                              boxShadow: [
-                                BoxShadow(color: accent.withValues(alpha: 0.4),
-                                    blurRadius: 12, offset: const Offset(0, 4)),
-                              ],
-                            ),
-                            child: Center(
-                              child: Text(
-                                me?.displayName.isNotEmpty == true
-                                    ? me!.displayName[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(
-                                    fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(me?.displayName ?? '',
-                                    style: Theme.of(context).textTheme.titleMedium),
-                                const SizedBox(height: 2),
-                                Text(me?.email ?? '',
-                                    style: Theme.of(context).textTheme.bodyMedium),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ).animate().fadeIn(delay: 200.ms),
+                    _ProfileCard(me: me, accent: accent, ref: ref)
+                        .animate().fadeIn(delay: 200.ms),
+                    const SizedBox(height: 20),
+
+                    // Partner details (read-only)
+                    if (partner != null) ...[
+                      _SectionLabel(
+                          label: '${partner.displayName.split(' ').first.toUpperCase()}\'S DETAILS'),
+                      const SizedBox(height: 10),
+                      _PartnerDetailsCard(partner: partner, accent: accent)
+                          .animate().fadeIn(delay: 250.ms),
+                    ],
                   ]),
                 ),
               ),
@@ -178,6 +149,222 @@ class YouAndMeScreen extends ConsumerWidget {
     if (diff.inHours < 1) return '${diff.inMinutes}m ago';
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     return '${diff.inDays}d ago';
+  }
+}
+
+// ── Profile Card ──────────────────────────────────────────────────────────
+
+class _ProfileCard extends StatelessWidget {
+  final UserModel? me;
+  final Color accent;
+  final WidgetRef ref;
+  const _ProfileCard({required this.me, required this.accent, required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final birthday = me?.birthday;
+    final age = birthday != null ? _calcAge(birthday) : null;
+
+    return GlassCard(
+      child: Column(
+        children: [
+          // Avatar + name row
+          Row(
+            children: [
+              Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(colors: [accent, AppColors.coral]),
+                  boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.4),
+                      blurRadius: 12, offset: const Offset(0, 4))],
+                ),
+                child: Center(
+                  child: Text(
+                    me?.displayName.isNotEmpty == true
+                        ? me!.displayName[0].toUpperCase() : '?',
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(me?.displayName ?? '',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text(me?.email ?? '',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(color: AppColors.divider, height: 1),
+          const SizedBox(height: 14),
+
+          // Birthday row
+          _DetailRow(
+            icon: Icons.cake_outlined,
+            label: 'Birthday',
+            value: birthday != null
+                ? '${_monthName(birthday.month)} ${birthday.day}'
+                    '${age != null ? '  (${age}y)' : ''}'
+                : 'Tap to set',
+            missing: birthday == null,
+            accent: accent,
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: birthday ?? DateTime(DateTime.now().year - 20),
+                firstDate: DateTime(1900),
+                lastDate: DateTime.now(),
+                helpText: 'Select your birthday',
+                builder: (ctx, child) => Theme(
+                  data: _pickerTheme(ctx, accent),
+                  child: child!,
+                ),
+              );
+              if (picked != null) {
+                await ref.read(firestoreServiceProvider).updateBirthday(picked);
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Partner Details Card ──────────────────────────────────────────────────
+
+class _PartnerDetailsCard extends StatelessWidget {
+  final UserModel partner;
+  final Color accent;
+  const _PartnerDetailsCard({required this.partner, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    final birthday = partner.birthday;
+    final age = birthday != null ? _calcAge(birthday) : null;
+    final daysUntil = partner.nextBirthday != null
+        ? DateTime.now().difference(partner.nextBirthday!).inDays.abs()
+        : null;
+
+    return GlassCard(
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.lavender.withValues(alpha: 0.2),
+                  border: Border.all(color: AppColors.lavender.withValues(alpha: 0.4)),
+                ),
+                child: Center(
+                  child: Text(
+                    partner.displayName.isNotEmpty ? partner.displayName[0].toUpperCase() : '?',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                        color: AppColors.lavender),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(partner.displayName,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary)),
+            ],
+          ),
+          if (birthday != null) ...[
+            const SizedBox(height: 12),
+            const Divider(color: AppColors.divider, height: 1),
+            const SizedBox(height: 12),
+            _DetailRow(
+              icon: Icons.cake_outlined,
+              label: 'Birthday',
+              value: '${_monthName(birthday.month)} ${birthday.day}'
+                  '${age != null ? '  (${age}y)' : ''}'
+                  '${daysUntil != null && daysUntil <= 30 ? '  🎉 ${daysUntil}d away!' : ''}',
+              accent: AppColors.lavender,
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: AppColors.textMuted, size: 16),
+                const SizedBox(width: 8),
+                Text('${partner.displayName.split(' ').first} hasn\'t set their birthday yet',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Detail Row ────────────────────────────────────────────────────────────
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool missing;
+  final Color accent;
+  final VoidCallback? onTap;
+
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.missing = false,
+    required this.accent,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 38, height: 38,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: accent, size: 18),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                const SizedBox(height: 2),
+                Text(value,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: missing ? AppColors.textMuted : AppColors.textPrimary,
+                      fontStyle: missing ? FontStyle.italic : FontStyle.normal,
+                    )),
+              ],
+            ),
+          ),
+          if (onTap != null)
+            Icon(Icons.edit_outlined, color: accent.withValues(alpha: 0.7), size: 16),
+        ],
+      ),
+    );
   }
 }
 
@@ -208,8 +395,7 @@ class _MoodMatchCard extends StatelessWidget {
           colors: matched
               ? [accent.withValues(alpha: 0.25), AppColors.rose.withValues(alpha: 0.15)]
               : [AppColors.bgCard.withValues(alpha: 0.9), AppColors.bgMid.withValues(alpha: 0.8)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
@@ -238,11 +424,9 @@ class _MoodMatchCard extends StatelessWidget {
               color: Colors.black.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Text(
-              message,
-              style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.4),
-              textAlign: TextAlign.center,
-            ),
+            child: Text(message,
+                style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.4),
+                textAlign: TextAlign.center),
           ),
         ],
       ),
@@ -254,7 +438,6 @@ class _MoodBubble extends StatelessWidget {
   final MoodType mood;
   final String label;
   final Color accent;
-
   const _MoodBubble({required this.mood, required this.label, required this.accent});
 
   @override
@@ -262,8 +445,7 @@ class _MoodBubble extends StatelessWidget {
     return Column(
       children: [
         Container(
-          width: 64,
-          height: 64,
+          width: 64, height: 64,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: AppColors.bgCard,
@@ -274,7 +456,8 @@ class _MoodBubble extends StatelessWidget {
         const SizedBox(height: 6),
         Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
         Text(mood.label,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary)),
       ],
     );
   }
@@ -289,8 +472,7 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(label,
-        style: const TextStyle(
-            fontSize: 10, fontWeight: FontWeight.bold,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold,
             color: AppColors.textMuted, letterSpacing: 1.5));
   }
 }
@@ -301,7 +483,6 @@ class _MoodPicker extends StatelessWidget {
   final MoodType? current;
   final Color accent;
   final void Function(MoodType) onSelect;
-
   const _MoodPicker({this.current, required this.accent, required this.onSelect});
 
   @override
@@ -318,7 +499,8 @@ class _MoodPicker extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               gradient: selected
-                  ? LinearGradient(colors: [accent.withValues(alpha: 0.3), AppColors.coral.withValues(alpha: 0.2)])
+                  ? LinearGradient(colors: [accent.withValues(alpha: 0.3),
+                      AppColors.coral.withValues(alpha: 0.2)])
                   : null,
               color: selected ? null : AppColors.bgCardLight,
               borderRadius: BorderRadius.circular(20),
@@ -327,20 +509,21 @@ class _MoodPicker extends StatelessWidget {
                 width: selected ? 1.5 : 0.5,
               ),
               boxShadow: selected
-                  ? [BoxShadow(color: accent.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 2))]
+                  ? [BoxShadow(color: accent.withValues(alpha: 0.25),
+                      blurRadius: 8, offset: const Offset(0, 2))]
                   : null,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(mood.emoji,
-                    style: TextStyle(fontSize: selected ? 22 : 20)),
+                Text(mood.emoji, style: TextStyle(fontSize: selected ? 22 : 20)),
                 const SizedBox(width: 6),
                 Text(mood.label,
                     style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                        color: selected ? AppColors.textPrimary : AppColors.textSecondary)),
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                      color: selected ? AppColors.textPrimary : AppColors.textSecondary,
+                    )),
               ],
             ),
           ),
@@ -348,4 +531,35 @@ class _MoodPicker extends StatelessWidget {
       }).toList(),
     );
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+int _calcAge(DateTime birthday) {
+  final now = DateTime.now();
+  int age = now.year - birthday.year;
+  if (now.month < birthday.month ||
+      (now.month == birthday.month && now.day < birthday.day)) {
+    age--;
+  }
+  return age;
+}
+
+String _monthName(int month) {
+  const months = [
+    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return months[month];
+}
+
+ThemeData _pickerTheme(BuildContext context, Color accent) {
+  return Theme.of(context).copyWith(
+    colorScheme: ColorScheme.dark(
+      primary: accent,
+      onPrimary: Colors.white,
+      surface: AppColors.bgCard,
+      onSurface: AppColors.textPrimary,
+    ),
+  );
 }

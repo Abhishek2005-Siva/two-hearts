@@ -8,6 +8,7 @@ class UserModel {
   final String email;
   final String? avatarUrl;
   final String? coupleId;
+  final DateTime? birthday;
 
   const UserModel({
     required this.uid,
@@ -15,6 +16,7 @@ class UserModel {
     required this.email,
     this.avatarUrl,
     this.coupleId,
+    this.birthday,
   });
 
   factory UserModel.fromDoc(DocumentSnapshot doc) {
@@ -25,6 +27,7 @@ class UserModel {
       email: d['email'] ?? '',
       avatarUrl: d['avatarUrl'],
       coupleId: d['coupleId'],
+      birthday: (d['birthday'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -33,16 +36,27 @@ class UserModel {
         'email': email,
         'avatarUrl': avatarUrl,
         'coupleId': coupleId,
+        'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
       };
 
-  UserModel copyWith({String? displayName, String? avatarUrl, String? coupleId}) =>
+  UserModel copyWith({String? displayName, String? avatarUrl, String? coupleId, DateTime? birthday}) =>
       UserModel(
         uid: uid,
         displayName: displayName ?? this.displayName,
         email: email,
         avatarUrl: avatarUrl ?? this.avatarUrl,
         coupleId: coupleId ?? this.coupleId,
+        birthday: birthday ?? this.birthday,
       );
+
+  // Returns the next upcoming birthday from today
+  DateTime? get nextBirthday {
+    if (birthday == null) return null;
+    final now = DateTime.now();
+    var next = DateTime(now.year, birthday!.month, birthday!.day);
+    if (!next.isAfter(now)) next = DateTime(now.year + 1, birthday!.month, birthday!.day);
+    return next;
+  }
 }
 
 // ──────────────── Couple ────────────────

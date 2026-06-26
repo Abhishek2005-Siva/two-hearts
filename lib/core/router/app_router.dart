@@ -63,7 +63,12 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/auth', builder: (_, _) => const AuthScreen()),
-      GoRoute(path: '/pair', builder: (_, _) => const PairingScreen()),
+      GoRoute(
+        path: '/pair',
+        builder: (_, state) => PairingScreen(
+          initialCode: state.uri.queryParameters['code'],
+        ),
+      ),
       GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
       ShellRoute(
         builder: (context, state, child) => MainShell(child: child),

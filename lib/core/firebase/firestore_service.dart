@@ -33,6 +33,11 @@ class FirestoreService {
   Future<void> updateUser(Map<String, dynamic> data) =>
       _db.collection('users').doc(_uid).update(data);
 
+  Future<void> updateBirthday(DateTime birthday) =>
+      _db.collection('users').doc(_uid).update({
+        'birthday': Timestamp.fromDate(birthday),
+      });
+
   // ── Couple / Pairing ──────────────────────────────────────────────────────
 
   String _generateInviteCode() {

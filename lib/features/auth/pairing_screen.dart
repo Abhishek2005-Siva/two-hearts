@@ -3,13 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/firebase/firestore_service.dart';
 import '../../core/firebase/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/app_logo.dart';
 
 class PairingScreen extends ConsumerStatefulWidget {
-  const PairingScreen({super.key});
+  /// Pre-filled code from a deep link (twohearts:///pair?code=XXXXXX)
+  final String? initialCode;
+  const PairingScreen({super.key, this.initialCode});
 
   @override
   ConsumerState<PairingScreen> createState() => _PairingScreenState();
@@ -18,9 +21,25 @@ class PairingScreen extends ConsumerStatefulWidget {
 class _PairingScreenState extends ConsumerState<PairingScreen> {
   bool _loading = false;
   String? _generatedCode;
-  final _codeController = TextEditingController();
+  late final TextEditingController _codeController;
   String? _error;
   bool _showJoin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _codeController = TextEditingController(text: widget.initialCode ?? '');
+    // If we received a code from a deep link, jump straight to the join view
+    if (widget.initialCode != null && widget.initialCode!.isNotEmpty) {
+      _showJoin = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    super.dispose();
+  }
 
   Future<void> _createCode() async {
     setState(() { _loading = true; _error = null; });
@@ -60,7 +79,10 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
         setState(() => _error = 'Code not found or already used.');
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      final msg = e.toString();
+      setState(() => _error = msg.contains('PERMISSION_DENIED')
+          ? 'Invalid code. Make sure you typed it correctly.'
+          : msg);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -69,6 +91,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
           Container(
@@ -81,7 +104,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
             ),
           ),
           SafeArea(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -101,22 +124,22 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                       style: Theme.of(context).textTheme.bodyMedium)
                       .animate().fadeIn(delay: 200.ms),
                   const SizedBox(height: 40),
-                  Expanded(
-                    child: _generatedCode != null
-                        ? _CodeDisplay(code: _generatedCode!)
-                        : _showJoin
-                            ? _JoinView(
-                                controller: _codeController,
-                                loading: _loading,
-                                error: _error,
-                                onRedeem: _redeemCode,
-                              )
-                            : _ChoiceView(
-                                loading: _loading,
-                                onCreate: _createCode,
-                                onJoin: () => setState(() => _showJoin = true),
-                              ),
-                  ),
+                  if (_generatedCode != null)
+                    _CodeDisplay(code: _generatedCode!)
+                  else if (_showJoin)
+                    _JoinView(
+                      controller: _codeController,
+                      loading: _loading,
+                      error: _error,
+                      onRedeem: _redeemCode,
+                    )
+                  else
+                    _ChoiceView(
+                      loading: _loading,
+                      onCreate: _createCode,
+                      onJoin: () => setState(() => _showJoin = true),
+                    ),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -126,6 +149,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     );
   }
 }
+
+// ── Choice ────────────────────────────────────────────────────────────────
 
 class _ChoiceView extends StatelessWidget {
   final bool loading;
@@ -167,7 +192,8 @@ class _OptionCard extends StatelessWidget {
   final String subtitle;
   final List<Color> gradient;
   final VoidCallback? onTap;
-  const _OptionCard({required this.icon, required this.title, required this.subtitle, required this.gradient, this.onTap});
+  const _OptionCard({required this.icon, required this.title, required this.subtitle,
+      required this.gradient, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -187,7 +213,8 @@ class _OptionCard extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: LinearGradient(colors: gradient),
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: gradient[0].withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
+                boxShadow: [BoxShadow(color: gradient[0].withValues(alpha: 0.4),
+                    blurRadius: 12, offset: const Offset(0, 4))],
               ),
               child: Icon(icon, color: Colors.white, size: 22),
             ),
@@ -210,18 +237,39 @@ class _OptionCard extends StatelessWidget {
   }
 }
 
+// ── Code Display ──────────────────────────────────────────────────────────
+
 class _CodeDisplay extends StatelessWidget {
   final String code;
   const _CodeDisplay({required this.code});
 
+  Future<void> _shareWhatsApp(BuildContext context, String code) async {
+    final link = 'twohearts:///pair?code=$code';
+    final text = Uri.encodeComponent(
+      'Join me on Two Hearts 💕\n\n'
+      'Tap this link to connect automatically:\n$link\n\n'
+      'Or open Two Hearts → Pair → Enter Code: $code',
+    );
+
+    final waUri = Uri.parse('whatsapp://send?text=$text');
+    if (await canLaunchUrl(waUri)) {
+      await launchUrl(waUri);
+    } else {
+      // WhatsApp not installed — fall back to system share sheet
+      final shareUri = Uri.parse('https://wa.me/?text=$text');
+      await launchUrl(shareUri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(28),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Share this code', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+          const Text('Share this code',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
           const SizedBox(height: 20),
           ShaderMask(
             shaderCallback: (bounds) => const LinearGradient(
@@ -236,9 +284,38 @@ class _CodeDisplay extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
+
+          // WhatsApp share button
+          GestureDetector(
+            onTap: () => _shareWhatsApp(context, code),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF25D366),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(color: const Color(0xFF25D366).withValues(alpha: 0.4),
+                      blurRadius: 12, offset: const Offset(0, 4)),
+                ],
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                  SizedBox(width: 10),
+                  Text('Share via WhatsApp',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600,
+                          fontSize: 15)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Copy code button
           GradientButton(
             label: 'Copy Code',
-            width: 180,
             onTap: () {
               Clipboard.setData(ClipboardData(text: code));
               ScaffoldMessenger.of(context).showSnackBar(
@@ -255,9 +332,11 @@ class _CodeDisplay extends StatelessWidget {
           const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SizedBox(width: 8, height: 8, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose)),
+              SizedBox(width: 8, height: 8,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose)),
               SizedBox(width: 10),
-              Text('Waiting for your partner…', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+              Text('Waiting for your partner…',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             ],
           ),
         ],
@@ -266,12 +345,15 @@ class _CodeDisplay extends StatelessWidget {
   }
 }
 
+// ── Join View ─────────────────────────────────────────────────────────────
+
 class _JoinView extends StatelessWidget {
   final TextEditingController controller;
   final bool loading;
   final String? error;
   final VoidCallback onRedeem;
-  const _JoinView({required this.controller, required this.loading, this.error, required this.onRedeem});
+  const _JoinView({required this.controller, required this.loading,
+      this.error, required this.onRedeem});
 
   @override
   Widget build(BuildContext context) {
