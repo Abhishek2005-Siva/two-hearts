@@ -16,7 +16,7 @@ class FirestoreService {
   // ── User ──────────────────────────────────────────────────────────────────
 
   Future<void> createUser(UserModel user) =>
-      _db.collection('users').doc(user.uid).set(user.toMap());
+      _db.collection('users').doc(user.uid).set(user.toMap(), SetOptions(merge: true));
 
   Future<UserModel?> getUser(String uid) async {
     final doc = await _db.collection('users').doc(uid).get();

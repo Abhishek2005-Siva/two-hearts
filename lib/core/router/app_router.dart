@@ -14,23 +14,27 @@ import '../../features/you_and_me/you_and_me_screen.dart';
 import '../../features/together/letter_compose_screen.dart';
 import '../../features/together/journal_screen.dart';
 import '../../features/memory/memory_detail_screen.dart';
+import '../firebase/models.dart';
 import '../providers/providers.dart';
 import '../shell/main_shell.dart';
 
-// Notifier that fires whenever auth state or coupleId changes,
-// so GoRouter re-evaluates its redirect without recreating the router instance.
+// Notifier that fires whenever auth or couple state changes so GoRouter
+// re-evaluates its redirect without recreating the router instance.
 class _RouterNotifier extends ChangeNotifier {
-  String? _coupleId;
+  bool _isPaired = false; // true only when couple.members.length >= 2
 
   _RouterNotifier(Ref ref) {
     FirebaseAuth.instance.authStateChanges().listen((_) => notifyListeners());
-    ref.listen<String?>(coupleIdProvider, (_, next) {
-      _coupleId = next;
-      notifyListeners();
+    ref.listen<AsyncValue<CoupleModel?>>(coupleProvider, (_, next) {
+      final paired = (next.valueOrNull?.members.length ?? 0) >= 2;
+      if (paired != _isPaired) {
+        _isPaired = paired;
+        notifyListeners();
+      }
     });
   }
 
-  String? get coupleId => _coupleId;
+  bool get isPaired => _isPaired;
 }
 
 final _routerNotifierProvider = Provider<_RouterNotifier>((ref) {
@@ -45,14 +49,14 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshListenable: notifier,
     redirect: (context, state) {
       final isAuth = FirebaseAuth.instance.currentUser != null;
-      final hasCoupleId = notifier.coupleId != null;
+      final isPaired = notifier.isPaired;
 
       final onAuth = state.matchedLocation.startsWith('/auth') ||
           state.matchedLocation.startsWith('/pair') ||
           state.matchedLocation.startsWith('/onboarding');
 
       if (!isAuth) return onAuth ? null : '/auth';
-      if (isAuth && !hasCoupleId) return onAuth ? null : '/pair';
+      if (isAuth && !isPaired) return onAuth ? null : '/pair';
       if (onAuth) return '/room';
       return null;
     },
