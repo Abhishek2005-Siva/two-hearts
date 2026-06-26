@@ -28,6 +28,16 @@ jobs:
         run: |
           echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > android/app/google-services.json
 
+      - name: Deploy Firestore rules
+        if: ${{ secrets.FIREBASE_TOKEN != '' }}
+        run: |
+          npm install -g firebase-tools
+          firebase deploy --only firestore:rules,firestore:indexes \
+            --project two-hearts-fee27 \
+            --token "${{ secrets.FIREBASE_TOKEN }}" \
+            --non-interactive
+        continue-on-error: true
+
       - name: Install dependencies
         run: flutter pub get
 

@@ -6,6 +6,7 @@ import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/app_logo.dart';
+import '../../shared/widgets/character_avatar.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   const RoomScreen({super.key});
@@ -195,7 +196,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
           if (_heartVisible)
             AnimatedBuilder(
               animation: _heartCtrl,
-              builder: (_, __) {
+              builder: (_, _) {
                 final t = _heartCtrl.value;
                 return Positioned(
                   left: MediaQuery.of(context).size.width * _heartX,
@@ -237,67 +238,48 @@ class _AvatarCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Expanded(child: _Avatar(user: me, accent: accent, isMe: true)),
+          Expanded(child: _CharCol(user: me, color: accent, isMe: true)),
           Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              TwoHeartsLogo(size: 32),
+              const TwoHeartsLogo(size: 30),
               const SizedBox(height: 4),
-              Text('together', style: TextStyle(fontSize: 10, color: accent, letterSpacing: 1)),
+              Text('together',
+                  style: TextStyle(fontSize: 10, color: accent, letterSpacing: 1)),
             ],
           ),
-          Expanded(child: _Avatar(user: partner, accent: accent, isMe: false)),
+          Expanded(
+            child: _CharCol(user: partner, color: AppColors.lavender, isMe: false),
+          ),
         ],
       ),
     );
   }
 }
 
-class _Avatar extends StatelessWidget {
+class _CharCol extends StatelessWidget {
   final dynamic user;
-  final Color accent;
+  final Color color;
   final bool isMe;
-  const _Avatar({this.user, required this.accent, required this.isMe});
+  const _CharCol({this.user, required this.color, required this.isMe});
 
   @override
   Widget build(BuildContext context) {
+    final name = user?.displayName as String? ?? (isMe ? 'You' : '?');
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: isMe
-                  ? [accent, AppColors.coral]
-                  : [AppColors.lavender, const Color(0xFF7B5EA7)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: (isMe ? accent : AppColors.lavender).withValues(alpha: 0.4),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              user?.displayName?.isNotEmpty == true
-                  ? user!.displayName[0].toUpperCase()
-                  : isMe ? 'Y' : '?',
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
+        CharacterAvatar(color: color, name: name, size: 86),
+        const SizedBox(height: 6),
         Text(
-          user?.displayName?.split(' ')?.first ?? (isMe ? 'You' : 'Partner'),
+          name.split(' ').first,
           style: Theme.of(context).textTheme.bodyMedium,
+          textAlign: TextAlign.center,
           overflow: TextOverflow.ellipsis,
         ),
         if (isMe && user != null)
@@ -305,11 +287,12 @@ class _Avatar extends StatelessWidget {
             margin: const EdgeInsets.only(top: 4),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.15),
+              color: color.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text('Lv ${user!.level}',
-                style: TextStyle(fontSize: 10, color: accent, fontWeight: FontWeight.bold)),
+                style: TextStyle(
+                    fontSize: 10, color: color, fontWeight: FontWeight.bold)),
           ),
       ],
     );
@@ -450,7 +433,7 @@ class _RoomObjectsRow extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: objects.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
         itemBuilder: (_, i) {
           final obj = objects[i];
           return Container(
@@ -484,7 +467,7 @@ class _MemoryPreview extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: memories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
         itemBuilder: (_, i) {
           return ClipRRect(
             borderRadius: BorderRadius.circular(16),
@@ -528,7 +511,7 @@ class _SettingsSheet extends ConsumerWidget {
             runSpacing: 12,
             children: kCoupleAccents.map((a) {
               final color = a['color'] as Color;
-              final selected = couple?.themeColor == color.value;
+              final selected = couple?.themeColor == color.toARGB32();
               return GestureDetector(
                 onTap: () async {
                   if (couple != null) {

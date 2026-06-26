@@ -77,7 +77,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             Expanded(
               child: messagesAsync.when(
                 loading: () => const Center(child: CircularProgressIndicator(color: AppColors.rose)),
-                error: (e, _) => Center(child: Text('Error: $e', style: const TextStyle(color: AppColors.textSecondary))),
+                error: (e, _) {
+                  final isPermission = e.toString().contains('PERMISSION_DENIED') ||
+                      e.toString().contains('permission-denied');
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(isPermission ? '🔒' : '⚠️',
+                              style: const TextStyle(fontSize: 44)),
+                          const SizedBox(height: 14),
+                          Text(
+                            isPermission
+                                ? 'Firestore access blocked'
+                                : 'Could not load messages',
+                            style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            isPermission
+                                ? 'Go to Firebase Console → Firestore → Rules and paste the firestore.rules from the repo, then click Publish.'
+                                : e.toString(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: AppColors.textSecondary, fontSize: 13, height: 1.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
                 data: (messages) {
                   if (messages.isEmpty) {
                     return Center(
