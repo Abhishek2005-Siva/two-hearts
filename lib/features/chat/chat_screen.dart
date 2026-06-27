@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:uuid/uuid.dart';
@@ -20,8 +22,8 @@ class ChatScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
-  final _ctrl = TextEditingController();
-  final _scrollCtrl = ScrollController();
+  final _controller = TextEditingController();
+  final _scrollController = ScrollController();
   bool _sending = false;
   bool _isTyping = false;
   bool _whisperMode = false;
@@ -31,14 +33,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _ctrl.addListener(_onTextChanged);
+    _controller.addListener(_onTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
   }
 
   void _onTextChanged() {
     final coupleId = ref.read(coupleIdProvider);
     if (coupleId == null) return;
-    final typing = _ctrl.text.isNotEmpty;
+    final typing = _controller.text.isNotEmpty;
     if (typing != _isTyping) {
       _isTyping = typing;
       ref.read(firestoreServiceProvider).setTyping(coupleId, typing).ignore();
@@ -59,26 +61,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  void _scheduleWhisperDelete(MessageModel msg) {
-    if (_scheduledDeletes.contains(msg.id)) return;
-    _scheduledDeletes.add(msg.id);
-    Future.delayed(const Duration(seconds: 30), () {
-      final coupleId = ref.read(coupleIdProvider);
-      if (coupleId != null) {
-        ref.read(firestoreServiceProvider).deleteMessage(coupleId, msg.id).ignore();
-      }
-    });
-  }
-
   Future<void> _send() async {
-    final text = _ctrl.text.trim();
+    final text = _controller.text.trim();
     if (text.isEmpty) return;
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
-    _ctrl.clear();
+    _controller.clear();
     _isTyping = false;
     ref.read(firestoreServiceProvider).setTyping(coupleId, false).ignore();
+    final isWhisper = _whisperMode;
     setState(() => _sending = true);
     HapticFeedback.lightImpact();
     try {
@@ -90,10 +82,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           content: text,
           type: MessageType.text,
           sentAt: DateTime.now(),
-          isWhisper: _whisperMode,
+          isWhisper: isWhisper,
         ),
       );
-      _scrollToBottom();
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -103,13 +94,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
-    final xfile = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 75);
-    if (xfile == null || !mounted) return;
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.camera, imageQuality: 75);
+    if (picked == null || !mounted) return;
     setState(() => _sending = true);
     HapticFeedback.mediumImpact();
     try {
-      final bytes = await xfile.readAsBytes();
-      final url = await CloudinaryService.uploadImage(bytes, folder: 'two_hearts/$coupleId/snaps');
+      final bytes = await picked.readAsBytes();
+      final url = await CloudinaryService.uploadImage(bytes, folder: 'snaps');
       await ref.read(firestoreServiceProvider).sendMessage(
         coupleId,
         MessageModel(
@@ -121,20 +113,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           isSnap: true,
         ),
       );
-      _scrollToBottom();
     } finally {
       if (mounted) setState(() => _sending = false);
     }
   }
 
-  void _scrollToBottom() {
-    Future.delayed(150.ms, () {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: 300.ms, curve: Curves.easeOut,
-        );
-      }
+  void _scheduleWhisperDelete(String msgId, String coupleId) {
+    if (_scheduledDeletes.contains(msgId)) return;
+    _scheduledDeletes.add(msgId);
+    Future.delayed(const Duration(seconds: 30), () {
+      ref.read(firestoreServiceProvider).deleteMessage(coupleId, msgId).ignore();
     });
   }
 
@@ -144,16 +132,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (coupleId != null) {
       ref.read(firestoreServiceProvider).setTyping(coupleId, false).ignore();
     }
-    _ctrl.removeListener(_onTextChanged);
-    _ctrl.dispose();
-    _scrollCtrl.dispose();
+    _controller.removeListener(_onTextChanged);
+    _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final authUser = FirebaseAuth.instance.currentUser;
-    if (authUser == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (authUser == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     final messagesAsync = ref.watch(messagesProvider);
     final accent = ref.watch(accentColorProvider);
@@ -161,24 +151,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final isTyping = ref.watch(partnerTypingProvider).valueOrNull ?? false;
     final partnerOnline = ref.watch(partnerOnlineProvider).valueOrNull ?? false;
     final uid = authUser.uid;
-    final now = DateTime.now();
+    final coupleId = ref.watch(coupleIdProvider);
 
     ref.listen(messagesProvider, (_, next) {
-      final msgs = next.valueOrNull;
-      if (msgs == null) return;
-      _markRead();
-      for (final m in msgs) {
-        if (m.isWhisper && m.readByPartner) _scheduleWhisperDelete(m);
+      if (next.valueOrNull != null) _markRead();
+      if (coupleId != null) {
+        for (final msg in next.valueOrNull ?? []) {
+          if (msg.isWhisper && msg.readByPartner && msg.senderId != uid) {
+            _scheduleWhisperDelete(msg.id, coupleId);
+          }
+        }
       }
     });
 
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: RoomTod.bgGradient(now),
+            colors: AppColors.bgGradient,
           ),
         ),
         child: Column(
@@ -191,25 +183,73 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             Expanded(
               child: messagesAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator(color: AppColors.rose)),
-                error: (e, _) => _ErrorView(error: e),
+                loading: () => const Center(
+                    child: CircularProgressIndicator(color: AppColors.rose)),
+                error: (e, _) {
+                  final isPermission = e.toString().contains('PERMISSION_DENIED') ||
+                      e.toString().contains('permission-denied');
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(isPermission ? '🔒' : '⚠️',
+                              style: const TextStyle(fontSize: 44)),
+                          const SizedBox(height: 14),
+                          Text(
+                            isPermission
+                                ? 'Firestore access blocked'
+                                : 'Could not load messages',
+                            style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            isPermission
+                                ? 'Go to Firebase Console → Firestore → Rules and publish the rules from the repo.'
+                                : e.toString(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 13,
+                                height: 1.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
                 data: (messages) {
                   if (messages.isEmpty) {
                     return Center(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        const Text('💌', style: TextStyle(fontSize: 56)),
-                        const SizedBox(height: 16),
-                        Text('Send your first message ♡', style: Theme.of(context).textTheme.bodyMedium),
-                      ]),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('💌', style: TextStyle(fontSize: 56)),
+                          const SizedBox(height: 16),
+                          Text('Send your first message ♡',
+                              style: Theme.of(context).textTheme.bodyMedium),
+                        ],
+                      ),
                     );
                   }
+                  // reverse:true with original ascending list → newest at bottom
+                  final reversed = messages.reversed.toList();
                   return ListView.builder(
-                    controller: _scrollCtrl,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    itemCount: messages.length,
+                    controller: _scrollController,
+                    reverse: true,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    itemCount: reversed.length,
                     itemBuilder: (context, i) {
-                      final msg = messages[i];
-                      final showDate = i == 0 || messages[i - 1].sentAt.day != msg.sentAt.day;
+                      final msg = reversed[i];
+                      final prevMsg =
+                          i < reversed.length - 1 ? reversed[i + 1] : null;
+                      final showDate = prevMsg == null ||
+                          !_sameDay(msg.sentAt, prevMsg.sentAt);
                       return Column(
                         children: [
                           if (showDate) _DateSep(date: msg.sentAt),
@@ -218,27 +258,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             isMe: msg.senderId == uid,
                             accent: accent,
                             isViewingSnap: _viewingSnapId == msg.id,
-                            onReact: (emoji) {
-                              HapticFeedback.selectionClick();
-                              final coupleId = ref.read(coupleIdProvider);
-                              if (coupleId == null) return;
-                              ref.read(firestoreServiceProvider)
-                                  .reactToMessage(coupleId, msg.id, emoji).ignore();
-                            },
-                            onHoldSnap: () {
-                              setState(() => _viewingSnapId = msg.id);
-                              if (!msg.snapViewed) {
-                                Future.delayed(800.ms, () {
-                                  final coupleId = ref.read(coupleIdProvider);
-                                  if (coupleId != null && mounted) {
-                                    ref.read(firestoreServiceProvider)
-                                        .viewSnap(coupleId, msg.id).ignore();
-                                  }
-                                });
+                            onSnapHoldStart: () =>
+                                setState(() => _viewingSnapId = msg.id),
+                            onSnapHoldEnd: () {
+                              setState(() => _viewingSnapId = null);
+                              if (coupleId != null && !msg.snapViewed) {
+                                ref
+                                    .read(firestoreServiceProvider)
+                                    .viewSnap(coupleId, msg.id)
+                                    .ignore();
                               }
                             },
-                            onReleaseSnap: () => setState(() => _viewingSnapId = null),
-                          ).animate().fadeIn(delay: Duration(milliseconds: i < 10 ? i * 15 : 0)),
+                            onReact: (emoji) {
+                              HapticFeedback.selectionClick();
+                              if (coupleId == null) return;
+                              ref
+                                  .read(firestoreServiceProvider)
+                                  .reactToMessage(coupleId, msg.id, emoji)
+                                  .ignore();
+                            },
+                          ),
                         ],
                       );
                     },
@@ -246,94 +285,275 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 },
               ),
             ),
+
+            // Whisper banner
+            if (_whisperMode)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 8),
+                color: AppColors.bgCard,
+                child: Row(
+                  children: [
+                    const Text('🌙', style: TextStyle(fontSize: 16)),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Whisper — fades 30 s after they read',
+                        style: TextStyle(
+                            color: AppColors.lavender, fontSize: 12),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () =>
+                          setState(() => _whisperMode = false),
+                      child: const Icon(Icons.close_rounded,
+                          color: AppColors.textMuted, size: 16),
+                    ),
+                  ],
+                ),
+              ),
+
             _ChatInput(
-              controller: _ctrl,
+              controller: _controller,
               sending: _sending,
-              accent: accent,
               whisperMode: _whisperMode,
+              accent: accent,
               onSend: _send,
               onSnap: _sendSnap,
-              onToggleWhisper: () => setState(() => _whisperMode = !_whisperMode),
+              onToggleWhisper: () =>
+                  setState(() => _whisperMode = !_whisperMode),
             ),
           ],
         ),
       ),
     );
   }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
-// ── App Bar ────────────────────────────────────────────────────────────────
+// ── App Bar ───────────────────────────────────────────────────────────────
 
 class _ChatAppBar extends StatelessWidget {
-  final dynamic partner;
+  final UserModel? partner;
   final Color accent;
   final bool isTyping;
   final bool partnerOnline;
-  const _ChatAppBar({this.partner, required this.accent, required this.isTyping, required this.partnerOnline});
+
+  const _ChatAppBar({
+    required this.partner,
+    required this.accent,
+    required this.isTyping,
+    required this.partnerOnline,
+  });
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        decoration: const BoxDecoration(
-          color: AppColors.bgMid,
-          border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(
           children: [
-            GestureDetector(
-              onTap: () => Navigator.maybePop(context),
-              child: const Icon(Icons.arrow_back_ios_rounded, color: AppColors.textSecondary, size: 20),
+            IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                  color: AppColors.textPrimary, size: 20),
+              onPressed: () => Navigator.maybePop(context),
             ),
-            const SizedBox(width: 12),
-            Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(colors: [accent, AppColors.coral]),
-                boxShadow: partnerOnline
-                    ? [BoxShadow(color: accent.withValues(alpha: 0.5), blurRadius: 10)]
-                    : null,
-              ),
-              child: Center(
+            if (partner?.avatarUrl != null)
+              CircleAvatar(
+                  radius: 18,
+                  backgroundImage: NetworkImage(partner!.avatarUrl!))
+            else
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: accent.withValues(alpha: 0.2),
                 child: Text(
                   partner?.displayName.isNotEmpty == true
-                      ? partner!.displayName[0].toUpperCase() : '♡',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
+                      ? partner!.displayName[0].toUpperCase()
+                      : '?',
+                  style: TextStyle(
+                      color: accent,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(partner?.displayName ?? 'Your person',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  AnimatedSwitcher(
-                    duration: 300.ms,
-                    child: isTyping
-                        ? Row(
-                            key: const ValueKey('typing'),
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _TypingDot(delay: 0), _TypingDot(delay: 150), _TypingDot(delay: 300),
-                              const SizedBox(width: 5),
-                              const Text('typing…', style: TextStyle(color: AppColors.rose, fontSize: 11, fontStyle: FontStyle.italic)),
-                            ],
-                          )
-                        : Text(
-                            key: const ValueKey('status'),
-                            partnerOnline ? 'online ♡' : 'just for you two',
-                            style: TextStyle(
-                              color: partnerOnline ? const Color(0xFF44EE88) : AppColors.textMuted,
-                              fontSize: 11,
-                            ),
-                          ),
+                  Text(
+                    partner?.displayName.split(' ').first ?? 'Partner',
+                    style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600),
                   ),
+                  if (isTyping)
+                    Text('typing…',
+                        style: TextStyle(
+                            color: accent,
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic))
+                  else if (partnerOnline)
+                    Row(children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        margin: const EdgeInsets.only(right: 4),
+                        decoration: const BoxDecoration(
+                            color: Color(0xFF4CAF50),
+                            shape: BoxShape.circle),
+                      ),
+                      const Text('online',
+                          style: TextStyle(
+                              color: Color(0xFF4CAF50), fontSize: 11)),
+                    ]),
                 ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.photo_library_outlined,
+                  color: AppColors.textMuted, size: 20),
+              onPressed: () => context.push('/snaps'),
+              tooltip: 'Snap Gallery',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Input ─────────────────────────────────────────────────────────────────
+
+class _ChatInput extends StatelessWidget {
+  final TextEditingController controller;
+  final bool sending;
+  final bool whisperMode;
+  final Color accent;
+  final VoidCallback onSend;
+  final VoidCallback onSnap;
+  final VoidCallback onToggleWhisper;
+
+  const _ChatInput({
+    required this.controller,
+    required this.sending,
+    required this.whisperMode,
+    required this.accent,
+    required this.onSend,
+    required this.onSnap,
+    required this.onToggleWhisper,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        decoration: BoxDecoration(
+          color: AppColors.bgMid,
+          border: Border(
+            top: BorderSide(
+              color: whisperMode
+                  ? AppColors.lavender.withValues(alpha: 0.5)
+                  : AppColors.divider,
+              width: whisperMode ? 1.0 : 0.5,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: onSnap,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    color: AppColors.bgCard,
+                    borderRadius: BorderRadius.circular(12)),
+                child: const Text('📷', style: TextStyle(fontSize: 18)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppColors.bgCard,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: whisperMode
+                        ? AppColors.lavender.withValues(alpha: 0.4)
+                        : AppColors.divider,
+                    width: 0.5,
+                  ),
+                ),
+                child: TextField(
+                  controller: controller,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontStyle:
+                        whisperMode ? FontStyle.italic : FontStyle.normal,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: whisperMode
+                        ? 'Whisper something… 🌙'
+                        : 'Say something ♡',
+                    hintStyle:
+                        const TextStyle(color: AppColors.textMuted),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                  ),
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => onSend(),
+                  maxLines: 4,
+                  minLines: 1,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onToggleWhisper,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: whisperMode
+                      ? AppColors.lavender.withValues(alpha: 0.2)
+                      : AppColors.bgCard,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: whisperMode
+                        ? AppColors.lavender.withValues(alpha: 0.5)
+                        : Colors.transparent,
+                  ),
+                ),
+                child:
+                    const Text('🌙', style: TextStyle(fontSize: 18)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: sending ? null : onSend,
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient:
+                      LinearGradient(colors: [accent, AppColors.coral]),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.send_rounded,
+                        color: Colors.white, size: 18),
               ),
             ),
           ],
@@ -343,104 +563,69 @@ class _ChatAppBar extends StatelessWidget {
   }
 }
 
-class _TypingDot extends StatelessWidget {
-  final int delay;
-  const _TypingDot({required this.delay});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 5, height: 5,
-      margin: const EdgeInsets.only(right: 3),
-      decoration: const BoxDecoration(color: AppColors.rose, shape: BoxShape.circle),
-    ).animate(onPlay: (c) => c.repeat())
-        .fadeIn(delay: Duration(milliseconds: delay), duration: 400.ms)
-        .then().fadeOut(duration: 400.ms);
-  }
-}
-
-// ── Date Separator ─────────────────────────────────────────────────────────
+// ── Date Separator ────────────────────────────────────────────────────────
 
 class _DateSep extends StatelessWidget {
   final DateTime date;
   const _DateSep({required this.date});
 
-  String _label() {
-    final now = DateTime.now();
-    final diff = DateTime(now.year, now.month, now.day)
-        .difference(DateTime(date.year, date.month, date.day)).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
-    return '${date.day}/${date.month}/${date.year}';
-  }
-
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final diff = DateTime(now.year, now.month, now.day)
+        .difference(DateTime(date.year, date.month, date.day))
+        .inDays;
+    final String label;
+    if (diff == 0) {
+      label = 'Today';
+    } else if (diff == 1) {
+      label = 'Yesterday';
+    } else {
+      const months = [
+        '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+      label = '${months[date.month]} ${date.day}'
+          '${date.year != now.year ? ', ${date.year}' : ''}';
+    }
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(children: [
-        const Expanded(child: Divider(color: AppColors.divider)),
+        const Expanded(
+            child: Divider(color: AppColors.divider, thickness: 0.5)),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text(_label(),
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 10, letterSpacing: 0.5)),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(label,
+              style: const TextStyle(
+                  color: AppColors.textMuted, fontSize: 11)),
         ),
-        const Expanded(child: Divider(color: AppColors.divider)),
+        const Expanded(
+            child: Divider(color: AppColors.divider, thickness: 0.5)),
       ]),
     );
   }
 }
 
-// ── Message Bubble ─────────────────────────────────────────────────────────
+// ── Message Bubble ────────────────────────────────────────────────────────
 
 class _MessageBubble extends StatelessWidget {
   final MessageModel msg;
   final bool isMe;
   final Color accent;
   final bool isViewingSnap;
+  final VoidCallback onSnapHoldStart;
+  final VoidCallback onSnapHoldEnd;
   final void Function(String) onReact;
-  final VoidCallback onHoldSnap;
-  final VoidCallback onReleaseSnap;
 
   const _MessageBubble({
     required this.msg,
     required this.isMe,
     required this.accent,
     required this.isViewingSnap,
+    required this.onSnapHoldStart,
+    required this.onSnapHoldEnd,
     required this.onReact,
-    required this.onHoldSnap,
-    required this.onReleaseSnap,
   });
-
-  void _showReactionPicker(BuildContext context) {
-    HapticFeedback.mediumImpact();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        margin: const EdgeInsets.all(12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: AppColors.bgCard, borderRadius: BorderRadius.circular(24)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('React', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: ['❤️', '😂', '😢', '😮', '🔥', '💕', '🥺', '✨']
-                  .map((e) => GestureDetector(
-                        onTap: () { Navigator.pop(context); onReact(e); },
-                        child: Text(e, style: const TextStyle(fontSize: 28)),
-                      ))
-                  .toList(),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -450,337 +635,229 @@ class _MessageBubble extends StatelessWidget {
   }
 
   Widget _text(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(top: 3, bottom: 3, left: isMe ? 56 : 0, right: isMe ? 0 : 56),
+    return GestureDetector(
+      onLongPress: () => _reactSheet(context),
       child: Align(
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Column(
-          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            GestureDetector(
-              onLongPress: () => _showReactionPicker(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-                decoration: BoxDecoration(
-                  gradient: isMe ? LinearGradient(colors: [accent, AppColors.coral]) : null,
-                  color: isMe ? null : AppColors.bgCard,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(20),
-                    topRight: const Radius.circular(20),
-                    bottomLeft: Radius.circular(isMe ? 20 : 4),
-                    bottomRight: Radius.circular(isMe ? 4 : 20),
-                  ),
-                  border: isMe ? null : Border.all(color: AppColors.divider, width: 0.5),
-                  boxShadow: isMe
-                      ? [BoxShadow(color: accent.withValues(alpha: 0.28), blurRadius: 12, offset: const Offset(0, 4))]
-                      : null,
-                ),
-                child: Text(msg.content,
-                    style: TextStyle(fontSize: 15, color: isMe ? Colors.white : AppColors.textPrimary, height: 1.45)),
-              ),
-            ),
-            if (msg.reactionEmoji != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 3),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.bgCard,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.divider, width: 0.5),
-                  ),
-                  child: Text(msg.reactionEmoji!, style: const TextStyle(fontSize: 14)),
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(timeago.format(msg.sentAt, locale: 'en_short'),
-                    style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
-                if (isMe) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    msg.readByPartner ? Icons.done_all_rounded : Icons.done_rounded,
-                    size: 12,
-                    color: msg.readByPartner ? accent : AppColors.textMuted,
-                  ),
-                ],
-              ]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _whisper(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(top: 3, bottom: 3, left: isMe ? 56 : 0, right: isMe ? 0 : 56),
-      child: Align(
-        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Column(
-          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            GestureDetector(
-              onLongPress: () => _showReactionPicker(context),
-              child: Opacity(
-                opacity: 0.65,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isMe ? accent.withValues(alpha: 0.3) : AppColors.bgCard.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isMe ? accent.withValues(alpha: 0.4) : AppColors.divider.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('🌙 whisper',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 9, letterSpacing: 0.5)),
-                      const SizedBox(height: 3),
-                      Text(msg.content,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: isMe ? Colors.white.withValues(alpha: 0.85) : AppColors.textSecondary,
-                            fontStyle: FontStyle.italic,
-                            height: 1.4,
-                          )),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
-              child: Text(
-                msg.readByPartner ? 'read · fading soon' : timeago.format(msg.sentAt, locale: 'en_short'),
-                style: TextStyle(
-                  fontSize: 9,
-                  color: msg.readByPartner ? accent.withValues(alpha: 0.6) : AppColors.textMuted,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _snap(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(top: 4, bottom: 4, left: isMe ? 40 : 0, right: isMe ? 0 : 40),
-      child: Align(
-        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: GestureDetector(
-          onLongPressStart: (_) => onHoldSnap(),
-          onLongPressEnd: (_) => onReleaseSnap(),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: SizedBox(
-              width: 160, height: 200,
-              child: msg.snapViewed
-                  ? Container(
-                      color: AppColors.bgCard,
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('👻', style: TextStyle(fontSize: 36)),
-                          SizedBox(height: 8),
-                          Text('Snap viewed', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-                        ],
-                      ),
-                    )
-                  : isViewingSnap
-                      ? Image.network(msg.content, fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(color: AppColors.bgCard))
-                      : Container(
-                          color: isMe ? accent.withValues(alpha: 0.3) : AppColors.bgCard,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(isMe ? '📷' : '👻', style: const TextStyle(fontSize: 40)),
-                              const SizedBox(height: 10),
-                              Text(isMe ? 'Snap sent' : 'Hold to view',
-                                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                              if (!isMe)
-                                const Text('disappears after',
-                                    style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
-                            ],
-                          ),
-                        ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Chat Input ─────────────────────────────────────────────────────────────
-
-class _ChatInput extends StatelessWidget {
-  final TextEditingController controller;
-  final bool sending;
-  final Color accent;
-  final bool whisperMode;
-  final VoidCallback onSend;
-  final VoidCallback onSnap;
-  final VoidCallback onToggleWhisper;
-
-  const _ChatInput({
-    required this.controller,
-    required this.sending,
-    required this.accent,
-    required this.whisperMode,
-    required this.onSend,
-    required this.onSnap,
-    required this.onToggleWhisper,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: 200.ms,
-      padding: EdgeInsets.fromLTRB(12, 8, 12, MediaQuery.of(context).padding.bottom + 8),
-      decoration: BoxDecoration(
-        color: AppColors.bgMid,
-        border: Border(
-          top: BorderSide(
-            color: whisperMode ? accent.withValues(alpha: 0.3) : AppColors.divider,
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (whisperMode)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6, left: 4),
-              child: Row(children: [
-                Text('🌙 Whisper — fades after they read',
-                    style: TextStyle(color: accent.withValues(alpha: 0.8), fontSize: 11, fontStyle: FontStyle.italic)),
-              ]),
-            ),
-          Row(
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.72),
+          child: Column(
+            crossAxisAlignment:
+                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              // Camera / snap
-              GestureDetector(
-                onTap: sending ? null : onSnap,
-                child: Container(
-                  width: 40, height: 40,
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.bgCard,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.divider, width: 0.5),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: isMe
+                      ? LinearGradient(colors: [accent, AppColors.coral])
+                      : null,
+                  color: isMe ? null : AppColors.bgCardLight,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(18),
+                    topRight: const Radius.circular(18),
+                    bottomLeft: Radius.circular(isMe ? 18 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 18),
                   ),
-                  child: const Icon(Icons.camera_alt_rounded, color: AppColors.textSecondary, size: 19),
                 ),
-              ),
-              // Text field
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: whisperMode ? accent.withValues(alpha: 0.08) : AppColors.bgCard,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: whisperMode ? accent.withValues(alpha: 0.3) : AppColors.divider,
-                      width: 0.5,
-                    ),
-                  ),
-                  child: TextField(
-                    controller: controller,
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 15,
-                      fontStyle: whisperMode ? FontStyle.italic : FontStyle.normal,
-                    ),
-                    maxLines: 4, minLines: 1,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => onSend(),
-                    decoration: InputDecoration(
-                      hintText: whisperMode ? 'Whisper something…' : 'Say something sweet…',
-                      hintStyle: const TextStyle(color: AppColors.textMuted),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    ),
+                child: Text(
+                  msg.content,
+                  style: TextStyle(
+                    color: isMe ? Colors.white : AppColors.textPrimary,
+                    fontSize: 15,
+                    height: 1.4,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              // Whisper toggle
-              GestureDetector(
-                onTap: onToggleWhisper,
-                child: AnimatedContainer(
-                  duration: 200.ms,
-                  width: 38, height: 38,
-                  decoration: BoxDecoration(
-                    color: whisperMode ? accent.withValues(alpha: 0.2) : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: whisperMode ? accent.withValues(alpha: 0.5) : AppColors.divider,
-                    ),
-                  ),
-                  child: const Center(child: Text('🌙', style: TextStyle(fontSize: 16))),
+              if (msg.reactionEmoji != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(msg.reactionEmoji!,
+                      style: const TextStyle(fontSize: 16)),
                 ),
-              ),
-              const SizedBox(width: 8),
-              // Send button
-              GestureDetector(
-                onTap: sending ? null : onSend,
-                child: AnimatedContainer(
-                  duration: 200.ms,
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [accent, AppColors.coral]),
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 4))],
-                  ),
-                  child: sending
-                      ? const Padding(padding: EdgeInsets.all(12),
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+              Padding(
+                padding:
+                    const EdgeInsets.only(top: 2, left: 2, right: 2),
+                child: Text(
+                  timeago.format(msg.sentAt, allowFromNow: true),
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 10),
                 ),
               ),
             ],
           ),
-        ],
+        ),
       ),
-    );
+    ).animate().fadeIn(duration: 200.ms);
   }
-}
 
-// ── Error View ─────────────────────────────────────────────────────────────
-
-class _ErrorView extends StatelessWidget {
-  final Object error;
-  const _ErrorView({required this.error});
-
-  @override
-  Widget build(BuildContext context) {
-    final isPermission = error.toString().contains('PERMISSION_DENIED') ||
-        error.toString().contains('permission-denied');
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(isPermission ? '🔒' : '⚠️', style: const TextStyle(fontSize: 44)),
-          const SizedBox(height: 14),
-          Text(isPermission ? 'Firestore access blocked' : 'Could not load messages',
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          Text(
-            isPermission
-                ? 'Go to Firebase Console → Firestore → Rules and publish the firestore.rules file.'
-                : error.toString(),
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.5),
+  Widget _whisper(BuildContext context) {
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Opacity(
+        opacity: 0.7,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.72),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.lavender.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+                color: AppColors.lavender.withValues(alpha: 0.3),
+                width: 0.5),
           ),
-        ]),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Text('🌙', style: TextStyle(fontSize: 10)),
+                const SizedBox(width: 4),
+                Text('whisper',
+                    style: TextStyle(
+                        color: AppColors.lavender,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5)),
+              ]),
+              const SizedBox(height: 4),
+              Text(
+                msg.content,
+                style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    height: 1.4,
+                    fontStyle: FontStyle.italic),
+              ),
+              if (msg.readByPartner && !isMe) ...[
+                const SizedBox(height: 4),
+                Text('read · fading soon',
+                    style: TextStyle(
+                        color: AppColors.lavender,
+                        fontSize: 10,
+                        fontStyle: FontStyle.italic)),
+              ],
+            ],
+          ),
+        ),
+      ),
+    ).animate().fadeIn(duration: 200.ms);
+  }
+
+  Widget _snap(BuildContext context) {
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        width: 160,
+        height: 200,
+        child: GestureDetector(
+          onLongPressStart:
+              msg.snapViewed ? null : (_) {
+            HapticFeedback.mediumImpact();
+            onSnapHoldStart();
+          },
+          onLongPressEnd: msg.snapViewed ? null : (_) => onSnapHoldEnd(),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (isViewingSnap && !msg.snapViewed)
+                  CachedNetworkImage(
+                      imageUrl: msg.content, fit: BoxFit.cover)
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: msg.snapViewed
+                            ? [AppColors.bgCard, AppColors.bgMid]
+                            : [
+                                accent.withValues(alpha: 0.3),
+                                AppColors.bgCard
+                              ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                  ),
+                if (!isViewingSnap)
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(msg.snapViewed ? '👻' : '📸',
+                            style: const TextStyle(fontSize: 36)),
+                        const SizedBox(height: 8),
+                        Text(
+                          msg.snapViewed
+                              ? 'Snap viewed'
+                              : isMe
+                                  ? 'Your snap'
+                                  : 'Hold to view',
+                          style: TextStyle(
+                            color: msg.snapViewed
+                                ? AppColors.textMuted
+                                : AppColors.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).animate().fadeIn(duration: 200.ms);
+  }
+
+  void _reactSheet(BuildContext context) {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding:
+            const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: ['❤️', '😂', '😮', '😢', '🔥', '👏']
+                  .map((e) => GestureDetector(
+                        onTap: () {
+                          Navigator.pop(context);
+                          onReact(e);
+                        },
+                        child: Text(e,
+                            style:
+                                const TextStyle(fontSize: 32)),
+                      ))
+                  .toList(),
+            ),
+          ],
+        ),
       ),
     );
   }

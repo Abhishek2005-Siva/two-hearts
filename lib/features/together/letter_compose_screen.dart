@@ -135,6 +135,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
         LetterModel(
           id: const Uuid().v4(),
           authorId: authUser.uid,
+          receiverId: partner?.uid,
           title: titleText,
           body: bodyText,
           unlockType: _modeToLetterType(_mode),

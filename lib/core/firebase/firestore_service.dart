@@ -92,6 +92,20 @@ class FirestoreService {
   Future<void> updateCoupleTheme(String coupleId, int colorValue) =>
       _db.collection('couples').doc(coupleId).update({'themeColor': colorValue});
 
+  // ── Presence ──────────────────────────────────────────────────────────────
+
+  Future<void> setPresence(String coupleId) => _db
+      .collection('couples').doc(coupleId)
+      .update({'presence.$_uid': FieldValue.serverTimestamp()});
+
+  Stream<bool> watchPartnerOnline(String coupleId, String partnerUid) => _db
+      .collection('couples').doc(coupleId).snapshots()
+      .map((d) {
+        final ts = d.data()?['presence']?[partnerUid];
+        if (ts == null) return false;
+        return DateTime.now().difference((ts as Timestamp).toDate()).inMinutes < 5;
+      });
+
   // ── Messages ──────────────────────────────────────────────────────────────
 
   Stream<List<MessageModel>> watchMessages(String coupleId) => _db
@@ -99,6 +113,15 @@ class FirestoreService {
       .doc(coupleId)
       .collection('messages')
       .orderBy('sentAt', descending: false)
+      .snapshots()
+      .map((s) => s.docs.map(MessageModel.fromDoc).toList());
+
+  Stream<List<MessageModel>> watchSnaps(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('messages')
+      .where('isSnap', isEqualTo: true)
+      .orderBy('sentAt', descending: true)
       .snapshots()
       .map((s) => s.docs.map(MessageModel.fromDoc).toList());
 
@@ -116,12 +139,35 @@ class FirestoreService {
       .doc(msgId)
       .update({'readByPartner': true});
 
+  Future<void> markMessagesRead(String coupleId, List<String> msgIds) async {
+    final batch = _db.batch();
+    for (final id in msgIds) {
+      batch.update(_db.collection('couples').doc(coupleId).collection('messages').doc(id),
+          {'readByPartner': true});
+    }
+    await batch.commit();
+  }
+
   Future<void> reactToMessage(String coupleId, String msgId, String emoji) => _db
       .collection('couples')
       .doc(coupleId)
       .collection('messages')
       .doc(msgId)
       .update({'reactionEmoji': emoji});
+
+  Future<void> deleteMessage(String coupleId, String msgId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('messages')
+      .doc(msgId)
+      .delete();
+
+  Future<void> viewSnap(String coupleId, String msgId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('messages')
+      .doc(msgId)
+      .update({'snapViewed': true});
 
   // ── Mood ──────────────────────────────────────────────────────────────────
 
@@ -160,6 +206,14 @@ class FirestoreService {
       .limit(1)
       .snapshots();
 
+  Future<void> sendSignal(String coupleId, String type, {String? message}) => _db
+      .collection('couples').doc(coupleId).collection('signals').add({
+        'type': type,
+        'fromUid': _uid,
+        if (message != null) 'message': message,
+        'sentAt': FieldValue.serverTimestamp(),
+      });
+
   // ── Letters ───────────────────────────────────────────────────────────────
 
   Future<void> sendLetter(String coupleId, LetterModel letter) => _db
@@ -169,13 +223,21 @@ class FirestoreService {
       .doc(letter.id)
       .set(letter.toMap());
 
-  Stream<List<LetterModel>> watchLetters(String coupleId) => _db
+  // Returns only letters the current user received (not authored) that are unlocked.
+  // Locked letters are completely hidden from the receiver.
+  Stream<List<LetterModel>> watchLetters(String coupleId, String myUid) => _db
       .collection('couples')
       .doc(coupleId)
       .collection('letters')
       .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((s) => s.docs.map(LetterModel.fromDoc).toList());
+      .map((s) => s.docs.map(LetterModel.fromDoc).toList().where((l) {
+            // Show only letters where I'm the recipient (not the author)
+            final isReceiver = l.receiverId == myUid ||
+                (l.receiverId == null && l.authorId != myUid);
+            // Only show unlocked letters (locked ones are invisible to receiver)
+            return isReceiver && l.isUnlocked;
+          }).toList());
 
   Future<void> openLetter(String coupleId, String letterId) => _db
       .collection('couples')
@@ -187,7 +249,8 @@ class FirestoreService {
   // ── Journal ───────────────────────────────────────────────────────────────
 
   Future<void> submitJournalEntry(
-      String coupleId, String dayId, String entry, String otherUid) async {
+      String coupleId, String dayId, String entry, String otherUid,
+      {String? title}) async {
     final ref = _db
         .collection('couples')
         .doc(coupleId)
@@ -201,6 +264,7 @@ class FirestoreService {
         'uidB': null,
         'entryB': null,
         'bothSubmitted': false,
+        if (title != null) 'title': title,
       });
     } else {
       final d = doc.data() as Map<String, dynamic>;
@@ -213,6 +277,7 @@ class FirestoreService {
         myField: entry,
         otherUidField: otherUid,
         'bothSubmitted': otherAlreadyIn,
+        if (title != null && d['title'] == null) 'title': title,
       });
     }
   }
@@ -222,7 +287,7 @@ class FirestoreService {
       .doc(coupleId)
       .collection('journal')
       .orderBy(FieldPath.documentId, descending: true)
-      .limit(30)
+      .limit(60)
       .snapshots()
       .map((s) => s.docs.map(JournalDay.fromDoc).toList());
 
@@ -242,7 +307,21 @@ class FirestoreService {
       position: {'x': _randomPos(), 'y': 0.0, 'z': _randomPos()},
       createdAt: DateTime.now(),
     ));
+    // Update collection cover/count
+    if (memory.collectionId != null) {
+      await _db
+          .collection('couples').doc(coupleId)
+          .collection('photoCollections').doc(memory.collectionId)
+          .update({
+            'photoCount': FieldValue.increment(1),
+            'coverUrl': memory.imageUrl,
+          });
+    }
   }
+
+  Future<void> assignToCollection(String coupleId, String memoryId, String? collectionId) => _db
+      .collection('couples').doc(coupleId).collection('memories').doc(memoryId)
+      .update({'collectionId': collectionId});
 
   Stream<List<MemoryModel>> watchMemories(String coupleId) => _db
       .collection('couples')
@@ -252,37 +331,61 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(MemoryModel.fromDoc).toList());
 
+  Stream<List<MemoryModel>> watchCollectionMemories(String coupleId, String collectionId) => _db
+      .collection('couples').doc(coupleId).collection('memories')
+      .where('collectionId', isEqualTo: collectionId)
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map(MemoryModel.fromDoc).toList());
+
   Future<void> toggleFavoriteMemory(String coupleId, String memoryId, bool fav) =>
-      _db
-          .collection('couples')
-          .doc(coupleId)
-          .collection('memories')
-          .doc(memoryId)
+      _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
           .update({'favorite': fav});
 
   Future<void> requestMemoryDeletion(String coupleId, String memoryId) =>
-      _db
-          .collection('couples')
-          .doc(coupleId)
-          .collection('memories')
-          .doc(memoryId)
+      _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
           .update({'deletionRequestedBy': _uid});
 
   Future<void> cancelMemoryDeletion(String coupleId, String memoryId) =>
-      _db
-          .collection('couples')
-          .doc(coupleId)
-          .collection('memories')
-          .doc(memoryId)
+      _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
           .update({'deletionRequestedBy': FieldValue.delete()});
 
   Future<void> approveMemoryDeletion(String coupleId, String memoryId) =>
-      _db
-          .collection('couples')
-          .doc(coupleId)
-          .collection('memories')
-          .doc(memoryId)
-          .delete();
+      _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId).delete();
+
+  // ── Photo Collections ─────────────────────────────────────────────────────
+
+  Future<PhotoCollection> createCollection(String coupleId, String name) async {
+    final ref = _db.collection('couples').doc(coupleId).collection('photoCollections').doc();
+    final col = PhotoCollection(
+      id: ref.id,
+      name: name,
+      createdBy: _uid,
+      createdAt: DateTime.now(),
+    );
+    await ref.set(col.toMap());
+    return col;
+  }
+
+  Stream<List<PhotoCollection>> watchCollections(String coupleId) => _db
+      .collection('couples').doc(coupleId).collection('photoCollections')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map(PhotoCollection.fromDoc).toList());
+
+  Future<void> deleteCollection(String coupleId, String collectionId) async {
+    // Unassign photos from the collection
+    final memories = await _db
+        .collection('couples').doc(coupleId).collection('memories')
+        .where('collectionId', isEqualTo: collectionId).get();
+    final batch = _db.batch();
+    for (final doc in memories.docs) {
+      batch.update(doc.reference, {'collectionId': FieldValue.delete()});
+    }
+    batch.delete(_db.collection('couples').doc(coupleId)
+        .collection('photoCollections').doc(collectionId));
+    await batch.commit();
+  }
 
   // ── Bucket List ───────────────────────────────────────────────────────────
 
@@ -351,31 +454,6 @@ class FirestoreService {
         final t = (ts as Timestamp).toDate();
         return DateTime.now().difference(t).inSeconds < 8;
       });
-
-  Future<void> markMessagesRead(String coupleId, List<String> msgIds) async {
-    final batch = _db.batch();
-    for (final id in msgIds) {
-      batch.update(_db.collection('couples').doc(coupleId).collection('messages').doc(id),
-          {'readByPartner': true});
-    }
-    await batch.commit();
-  }
-
-  // ── Signals (extended) ────────────────────────────────────────────────────
-
-  Future<void> sendSignal(String coupleId, String type, {String? message}) => _db
-      .collection('couples').doc(coupleId).collection('signals').add({
-        'type': type,
-        'fromUid': _uid,
-        if (message != null) 'message': message,
-        'sentAt': FieldValue.serverTimestamp(),
-      });
-
-  // ── FCM token ─────────────────────────────────────────────────────────────
-
-  Future<void> saveFCMToken(String token) => _db
-      .collection('users').doc(_uid)
-      .update({'fcmToken': token});
 
   // ── Truth Jar game ────────────────────────────────────────────────────────
 
@@ -466,35 +544,90 @@ class FirestoreService {
         .map((d) => d.exists ? GameRound.fromDoc(d) : null);
   }
 
+  // ── Scribble game ─────────────────────────────────────────────────────────
+
+  Stream<Map<String, dynamic>?> watchScribble(String coupleId) {
+    final key = _todayKey();
+    return _db.collection('couples').doc(coupleId)
+        .collection('scribble').doc(key)
+        .snapshots()
+        .map((d) => d.exists ? d.data() : null);
+  }
+
+  Future<void> startScribble(String coupleId, String word, String drawerId) {
+    final key = _todayKey();
+    return _db.collection('couples').doc(coupleId)
+        .collection('scribble').doc(key)
+        .set({
+          'word': word,
+          'drawerId': drawerId,
+          'strokes': [],
+          'guesses': [],
+          'status': 'drawing',
+          'startedAt': FieldValue.serverTimestamp(),
+        });
+  }
+
+  Future<void> addScribbleStroke(
+      String coupleId, List<Map<String, double>> pts, String color, double width) {
+    final key = _todayKey();
+    return _db.collection('couples').doc(coupleId)
+        .collection('scribble').doc(key)
+        .update({
+          'strokes': FieldValue.arrayUnion([{
+            'pts': pts.map((p) => {'x': p['x'], 'y': p['y']}).toList(),
+            'color': color,
+            'width': width,
+            'by': _uid,
+          }]),
+        });
+  }
+
+  Future<void> clearScribbleCanvas(String coupleId) {
+    final key = _todayKey();
+    return _db.collection('couples').doc(coupleId)
+        .collection('scribble').doc(key)
+        .update({'strokes': []});
+  }
+
+  Future<void> submitScribbleGuess(String coupleId, String guess) async {
+    final key = _todayKey();
+    final ref = _db.collection('couples').doc(coupleId).collection('scribble').doc(key);
+    final doc = await ref.get();
+    if (!doc.exists) return;
+    final data = doc.data()!;
+    final word = (data['word'] as String? ?? '').toLowerCase().trim();
+    final correct = guess.toLowerCase().trim() == word;
+    await ref.update({
+      'guesses': FieldValue.arrayUnion([{
+        'uid': _uid,
+        'guess': guess,
+        'correct': correct,
+        'time': Timestamp.now(),
+      }]),
+      if (correct) 'status': 'correct',
+    });
+  }
+
+  Future<void> resetScribble(String coupleId) {
+    final key = _todayKey();
+    return _db.collection('couples').doc(coupleId)
+        .collection('scribble').doc(key)
+        .delete();
+  }
+
+  // ── FCM token ─────────────────────────────────────────────────────────────
+
+  Future<void> saveFCMToken(String token) => _db
+      .collection('users').doc(_uid)
+      .update({'fcmToken': token});
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
   String _todayKey() {
     final n = DateTime.now();
     return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
   }
 
   double _randomPos() => (Random().nextDouble() * 4 - 2);
-
-  // ── Presence ──────────────────────────────────────────────────────────────
-
-  Future<void> setPresence(String coupleId) => _db
-      .collection('couples').doc(coupleId)
-      .update({'presence.$_uid': FieldValue.serverTimestamp()});
-
-  Stream<bool> watchPartnerOnline(String coupleId, String partnerUid) => _db
-      .collection('couples').doc(coupleId)
-      .snapshots()
-      .map((d) {
-        final ts = d.data()?['presence']?[partnerUid];
-        if (ts == null) return false;
-        return DateTime.now().difference((ts as Timestamp).toDate()).inMinutes < 5;
-      });
-
-  // ── Snaps / Whispers ──────────────────────────────────────────────────────
-
-  Future<void> deleteMessage(String coupleId, String msgId) => _db
-      .collection('couples').doc(coupleId).collection('messages').doc(msgId)
-      .delete();
-
-  Future<void> viewSnap(String coupleId, String msgId) => _db
-      .collection('couples').doc(coupleId).collection('messages').doc(msgId)
-      .update({'snapViewed': true});
 }

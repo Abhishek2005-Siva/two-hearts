@@ -49,7 +49,6 @@ class UserModel {
         birthday: birthday ?? this.birthday,
       );
 
-  // Returns the next upcoming birthday from today
   DateTime? get nextBirthday {
     if (birthday == null) return null;
     final now = DateTime.now();
@@ -114,9 +113,9 @@ class MessageModel {
   final DateTime sentAt;
   final bool readByPartner;
   final String? reactionEmoji;
-  final bool isWhisper;
   final bool isSnap;
   final bool snapViewed;
+  final bool isWhisper;
 
   const MessageModel({
     required this.id,
@@ -126,9 +125,9 @@ class MessageModel {
     required this.sentAt,
     this.readByPartner = false,
     this.reactionEmoji,
-    this.isWhisper = false,
     this.isSnap = false,
     this.snapViewed = false,
+    this.isWhisper = false,
   });
 
   factory MessageModel.fromDoc(DocumentSnapshot doc) {
@@ -141,9 +140,9 @@ class MessageModel {
       sentAt: (d['sentAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       readByPartner: d['readByPartner'] ?? false,
       reactionEmoji: d['reactionEmoji'],
-      isWhisper: d['isWhisper'] ?? false,
       isSnap: d['isSnap'] ?? false,
       snapViewed: d['snapViewed'] ?? false,
+      isWhisper: d['isWhisper'] ?? false,
     );
   }
 
@@ -153,10 +152,10 @@ class MessageModel {
         'type': type.name,
         'sentAt': Timestamp.fromDate(sentAt),
         'readByPartner': readByPartner,
-        'reactionEmoji': reactionEmoji,
-        if (isWhisper) 'isWhisper': true,
+        if (reactionEmoji != null) 'reactionEmoji': reactionEmoji,
         if (isSnap) 'isSnap': true,
         if (snapViewed) 'snapViewed': true,
+        if (isWhisper) 'isWhisper': true,
       };
 }
 
@@ -202,7 +201,6 @@ extension MoodEmoji on MoodType {
   }
 }
 
-// Combination message for two moods shown together
 String moodComboMessage(MoodType a, MoodType b) {
   if (a == b) {
     switch (a) {
@@ -255,6 +253,7 @@ enum LetterUnlockType { tomorrow, nextMonth, birthday, anniversary, openWhenSad,
 class LetterModel {
   final String id;
   final String authorId;
+  final String? receiverId;
   final String title;
   final String body;
   final LetterUnlockType unlockType;
@@ -265,6 +264,7 @@ class LetterModel {
   const LetterModel({
     required this.id,
     required this.authorId,
+    this.receiverId,
     required this.title,
     required this.body,
     required this.unlockType,
@@ -278,6 +278,7 @@ class LetterModel {
     return LetterModel(
       id: doc.id,
       authorId: d['authorId'] ?? '',
+      receiverId: d['receiverId'],
       title: d['title'] ?? '',
       body: d['body'] ?? '',
       unlockType: LetterUnlockType.values.byName(d['unlockType'] ?? 'tomorrow'),
@@ -288,12 +289,14 @@ class LetterModel {
   }
 
   bool get isUnlocked {
+    if (unlockType == LetterUnlockType.openWhenSad) return true;
     if (unlockAt == null) return true;
     return DateTime.now().isAfter(unlockAt!);
   }
 
   Map<String, dynamic> toMap() => {
         'authorId': authorId,
+        if (receiverId != null) 'receiverId': receiverId,
         'title': title,
         'body': body,
         'unlockType': unlockType.name,
@@ -307,6 +310,7 @@ class LetterModel {
 
 class JournalDay {
   final String id;
+  final String? title;
   final String? entryA;
   final String? entryB;
   final String? uidA;
@@ -315,6 +319,7 @@ class JournalDay {
 
   const JournalDay({
     required this.id,
+    this.title,
     this.entryA,
     this.entryB,
     this.uidA,
@@ -326,6 +331,7 @@ class JournalDay {
     final d = doc.data() as Map<String, dynamic>;
     return JournalDay(
       id: doc.id,
+      title: d['title'],
       entryA: d['entryA'],
       entryB: d['entryB'],
       uidA: d['uidA'],
@@ -335,6 +341,7 @@ class JournalDay {
   }
 
   Map<String, dynamic> toMap() => {
+        if (title != null) 'title': title,
         'entryA': entryA,
         'entryB': entryB,
         'uidA': uidA,
@@ -354,7 +361,8 @@ class MemoryModel {
   final String? location;
   final bool favorite;
   final DateTime createdAt;
-  final String? deletionRequestedBy; // uid of whoever wants to delete
+  final String? deletionRequestedBy;
+  final String? collectionId;
 
   const MemoryModel({
     required this.id,
@@ -366,6 +374,7 @@ class MemoryModel {
     this.favorite = false,
     required this.createdAt,
     this.deletionRequestedBy,
+    this.collectionId,
   });
 
   factory MemoryModel.fromDoc(DocumentSnapshot doc) {
@@ -380,6 +389,7 @@ class MemoryModel {
       favorite: d['favorite'] ?? false,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       deletionRequestedBy: d['deletionRequestedBy'],
+      collectionId: d['collectionId'],
     );
   }
 
@@ -392,6 +402,47 @@ class MemoryModel {
         'favorite': favorite,
         'createdAt': Timestamp.fromDate(createdAt),
         'deletionRequestedBy': deletionRequestedBy,
+        if (collectionId != null) 'collectionId': collectionId,
+      };
+}
+
+// ──────────────── Photo Collection ────────────────
+
+class PhotoCollection {
+  final String id;
+  final String name;
+  final String? coverUrl;
+  final String createdBy;
+  final DateTime createdAt;
+  final int photoCount;
+
+  const PhotoCollection({
+    required this.id,
+    required this.name,
+    this.coverUrl,
+    required this.createdBy,
+    required this.createdAt,
+    this.photoCount = 0,
+  });
+
+  factory PhotoCollection.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return PhotoCollection(
+      id: doc.id,
+      name: d['name'] ?? '',
+      coverUrl: d['coverUrl'],
+      createdBy: d['createdBy'] ?? '',
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      photoCount: d['photoCount'] ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        if (coverUrl != null) 'coverUrl': coverUrl,
+        'createdBy': createdBy,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'photoCount': photoCount,
       };
 }
 
@@ -406,6 +457,7 @@ class BucketItem {
   final BucketStatus status;
   final String? linkedMemoryId;
   final DateTime createdAt;
+  final String? addedBy;
 
   const BucketItem({
     required this.id,
@@ -414,6 +466,7 @@ class BucketItem {
     this.status = BucketStatus.someday,
     this.linkedMemoryId,
     required this.createdAt,
+    this.addedBy,
   });
 
   factory BucketItem.fromDoc(DocumentSnapshot doc) {
@@ -425,6 +478,7 @@ class BucketItem {
       status: BucketStatus.values.byName(d['status'] ?? 'someday'),
       linkedMemoryId: d['linkedMemoryId'],
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      addedBy: d['addedBy'],
     );
   }
 
@@ -434,6 +488,7 @@ class BucketItem {
         'status': status.name,
         'linkedMemoryId': linkedMemoryId,
         'createdAt': Timestamp.fromDate(createdAt),
+        if (addedBy != null) 'addedBy': addedBy,
       };
 }
 
@@ -483,11 +538,11 @@ class RoomObject {
 // ──────────────── Game Round (Would You Rather) ────────────────
 
 class GameRound {
-  final String date; // YYYY-MM-DD — document ID
+  final String date;
   final int questionIndex;
   final String optionA;
   final String optionB;
-  final Map<String, String> picks; // {uid: 'A' | 'B'}
+  final Map<String, String> picks;
 
   const GameRound({
     required this.date,

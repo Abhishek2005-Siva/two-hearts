@@ -1,57 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-// ── Time-of-Day ambient theme ─────────────────────────────────────────────
-
-class RoomTod {
-  static final _breakpoints = <int, List<Color>>{
-    0:  [const Color(0xFF050215), const Color(0xFF04021A)],   // midnight: deep indigo
-    5:  [const Color(0xFF0D1535), const Color(0xFF080A22)],   // dawn: cool blue
-    8:  [const Color(0xFF1A0E28), const Color(0xFF0F0818)],   // morning: soft purple
-    11: [const Color(0xFF130A14), const Color(0xFF0D0810)],   // midday: warm neutral
-    17: [const Color(0xFF1C0A00), const Color(0xFF120808)],   // golden hour: amber
-    19: [const Color(0xFF160610), const Color(0xFF0E0610)],   // dusk
-    21: [const Color(0xFF08041A), const Color(0xFF060315)],   // night: indigo
-  };
-
-  static List<Color> bgGradient(DateTime now) {
-    final h = now.hour;
-    int prevKey = 0;
-    for (final key in _breakpoints.keys) {
-      if (h >= key) prevKey = key;
-    }
-    return _breakpoints[prevKey]!;
-  }
-
-  // Tinted overlay for the ceiling/sky zone
-  static Color skyCeiling(DateTime now) {
-    final h = now.hour;
-    if (h >= 5 && h < 8)  return const Color(0x200D1535);   // dawn blue
-    if (h >= 8 && h < 11) return const Color(0x181A0E28);   // morning purple
-    if (h >= 11 && h < 17) return const Color(0x0AFFF5E0);  // midday warm
-    if (h >= 17 && h < 20) return const Color(0x28FF7A00);  // golden amber
-    if (h >= 20 && h < 22) return const Color(0x18200010);  // dusk deep
-    return const Color(0x250D0630);                          // night indigo
-  }
-
-  // Glow brightness multiplier (1.0 = normal, >1.0 = brighter when partner online)
-  static double glow(DateTime now) {
-    final h = now.hour;
-    if (h >= 10 && h < 18) return 1.0;
-    if (h >= 6  && h < 10) return 0.85;
-    if (h >= 18 && h < 21) return 0.9;
-    return 0.70;
-  }
-
-  static String label(DateTime now) {
-    final h = now.hour;
-    if (h >= 5  && h < 9)  return 'dawn';
-    if (h >= 9  && h < 17) return 'day';
-    if (h >= 17 && h < 20) return 'dusk';
-    return 'night';
-  }
-}
-
 class AppColors {
   static const Color defaultAccent = Color(0xFFFF6B8A);
 

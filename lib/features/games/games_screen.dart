@@ -9,6 +9,17 @@ import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
+// ── Scribble word list ────────────────────────────────────────────────────
+const _scribbleWords = [
+  'cat', 'dog', 'house', 'tree', 'car', 'sun', 'moon', 'star', 'flower',
+  'heart', 'pizza', 'ice cream', 'beach', 'mountain', 'rainbow', 'cloud',
+  'umbrella', 'guitar', 'piano', 'camera', 'bicycle', 'airplane', 'rocket',
+  'crown', 'diamond', 'book', 'pencil', 'clock', 'candle', 'cake',
+  'balloon', 'butterfly', 'elephant', 'penguin', 'dolphin', 'owl', 'fox',
+  'bridge', 'lighthouse', 'windmill', 'castle', 'snowflake', 'campfire',
+  'coffee', 'popcorn', 'sushi', 'cupcake', 'pineapple', 'avocado',
+];
+
 // ── Would You Rather questions ────────────────────────────────────────────
 const _wyrQuestions = [
   ('Wake up at 5 AM every day', 'Stay up until 2 AM every night'),
@@ -158,7 +169,7 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this);
     _confettiCtrl = ConfettiController(duration: const Duration(seconds: 3));
   }
 
@@ -266,8 +277,9 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
                     ),
                     tabs: const [
                       Tab(text: 'WYR'),
-                      Tab(text: 'Truth Jar'),
-                      Tab(text: 'Date Wheel'),
+                      Tab(text: 'Truth'),
+                      Tab(text: 'Dates'),
+                      Tab(text: 'Scribble'),
                     ],
                   ),
                 ),
@@ -302,6 +314,15 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
                       _DateWheelTab(
                         accent: accent,
                         coupleId: coupleId,
+                      ),
+
+                      // ── Scribble ──────────────────────────────────────
+                      _ScribbleTab(
+                        accent: accent,
+                        coupleId: coupleId,
+                        myUid: myUid,
+                        myName: me?.displayName.split(' ').first ?? 'You',
+                        partnerName: partner?.displayName.split(' ').first ?? 'Partner',
                       ),
                     ],
                   ),
@@ -1020,4 +1041,486 @@ class _StatusCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Scribble Tab ──────────────────────────────────────────────────────────
+
+class _ScribbleTab extends ConsumerStatefulWidget {
+  final Color accent;
+  final String coupleId;
+  final String myUid;
+  final String myName;
+  final String partnerName;
+
+  const _ScribbleTab({
+    required this.accent,
+    required this.coupleId,
+    required this.myUid,
+    required this.myName,
+    required this.partnerName,
+  });
+
+  @override
+  ConsumerState<_ScribbleTab> createState() => _ScribbleTabState();
+}
+
+class _ScribbleTabState extends ConsumerState<_ScribbleTab> {
+  final _guessCtrl = TextEditingController();
+  List<_Stroke> _currentStrokes = [];
+  _Stroke? _activeStroke;
+  Color _penColor = const Color(0xFFFF6B8A);
+  double _penWidth = 4.0;
+  bool _submittingGuess = false;
+
+  static const _colors = [
+    Color(0xFFFF6B8A), Color(0xFFFFFFFF), Color(0xFFFFD166),
+    Color(0xFF6FBFA0), Color(0xFF5B9BD5), Color(0xFFFF8C42),
+    Color(0xFFB8A0D9), Color(0xFF000000),
+  ];
+
+  @override
+  void dispose() {
+    _guessCtrl.dispose();
+    super.dispose();
+  }
+
+
+  Future<void> _startGame() async {
+    final word = _scribbleWords[Random().nextInt(_scribbleWords.length)];
+    await ref.read(firestoreServiceProvider)
+        .startScribble(widget.coupleId, word, widget.myUid);
+  }
+
+  Future<void> _submitGuess() async {
+    final guess = _guessCtrl.text.trim();
+    if (guess.isEmpty) return;
+    _guessCtrl.clear();
+    setState(() => _submittingGuess = true);
+    try {
+      await ref.read(firestoreServiceProvider)
+          .submitScribbleGuess(widget.coupleId, guess);
+    } finally {
+      if (mounted) setState(() => _submittingGuess = false);
+    }
+  }
+
+  Future<void> _onStrokeEnd() async {
+    if (_activeStroke == null || _activeStroke!.pts.isEmpty) return;
+    final stroke = _activeStroke!;
+    setState(() {
+      _currentStrokes.add(stroke);
+      _activeStroke = null;
+    });
+    final pts = stroke.pts
+        .map((p) => {'x': p.dx, 'y': p.dy})
+        .toList();
+    await ref.read(firestoreServiceProvider)
+        .addScribbleStroke(widget.coupleId, pts, _colorHex(stroke.color), stroke.width);
+  }
+
+  String _colorHex(Color c) =>
+      '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+
+  Color _hexColor(String hex) {
+    final h = hex.replaceFirst('#', '');
+    return Color(int.parse('FF$h', radix: 16));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scribbleAsync = ref.watch(scribbleProvider);
+    final data = scribbleAsync.valueOrNull;
+
+    // Extract game state outside widget tree
+    final isDrawer = data == null || data['drawerId'] == widget.myUid;
+    final word = data?['word'] as String? ?? '';
+    final status = data?['status'] as String? ?? 'drawing';
+    final rawStrokes = (data?['strokes'] as List?)?.cast<Map>() ?? [];
+    final guesses = (data?['guesses'] as List?)?.cast<Map>() ?? [];
+    final correct = status == 'correct';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+      child: Column(
+        children: [
+          _SectionHeader(
+            emoji: '🎨',
+            title: 'Scribble',
+            subtitle: 'One draws, one guesses — real-time!',
+            accent: widget.accent,
+          ),
+          const SizedBox(height: 20),
+
+          if (data == null) ...[
+            // No active game
+            GlassCard(
+              child: Column(
+                children: [
+                  const Text('🎨', style: TextStyle(fontSize: 56)),
+                  const SizedBox(height: 16),
+                  Text('Start a round!',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(
+                    'You\'ll draw a secret word — your partner tries to guess it.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 20),
+                  GradientButton(label: 'I\'ll Draw!', onTap: _startGame),
+                ],
+              ),
+            ),
+          ] else ...[
+            if (correct) ...[
+              // ── Game won ──
+              GlassCard(
+                child: Column(children: [
+                  const Text('🎉', style: TextStyle(fontSize: 64)),
+                  const SizedBox(height: 16),
+                  Text('Correct!', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  Text('The word was "$word"',
+                      style: TextStyle(color: widget.accent,
+                          fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 20),
+                  GradientButton(
+                    label: 'Play Again',
+                    onTap: () async {
+                      await ref.read(firestoreServiceProvider)
+                          .resetScribble(widget.coupleId);
+                    },
+                  ),
+                ]),
+              ),
+            ] else if (isDrawer) ...[
+              // ── Drawing side ──
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: widget.accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                      color: widget.accent.withValues(alpha: 0.4)),
+                ),
+                child: Row(children: [
+                  const Text('🎯', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Text('Draw: ',
+                      style: TextStyle(color: widget.accent,
+                          fontWeight: FontWeight.w600)),
+                  Text(word,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold)),
+                ]),
+              ),
+              const SizedBox(height: 12),
+
+              // Canvas
+              _DrawCanvas(
+                remoteStrokes: rawStrokes,
+                activeStroke: _activeStroke,
+                localStrokes: _currentStrokes,
+                penColor: _penColor,
+                penWidth: _penWidth,
+                hexColor: _hexColor,
+                onPanStart: (pos) => setState(() {
+                  _activeStroke = _Stroke(color: _penColor, width: _penWidth, pts: [pos]);
+                }),
+                onPanUpdate: (pos) => setState(() {
+                  _activeStroke?.pts.add(pos);
+                }),
+                onPanEnd: (_) => _onStrokeEnd(),
+              ),
+              const SizedBox(height: 12),
+
+              // Pen controls
+              Row(children: [
+                ..._colors.map((c) => GestureDetector(
+                  onTap: () => setState(() => _penColor = c),
+                  child: Container(
+                    width: 28, height: 28,
+                    margin: const EdgeInsets.only(right: 6),
+                    decoration: BoxDecoration(
+                      color: c,
+                      shape: BoxShape.circle,
+                      border: _penColor == c
+                          ? Border.all(
+                              color: widget.accent, width: 2.5)
+                          : Border.all(
+                              color: AppColors.divider, width: 0.5),
+                    ),
+                  ),
+                )),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.undo_rounded,
+                      color: AppColors.textMuted),
+                  onPressed: () async {
+                    setState(() => _currentStrokes = []);
+                    await ref.read(firestoreServiceProvider)
+                        .clearScribbleCanvas(widget.coupleId);
+                  },
+                ),
+              ]),
+              const SizedBox(height: 8),
+              // Width slider
+              Row(children: [
+                const Icon(Icons.line_weight_rounded,
+                    color: AppColors.textMuted, size: 18),
+                Expanded(
+                  child: Slider(
+                    value: _penWidth,
+                    min: 2, max: 16,
+                    activeColor: widget.accent,
+                    inactiveColor: AppColors.divider,
+                    onChanged: (v) => setState(() => _penWidth = v),
+                  ),
+                ),
+              ]),
+
+              // Recent guesses
+              if (guesses.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('Guesses',
+                    style: Theme.of(context).textTheme.bodyMedium),
+                const SizedBox(height: 6),
+                ...guesses.reversed.take(5).map((g) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '${widget.partnerName}: ${g['guess']}',
+                    style: TextStyle(
+                      color: g['correct'] == true
+                          ? const Color(0xFF4CAF50)
+                          : AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                )),
+              ],
+            ] else ...[
+              // ── Guessing side ──
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.bgCard,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.divider),
+                ),
+                child: Row(children: [
+                  const Text('🔍', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Text('${widget.partnerName} is drawing something…',
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 13)),
+                ]),
+              ),
+              const SizedBox(height: 12),
+
+              // View-only canvas
+              _DrawCanvas(
+                remoteStrokes: rawStrokes,
+                activeStroke: null,
+                localStrokes: const [],
+                penColor: Colors.white,
+                penWidth: 4,
+                hexColor: _hexColor,
+                onPanStart: (_) {},
+                onPanUpdate: (_) {},
+                onPanEnd: (_) {},
+              ),
+              const SizedBox(height: 12),
+
+              // Guess input
+              Row(children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.bgCard,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.divider),
+                    ),
+                    child: TextField(
+                      controller: _guessCtrl,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary),
+                      decoration: const InputDecoration(
+                        hintText: 'Type your guess…',
+                        hintStyle:
+                            TextStyle(color: AppColors.textMuted),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                      ),
+                      onSubmitted: (_) => _submitGuess(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _submittingGuess ? null : _submitGuess,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                          colors: [widget.accent, AppColors.coral]),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: _submittingGuess
+                        ? const SizedBox(
+                            width: 18, height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.send_rounded,
+                            color: Colors.white, size: 18),
+                  ),
+                ),
+              ]),
+
+              if (guesses.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                ...guesses.reversed.take(5).map((g) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    'You: ${g['guess']}',
+                    style: TextStyle(
+                      color: g['correct'] == true
+                          ? const Color(0xFF4CAF50)
+                          : AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                )),
+              ],
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Drawing canvas ────────────────────────────────────────────────────────
+
+class _Stroke {
+  final Color color;
+  final double width;
+  final List<Offset> pts;
+  _Stroke({required this.color, required this.width, required this.pts});
+}
+
+class _DrawCanvas extends StatelessWidget {
+  final List<Map> remoteStrokes;
+  final _Stroke? activeStroke;
+  final List<_Stroke> localStrokes;
+  final Color penColor;
+  final double penWidth;
+  final Color Function(String) hexColor;
+  final void Function(Offset) onPanStart;
+  final void Function(Offset) onPanUpdate;
+  final void Function(DragEndDetails) onPanEnd;
+
+  const _DrawCanvas({
+    required this.remoteStrokes,
+    required this.activeStroke,
+    required this.localStrokes,
+    required this.penColor,
+    required this.penWidth,
+    required this.hexColor,
+    required this.onPanStart,
+    required this.onPanUpdate,
+    required this.onPanEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        height: 260,
+        color: const Color(0xFF1A1A2E),
+        child: GestureDetector(
+          onPanStart: (d) => onPanStart(d.localPosition),
+          onPanUpdate: (d) => onPanUpdate(d.localPosition),
+          onPanEnd: onPanEnd,
+          child: CustomPaint(
+            painter: _CanvasPainter(
+              remoteStrokes: remoteStrokes,
+              activeStroke: activeStroke,
+              localStrokes: localStrokes,
+              hexColor: hexColor,
+            ),
+            size: Size.infinite,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CanvasPainter extends CustomPainter {
+  final List<Map> remoteStrokes;
+  final _Stroke? activeStroke;
+  final List<_Stroke> localStrokes;
+  final Color Function(String) hexColor;
+
+  _CanvasPainter({
+    required this.remoteStrokes,
+    required this.activeStroke,
+    required this.localStrokes,
+    required this.hexColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Draw remote strokes
+    for (final s in remoteStrokes) {
+      final rawPts = (s['pts'] as List?)?.cast<Map>() ?? [];
+      if (rawPts.isEmpty) continue;
+      final pts = rawPts
+          .map((p) => Offset(
+                (p['x'] as num?)?.toDouble() ?? 0,
+                (p['y'] as num?)?.toDouble() ?? 0,
+              ))
+          .toList();
+      final color = hexColor(s['color'] as String? ?? '#FFFFFF');
+      final width = (s['width'] as num?)?.toDouble() ?? 4.0;
+      _drawStroke(canvas, pts, color, width);
+    }
+
+    // Draw local confirmed strokes
+    for (final s in localStrokes) {
+      _drawStroke(canvas, s.pts, s.color, s.width);
+    }
+
+    // Draw active stroke in progress
+    if (activeStroke != null && activeStroke!.pts.isNotEmpty) {
+      _drawStroke(canvas, activeStroke!.pts,
+          activeStroke!.color, activeStroke!.width);
+    }
+  }
+
+  void _drawStroke(Canvas canvas, List<Offset> pts, Color color, double width) {
+    if (pts.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = width
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    path.moveTo(pts[0].dx, pts[0].dy);
+    for (int i = 1; i < pts.length; i++) {
+      path.lineTo(pts[i].dx, pts[i].dy);
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_CanvasPainter old) => true;
 }

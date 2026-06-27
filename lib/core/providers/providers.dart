@@ -52,6 +52,12 @@ final messagesProvider = StreamProvider<List<MessageModel>>((ref) {
   return ref.read(firestoreServiceProvider).watchMessages(coupleId);
 });
 
+final snapsProvider = StreamProvider<List<MessageModel>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchSnaps(coupleId);
+});
+
 // ── Moods ─────────────────────────────────────────────────────────────────
 
 final moodsProvider = StreamProvider<List<MoodEntry>>((ref) {
@@ -60,12 +66,13 @@ final moodsProvider = StreamProvider<List<MoodEntry>>((ref) {
   return ref.read(firestoreServiceProvider).watchMoods(coupleId);
 });
 
-// ── Letters ───────────────────────────────────────────────────────────────
+// ── Letters (receiver-only, unlocked-only) ────────────────────────────────
 
 final lettersProvider = StreamProvider<List<LetterModel>>((ref) {
   final coupleId = ref.watch(coupleIdProvider);
-  if (coupleId == null) return const Stream.empty();
-  return ref.read(firestoreServiceProvider).watchLetters(coupleId);
+  final myUid = ref.watch(currentUserProvider).valueOrNull?.uid;
+  if (coupleId == null || myUid == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchLetters(coupleId, myUid);
 });
 
 // ── Journal ───────────────────────────────────────────────────────────────
@@ -82,6 +89,14 @@ final memoriesProvider = StreamProvider<List<MemoryModel>>((ref) {
   final coupleId = ref.watch(coupleIdProvider);
   if (coupleId == null) return const Stream.empty();
   return ref.read(firestoreServiceProvider).watchMemories(coupleId);
+});
+
+// ── Photo Collections ─────────────────────────────────────────────────────
+
+final photoCollectionsProvider = StreamProvider<List<PhotoCollection>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchCollections(coupleId);
 });
 
 // ── Bucket List ───────────────────────────────────────────────────────────
@@ -109,6 +124,18 @@ final partnerUserProvider = StreamProvider<UserModel?>((ref) {
   final partnerUid = couple.partnerUid(me.uid);
   if (partnerUid.isEmpty) return const Stream.empty();
   return ref.read(firestoreServiceProvider).watchUser(partnerUid);
+});
+
+// ── Partner Online ────────────────────────────────────────────────────────
+
+final partnerOnlineProvider = StreamProvider<bool>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final couple = ref.watch(coupleProvider).valueOrNull;
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  if (coupleId == null || couple == null || me == null) return Stream.value(false);
+  final partnerUid = couple.partnerUid(me.uid);
+  if (partnerUid.isEmpty) return Stream.value(false);
+  return ref.read(firestoreServiceProvider).watchPartnerOnline(coupleId, partnerUid);
 });
 
 // ── Today's Game (Would You Rather) ──────────────────────────────────────
@@ -155,14 +182,10 @@ final compatibilityStatsProvider = FutureProvider<Map<String, int>>((ref) {
   return ref.read(firestoreServiceProvider).getCompatibilityStats(coupleId);
 });
 
-// ── Partner online presence ───────────────────────────────────────────────
+// ── Scribble ─────────────────────────────────────────────────────────────
 
-final partnerOnlineProvider = StreamProvider<bool>((ref) {
+final scribbleProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   final coupleId = ref.watch(coupleIdProvider);
-  final couple = ref.watch(coupleProvider).valueOrNull;
-  final me = ref.watch(currentUserProvider).valueOrNull;
-  if (coupleId == null || couple == null || me == null) return Stream.value(false);
-  final partnerUid = couple.partnerUid(me.uid);
-  if (partnerUid.isEmpty) return Stream.value(false);
-  return ref.read(firestoreServiceProvider).watchPartnerOnline(coupleId, partnerUid);
+  if (coupleId == null) return Stream.value(null);
+  return ref.read(firestoreServiceProvider).watchScribble(coupleId);
 });
