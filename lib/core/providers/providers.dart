@@ -58,6 +58,12 @@ final snapsProvider = StreamProvider<List<MessageModel>>((ref) {
   return ref.read(firestoreServiceProvider).watchSnaps(coupleId);
 });
 
+final chatImagesProvider = StreamProvider<List<MessageModel>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchImageMessages(coupleId);
+});
+
 // ── Moods ─────────────────────────────────────────────────────────────────
 
 final moodsProvider = StreamProvider<List<MoodEntry>>((ref) {

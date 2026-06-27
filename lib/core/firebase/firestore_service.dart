@@ -121,9 +121,16 @@ class FirestoreService {
       .doc(coupleId)
       .collection('messages')
       .where('isSnap', isEqualTo: true)
-      .orderBy('sentAt', descending: true)
       .snapshots()
-      .map((s) => s.docs.map(MessageModel.fromDoc).toList());
+      .map((s) {
+        final list = s.docs.map(MessageModel.fromDoc).toList();
+        list.sort((a, b) => b.sentAt.compareTo(a.sentAt));
+        return list;
+      });
+
+  Stream<List<MessageModel>> watchImageMessages(String coupleId) =>
+      watchMessages(coupleId).map(
+          (msgs) => msgs.where((m) => m.type == MessageType.image).toList());
 
   Future<void> sendMessage(String coupleId, MessageModel msg) => _db
       .collection('couples')
@@ -403,6 +410,13 @@ class FirestoreService {
       .orderBy('createdAt', descending: false)
       .snapshots()
       .map((s) => s.docs.map(BucketItem.fromDoc).toList());
+
+  Future<void> deleteBucketItem(String coupleId, String itemId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('bucketList')
+      .doc(itemId)
+      .delete();
 
   Future<void> updateBucketStatus(
       String coupleId, String itemId, BucketStatus status) async {

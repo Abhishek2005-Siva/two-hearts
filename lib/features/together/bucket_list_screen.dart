@@ -1,4 +1,4 @@
-import 'dart:math';
+import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +9,150 @@ import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
+// ── Deterministic book palette ────────────────────────────────────────────
+
+const _kBookColors = [
+  Color(0xFF8B2323), // deep red
+  Color(0xFF2F5F3F), // forest green
+  Color(0xFF9E7B1A), // mustard / dark gold
+  Color(0xFF1A2F5C), // navy
+  Color(0xFF7A4A2A), // tan / leather
+  Color(0xFF6B1A2F), // burgundy
+  Color(0xFF3D4A5C), // slate
+  Color(0xFF4A2F1A), // dark brown
+  Color(0xFF2C4A3E), // dark teal
+  Color(0xFF5C3D2E), // chocolate
+];
+
+class _BookProps {
+  final Color color;
+  final double widthFraction;
+  final double thickness;
+  final double rotationDeg;
+  final double xOffset;
+
+  const _BookProps({
+    required this.color,
+    required this.widthFraction,
+    required this.thickness,
+    required this.rotationDeg,
+    required this.xOffset,
+  });
+
+  factory _BookProps.fromId(String id) {
+    int h = id.codeUnits.fold(0, (int a, int c) => (a * 31 + c) & 0x7FFFFFFF);
+    int next() {
+      h = (h * 1664525 + 1013904223) & 0x7FFFFFFF;
+      return h;
+    }
+
+    final colorIdx = next() % _kBookColors.length;
+    final wf = 0.62 + (next() % 300) / 1000.0;
+    final th = 30.0 + (next() % 22).toDouble();
+    final rot = ((next() % 80) - 40) / 10.0;
+    final xOff = ((next() % 25) - 12).toDouble();
+
+    return _BookProps(
+      color: _kBookColors[colorIdx],
+      widthFraction: wf.clamp(0.62, 0.92),
+      thickness: th,
+      rotationDeg: rot,
+      xOffset: xOff,
+    );
+  }
+}
+
+// ── Library background painter ─────────────────────────────────────────────
+
+class _LibraryPainter extends CustomPainter {
+  const _LibraryPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Dark warm background
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF1C1007), Color(0xFF0D0805)],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+    );
+
+    // Warm amber glow from top-center (lamp light)
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(size.width / 2, -size.height * 0.1),
+        width: size.width * 1.2,
+        height: size.height * 0.7,
+      ),
+      Paint()
+        ..color = const Color(0xFFFF8C00).withValues(alpha: 0.06)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 60),
+    );
+
+    // Shelf planks
+    const shelfColor = Color(0xFF3A2510);
+    const shelfShadow = Color(0xFF000000);
+    final shelfPositions = [
+      size.height * 0.26,
+      size.height * 0.52,
+      size.height * 0.78,
+    ];
+    for (final y in shelfPositions) {
+      // Plank
+      canvas.drawRect(
+        Rect.fromLTWH(0, y, size.width, 11),
+        Paint()..color = shelfColor,
+      );
+      // Edge highlight
+      canvas.drawRect(
+        Rect.fromLTWH(0, y, size.width, 2),
+        Paint()..color = const Color(0xFF6A4520).withValues(alpha: 0.6),
+      );
+      // Drop shadow below plank
+      canvas.drawRect(
+        Rect.fromLTWH(0, y + 11, size.width, 10),
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              shelfShadow.withValues(alpha: 0.5),
+              Colors.transparent,
+            ],
+          ).createShader(Rect.fromLTWH(0, y + 11, size.width, 10)),
+      );
+
+      // Blurred books on shelf
+      _drawShelfBooks(canvas, size.width, y - 55, 55);
+    }
+  }
+
+  void _drawShelfBooks(Canvas canvas, double width, double top, double height) {
+    final rng = math.Random(top.toInt());
+    double x = 6;
+    while (x < width - 10) {
+      final w = 10.0 + rng.nextDouble() * 16;
+      final h = height * (0.5 + rng.nextDouble() * 0.5);
+      final colorIdx = rng.nextInt(_kBookColors.length);
+      canvas.drawRect(
+        Rect.fromLTWH(x, top + (height - h), w, h),
+        Paint()
+          ..color = _kBookColors[colorIdx].withValues(alpha: 0.18)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+      );
+      x += w + 1 + rng.nextDouble() * 4;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LibraryPainter _) => false;
+}
+
+// ── Main screen ────────────────────────────────────────────────────────────
+
 class BucketListScreen extends ConsumerStatefulWidget {
   const BucketListScreen({super.key});
 
@@ -16,197 +160,341 @@ class BucketListScreen extends ConsumerStatefulWidget {
   ConsumerState<BucketListScreen> createState() => _BucketListScreenState();
 }
 
-class _BucketListScreenState extends ConsumerState<BucketListScreen>
-    with SingleTickerProviderStateMixin {
-  final _ctrl = TextEditingController();
-  final _scrollCtrl = ScrollController();
-  late AnimationController _cloudCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _cloudCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 30),
-    )..repeat();
-  }
+class _BucketListScreenState extends ConsumerState<BucketListScreen> {
+  final _textCtrl = TextEditingController();
+  String? _animatingId; // last added book plays fall animation
+  Set<String> _knownIds = {};
 
   @override
   void dispose() {
-    _ctrl.dispose();
-    _scrollCtrl.dispose();
-    _cloudCtrl.dispose();
+    _textCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _add() async {
-    final title = _ctrl.text.trim();
-    if (title.isEmpty) return;
-    final coupleId = ref.read(coupleIdProvider);
-    if (coupleId == null) return;
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    _ctrl.clear();
-    HapticFeedback.lightImpact();
-    await ref.read(firestoreServiceProvider).addBucketItem(
-      coupleId,
-      BucketItem(
-        id: const Uuid().v4(),
-        title: title,
-        createdAt: DateTime.now(),
-        addedBy: uid,
-      ),
-    );
-    // Scroll to bottom after adding
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+  void _onItemsUpdated(List<BucketItem> items) {
+    final newId = items
+        .map((i) => i.id)
+        .where((id) => !_knownIds.contains(id))
+        .lastOrNull;
+    if (newId != null) {
+      _knownIds = items.map((i) => i.id).toSet();
+      // Schedule animation flag reset after animation completes
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _animatingId = newId);
+          Future.delayed(const Duration(milliseconds: 900), () {
+            if (mounted) setState(() => _animatingId = null);
+          });
+        }
+      });
+    } else {
+      _knownIds = items.map((i) => i.id).toSet();
+    }
   }
 
-  Future<void> _toggleDone(BucketItem item) async {
+  Future<void> _addItem() async {
+    final title = _textCtrl.text.trim();
+    if (title.isEmpty) return;
+
+    final coupleId = ref.read(coupleIdProvider);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (coupleId == null || uid == null) return;
+
+    final item = BucketItem(
+      id: const Uuid().v4(),
+      title: title,
+      createdAt: DateTime.now(),
+      addedBy: uid,
+    );
+
+    _textCtrl.clear();
+    HapticFeedback.mediumImpact();
+    await ref.read(firestoreServiceProvider).addBucketItem(coupleId, item);
+  }
+
+  void _showItemOptions(BuildContext context, BucketItem item) {
     final coupleId = ref.read(coupleIdProvider);
     if (coupleId == null) return;
-    HapticFeedback.selectionClick();
-    final next = item.status == BucketStatus.done
-        ? BucketStatus.someday
-        : BucketStatus.done;
-    await ref
-        .read(firestoreServiceProvider)
-        .updateBucketStatus(coupleId, item.id, next);
+    final isDone = item.status == BucketStatus.done;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(item.title,
+                  style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600)),
+              if (item.note != null) ...[
+                const SizedBox(height: 6),
+                Text(item.note!,
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 14)),
+              ],
+              const SizedBox(height: 20),
+              if (!isDone)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Text('✓', style: TextStyle(fontSize: 22)),
+                  title: const Text('Mark as done',
+                      style: TextStyle(color: AppColors.textPrimary)),
+                  onTap: () async {
+                    Navigator.pop(sheetCtx);
+                    HapticFeedback.lightImpact();
+                    await ref
+                        .read(firestoreServiceProvider)
+                        .updateBucketStatus(coupleId, item.id, BucketStatus.done);
+                  },
+                )
+              else
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.refresh_rounded,
+                      color: AppColors.textSecondary),
+                  title: const Text('Mark as not done',
+                      style: TextStyle(color: AppColors.textPrimary)),
+                  onTap: () async {
+                    Navigator.pop(sheetCtx);
+                    await ref
+                        .read(firestoreServiceProvider)
+                        .updateBucketStatus(
+                            coupleId, item.id, BucketStatus.someday);
+                  },
+                ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.delete_outline_rounded,
+                    color: AppColors.rose),
+                title: const Text('Remove',
+                    style: TextStyle(color: AppColors.rose)),
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  await ref
+                      .read(firestoreServiceProvider)
+                      .deleteBucketItem(coupleId, item.id);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final items = ref.watch(bucketListProvider).valueOrNull ?? [];
     final accent = ref.watch(accentColorProvider);
-    final doneCount = items.where((i) => i.status == BucketStatus.done).length;
-    final size = MediaQuery.of(context).size;
-
-    // Active items shown top of ladder, done items at bottom
-    final active = items.where((i) => i.status != BucketStatus.done).toList();
-    final done = items.where((i) => i.status == BucketStatus.done).toList();
-    final all = [...active, ...done];
+    final itemsAsync = ref.watch(bucketListProvider);
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // ── Sky gradient background ────────────────────────────────────
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF1A1A4E),   // deep midnight
-                  Color(0xFF0D0D2B),
-                  Color(0xFF08081A),
-                ],
+          // Library background (full screen)
+          const Positioned.fill(
+            child: CustomPaint(painter: _LibraryPainter()),
+          ),
+
+          // Warm desk-surface vignette at bottom
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            height: 120,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Color(0xCC1C1007)],
+                ),
               ),
             ),
           ),
 
-          // ── Animated floating clouds ───────────────────────────────────
-          AnimatedBuilder(
-            animation: _cloudCtrl,
-            builder: (_, _) {
-              final t = _cloudCtrl.value;
-              return Stack(
-                children: [
-                  _Cloud(x: (-0.3 + t * 1.3) % 1.0, y: 0.08, opacity: 0.18, scale: 1.4, w: size.width),
-                  _Cloud(x: (0.6 + t * 0.8) % 1.0, y: 0.15, opacity: 0.12, scale: 1.0, w: size.width),
-                  _Cloud(x: (0.1 + t * 1.1) % 1.0, y: 0.24, opacity: 0.1, scale: 0.8, w: size.width),
-                  _Cloud(x: (0.8 + t * 0.9) % 1.0, y: 0.32, opacity: 0.08, scale: 1.2, w: size.width),
-                  _Cloud(x: (-0.1 + t * 0.7) % 1.0, y: 0.42, opacity: 0.07, scale: 0.9, w: size.width),
-                ],
-              );
-            },
-          ),
-
+          // Main content
           SafeArea(
             child: Column(
               children: [
-                // ── Header ───────────────────────────────────────────────
+                // Header
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
                   child: Row(
                     children: [
                       IconButton(
                         icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
+                            color: Colors.white70),
+                        onPressed: () => Navigator.maybePop(context),
                       ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Bucket List 🪜',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold)),
-                            if (items.isNotEmpty)
-                              Text(
-                                '$doneCount of ${items.length} climbed',
-                                style: TextStyle(
-                                    color: accent, fontSize: 12,
-                                    fontWeight: FontWeight.w500),
-                              ),
-                          ],
+                      const Expanded(
+                        child: Text(
+                          'The Library',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
 
-                // ── Add input pinned at top ───────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                // Book pile
+                Expanded(
+                  child: itemsAsync.when(
+                    loading: () => const Center(
+                        child: CircularProgressIndicator(
+                            color: AppColors.rose)),
+                    error: (e, _) => Center(
+                        child: Text('$e',
+                            style: const TextStyle(
+                                color: AppColors.textSecondary))),
+                    data: (items) {
+                      // Detect newly added books
+                      _onItemsUpdated(items);
+
+                      final active = items
+                          .where((i) => i.status != BucketStatus.done)
+                          .toList();
+                      final done = items
+                          .where((i) => i.status == BucketStatus.done)
+                          .toList();
+
+                      if (items.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('📚',
+                                  style: TextStyle(fontSize: 64)),
+                              const SizedBox(height: 16),
+                              const Text('The shelves are empty',
+                                  style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 8),
+                              Text('Add your first dream below ♡',
+                                  style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.4),
+                                      fontSize: 13)),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            if (active.isNotEmpty) ...[
+                              // Active books — newest on top (reversed)
+                              ...active.reversed.map((item) => _BookWidget(
+                                    key: ValueKey(item.id),
+                                    item: item,
+                                    isDone: false,
+                                    isNew: item.id == _animatingId,
+                                    onTap: () => _showItemOptions(context, item),
+                                  )),
+                            ],
+
+                            if (done.isNotEmpty) ...[
+                              const SizedBox(height: 32),
+                              // Divider label
+                              Row(children: [
+                                Expanded(
+                                    child: Divider(
+                                        color: Colors.white.withValues(alpha: 0.12))),
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 12),
+                                  child: Text('COMPLETED',
+                                      style: TextStyle(
+                                          color: Colors.amber.shade400,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 2)),
+                                ),
+                                Expanded(
+                                    child: Divider(
+                                        color: Colors.white.withValues(alpha: 0.12))),
+                              ]),
+                              const SizedBox(height: 16),
+                              ...done.reversed.map((item) => _BookWidget(
+                                    key: ValueKey('done_${item.id}'),
+                                    item: item,
+                                    isDone: true,
+                                    isNew: false,
+                                    onTap: () => _showItemOptions(context, item),
+                                  )),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                // Add book input
+                Container(
+                  padding: EdgeInsets.fromLTRB(
+                      16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C1007).withValues(alpha: 0.95),
+                    border: Border(
+                      top: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                  ),
                   child: Row(
                     children: [
                       Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                width: 0.5),
-                          ),
-                          child: TextField(
-                            controller: _ctrl,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              hintText: 'Add a dream to your ladder…',
-                              hintStyle: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.4)),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 12),
+                        child: TextField(
+                          controller: _textCtrl,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 15),
+                          decoration: InputDecoration(
+                            hintText: 'A new dream for the shelf…',
+                            hintStyle: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.35),
+                                fontSize: 14),
+                            filled: true,
+                            fillColor: Colors.white.withValues(alpha: 0.07),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
                             ),
-                            onSubmitted: (_) => _add(),
                           ),
+                          onSubmitted: (_) => _addItem(),
                         ),
                       ),
                       const SizedBox(width: 10),
                       GestureDetector(
-                        onTap: _add,
+                        onTap: _addItem,
                         child: Container(
-                          padding: const EdgeInsets.all(13),
+                          width: 44, height: 44,
                           decoration: BoxDecoration(
-                            gradient:
-                                LinearGradient(colors: [accent, AppColors.coral]),
+                            gradient: LinearGradient(
+                              colors: [accent, AppColors.coral],
+                            ),
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
                                   color: accent.withValues(alpha: 0.4),
-                                  blurRadius: 10,
+                                  blurRadius: 12,
                                   offset: const Offset(0, 4))
                             ],
                           ),
@@ -217,45 +505,6 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen>
                     ],
                   ),
                 ),
-
-                // ── Ladder scroll area ────────────────────────────────────
-                Expanded(
-                  child: items.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text('🌟',
-                                  style: TextStyle(fontSize: 64)),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Your ladder awaits',
-                                style: TextStyle(
-                                    color: accent,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Add your first dream above\nand start climbing together ♡',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    color: Colors.white54, fontSize: 14, height: 1.6),
-                              ),
-                            ],
-                          ),
-                        )
-                      : SingleChildScrollView(
-                          controller: _scrollCtrl,
-                          padding: const EdgeInsets.fromLTRB(0, 8, 0, 48),
-                          child: _LadderWidget(
-                            items: all,
-                            accent: accent,
-                            activeCount: active.length,
-                            onToggle: _toggleDone,
-                          ),
-                        ),
-                ),
               ],
             ),
           ),
@@ -265,308 +514,193 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen>
   }
 }
 
-// ── Cloud widget ──────────────────────────────────────────────────────────
+// ── Single book widget ─────────────────────────────────────────────────────
 
-class _Cloud extends StatelessWidget {
-  final double x; // 0..1 fraction of width
-  final double y; // 0..1 fraction of height
-  final double opacity;
-  final double scale;
-  final double w;
-
-  const _Cloud({
-    required this.x,
-    required this.y,
-    required this.opacity,
-    required this.scale,
-    required this.w,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final h = MediaQuery.of(context).size.height;
-    return Positioned(
-      left: x * w - 80,
-      top: y * h,
-      child: Opacity(
-        opacity: opacity,
-        child: Transform.scale(
-          scale: scale,
-          alignment: Alignment.centerLeft,
-          child: const _CloudShape(),
-        ),
-      ),
-    );
-  }
-}
-
-class _CloudShape extends StatelessWidget {
-  const _CloudShape();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 200,
-      height: 60,
-      child: CustomPaint(painter: _CloudPainter()),
-    );
-  }
-}
-
-class _CloudPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white;
-    // Draw a simple cloud from overlapping circles
-    final circles = [
-      Offset(size.width * 0.3, size.height * 0.6),
-      Offset(size.width * 0.5, size.height * 0.4),
-      Offset(size.width * 0.65, size.height * 0.35),
-      Offset(size.width * 0.8, size.height * 0.5),
-      Offset(size.width * 0.15, size.height * 0.65),
-      Offset(size.width * 0.95, size.height * 0.6),
-    ];
-    final radii = [28.0, 36.0, 38.0, 30.0, 24.0, 22.0];
-    for (int i = 0; i < circles.length; i++) {
-      canvas.drawCircle(circles[i], radii[i], paint);
-    }
-    // Fill bottom gap
-    canvas.drawRect(
-      Rect.fromLTRB(
-        circles.first.dx - radii.first,
-        size.height * 0.55,
-        circles.last.dx + radii.last,
-        size.height,
-      ),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_CloudPainter _) => false;
-}
-
-// ── Ladder widget ─────────────────────────────────────────────────────────
-
-class _LadderWidget extends StatelessWidget {
-  final List<BucketItem> items;
-  final Color accent;
-  final int activeCount;
-  final Future<void> Function(BucketItem) onToggle;
-
-  const _LadderWidget({
-    required this.items,
-    required this.accent,
-    required this.activeCount,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Ladder rails sit centered; rungs connect them
-    const railWidth = 6.0;
-    const railGap = 130.0; // gap between left and right rails
-    const stepHeight = 90.0;
-    final totalHeight = items.length * stepHeight + 60;
-
-    return Center(
-      child: SizedBox(
-        width: double.infinity,
-        height: max(totalHeight, 300),
-        child: Stack(
-          alignment: Alignment.topCenter,
-          children: [
-            // Left rail
-            Positioned(
-              left: MediaQuery.of(context).size.width / 2 - railGap / 2 - railWidth / 2,
-              top: 0,
-              bottom: 0,
-              child: Container(
-                width: railWidth,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      accent.withValues(alpha: 0.3),
-                      accent.withValues(alpha: 0.8),
-                      accent.withValues(alpha: 0.4),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(railWidth),
-                ),
-              ),
-            ),
-            // Right rail
-            Positioned(
-              left: MediaQuery.of(context).size.width / 2 + railGap / 2 - railWidth / 2,
-              top: 0,
-              bottom: 0,
-              child: Container(
-                width: railWidth,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      accent.withValues(alpha: 0.3),
-                      accent.withValues(alpha: 0.8),
-                      accent.withValues(alpha: 0.4),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(railWidth),
-                ),
-              ),
-            ),
-
-            // Steps (rungs + cards)
-            ...List.generate(items.length, (i) {
-              final item = items[i];
-              final isDone = item.status == BucketStatus.done;
-              final topOffset = i * stepHeight + 20.0;
-              final stepNum = isDone ? null : (activeCount - (i < activeCount ? i : 0));
-
-              return Positioned(
-                top: topOffset,
-                left: 0,
-                right: 0,
-                child: _LadderStep(
-                  item: item,
-                  stepNumber: stepNum,
-                  isDone: isDone,
-                  accent: accent,
-                  railGap: railGap,
-                  onToggle: () => onToggle(item),
-                ).animate().fadeIn(
-                  delay: Duration(milliseconds: i * 60),
-                  duration: const Duration(milliseconds: 300),
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LadderStep extends StatelessWidget {
+class _BookWidget extends StatelessWidget {
   final BucketItem item;
-  final int? stepNumber;
   final bool isDone;
-  final Color accent;
-  final double railGap;
-  final VoidCallback onToggle;
+  final bool isNew;
+  final VoidCallback onTap;
 
-  const _LadderStep({
+  const _BookWidget({
+    super.key,
     required this.item,
-    this.stepNumber,
     required this.isDone,
-    required this.accent,
-    required this.railGap,
-    required this.onToggle,
+    required this.isNew,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // The rung (horizontal bar)
-        Container(
-          height: 6,
-          margin: EdgeInsets.symmetric(
-            horizontal: (MediaQuery.of(context).size.width - railGap) / 2 - 3,
-          ),
-          decoration: BoxDecoration(
-            color: isDone
-                ? accent.withValues(alpha: 0.5)
-                : Colors.white.withValues(alpha: 0.25),
-            borderRadius: BorderRadius.circular(3),
-          ),
-        ),
-        const SizedBox(height: 6),
-        // Step card
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: GestureDetector(
-            onTap: onToggle,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isDone
-                    ? accent.withValues(alpha: 0.1)
-                    : Colors.white.withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDone
-                      ? accent.withValues(alpha: 0.4)
-                      : Colors.white.withValues(alpha: 0.12),
-                  width: 0.5,
-                ),
-              ),
-              child: Row(
-                children: [
-                  // Step number / check
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: isDone
-                          ? LinearGradient(colors: [accent, AppColors.coral])
-                          : null,
-                      color: isDone ? null : Colors.white.withValues(alpha: 0.1),
-                      border: isDone
-                          ? null
-                          : Border.all(
-                              color: Colors.white.withValues(alpha: 0.3),
-                              width: 1.0),
-                    ),
-                    child: Center(
-                      child: isDone
-                          ? const Icon(Icons.check_rounded,
-                              color: Colors.white, size: 16)
-                          : Text(
-                              stepNumber != null ? '$stepNumber' : '✓',
-                              style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.7),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Title
-                  Expanded(
-                    child: Text(
-                      item.title,
-                      style: TextStyle(
-                        color: isDone
-                            ? Colors.white.withValues(alpha: 0.5)
-                            : Colors.white.withValues(alpha: 0.9),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        decoration: isDone ? TextDecoration.lineThrough : null,
-                        decorationColor: Colors.white.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    isDone
-                        ? Icons.redo_rounded
-                        : Icons.check_circle_outline_rounded,
-                    color: isDone
-                        ? Colors.white.withValues(alpha: 0.3)
-                        : accent.withValues(alpha: 0.6),
-                    size: 18,
-                  ),
-                ],
+    final props = _BookProps.fromId(item.id);
+    final baseColor = isDone
+        ? Color.lerp(props.color, Colors.grey, 0.55)!
+        : props.color;
+
+    Widget book = LayoutBuilder(
+      builder: (ctx, constraints) {
+        final bookWidth = constraints.maxWidth * props.widthFraction;
+        return Center(
+          child: Transform.translate(
+            offset: Offset(props.xOffset, 0),
+            child: Transform.rotate(
+              angle: props.rotationDeg * math.pi / 180,
+              child: _Spine(
+                width: bookWidth,
+                thickness: props.thickness,
+                color: baseColor,
+                title: item.title,
+                isDone: isDone,
               ),
             ),
           ),
+        );
+      },
+    );
+
+    book = GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: SizedBox(height: props.thickness + 8, child: book),
+      ),
+    );
+
+    if (isNew) {
+      return book
+          .animate()
+          .slideY(
+            begin: -4,
+            duration: 750.ms,
+            curve: Curves.elasticOut,
+          )
+          .fadeIn(duration: 150.ms);
+    }
+    return book;
+  }
+}
+
+class _Spine extends StatelessWidget {
+  final double width;
+  final double thickness;
+  final Color color;
+  final String title;
+  final bool isDone;
+
+  const _Spine({
+    required this.width,
+    required this.thickness,
+    required this.color,
+    required this.title,
+    required this.isDone,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final light = Color.lerp(color, Colors.white, 0.18)!;
+    final dark = Color.lerp(color, Colors.black, 0.35)!;
+
+    return Container(
+      width: width,
+      height: thickness,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [light, color, dark],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
         ),
-      ],
+        borderRadius: BorderRadius.circular(2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 8,
+            offset: const Offset(0, 5),
+            spreadRadius: -1,
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          // Top highlight band
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: Container(
+              height: 2.5,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withValues(alpha: 0.25),
+                    Colors.white.withValues(alpha: 0.05),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Bottom shadow band
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: Container(
+                height: 3,
+                color: Colors.black.withValues(alpha: 0.4)),
+          ),
+          // Thin accent stripe (1/5 from left)
+          Positioned(
+            left: width * 0.12,
+            top: 4,
+            bottom: 4,
+            child: Container(
+              width: 3,
+              color: Colors.white.withValues(alpha: 0.12),
+            ),
+          ),
+          // Title text
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+                width * 0.2, 0, isDone ? 32 : 12, 0),
+            child: Center(
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: isDone ? 0.45 : 0.92),
+                  fontSize: thickness > 40 ? 13.5 : 11.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                  shadows: const [
+                    Shadow(
+                        color: Colors.black54,
+                        blurRadius: 3,
+                        offset: Offset(0, 1)),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          // Done checkmark
+          if (isDone)
+            Positioned(
+              right: 10,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: Text(
+                  '✓',
+                  style: TextStyle(
+                    color: Colors.amber.shade300,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    shadows: [
+                      Shadow(
+                          color: Colors.amber.shade900.withValues(alpha: 0.6),
+                          blurRadius: 4),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

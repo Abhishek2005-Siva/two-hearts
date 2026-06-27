@@ -10,7 +10,7 @@ class SnapsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final snapsAsync = ref.watch(snapsProvider);
+    final imagesAsync = ref.watch(chatImagesProvider);
     final accent = ref.watch(accentColorProvider);
 
     return Scaffold(
@@ -35,7 +35,7 @@ class SnapsScreen extends ConsumerWidget {
                       onPressed: () => Navigator.maybePop(context),
                     ),
                     Expanded(
-                      child: Text('Snaps 📸',
+                      child: Text('Photos & Snaps',
                           style: Theme.of(context).textTheme.titleLarge),
                     ),
                   ],
@@ -43,33 +43,28 @@ class SnapsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 4),
               Expanded(
-                child: snapsAsync.when(
+                child: imagesAsync.when(
                   loading: () => const Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.rose)),
+                      child: CircularProgressIndicator(color: AppColors.rose)),
                   error: (e, _) => Center(
                       child: Text('Error: $e',
                           style: const TextStyle(
                               color: AppColors.textSecondary))),
-                  data: (snaps) {
-                    if (snaps.isEmpty) {
+                  data: (images) {
+                    if (images.isEmpty) {
                       return Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Text('📸',
+                            const Text('📷',
                                 style: TextStyle(fontSize: 64)),
                             const SizedBox(height: 16),
-                            Text('No snaps yet',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium),
+                            Text('No photos yet',
+                                style: Theme.of(context).textTheme.titleMedium),
                             const SizedBox(height: 8),
                             Text(
-                              'Send disappearing photos from the chat ♡',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium,
+                              'Send photos or snaps from the chat ♡',
+                              style: Theme.of(context).textTheme.bodyMedium,
                               textAlign: TextAlign.center,
                             ),
                           ],
@@ -84,11 +79,11 @@ class SnapsScreen extends ConsumerWidget {
                         crossAxisSpacing: 6,
                         mainAxisSpacing: 6,
                       ),
-                      itemCount: snaps.length,
-                      itemBuilder: (context, i) => _SnapTile(
-                        snap: snaps[i],
+                      itemCount: images.length,
+                      itemBuilder: (context, i) => _ImageTile(
+                        message: images[i],
                         accent: accent,
-                        onTap: () => _showFull(context, snaps[i]),
+                        onTap: () => _showFull(context, images[i]),
                       ),
                     );
                   },
@@ -101,19 +96,19 @@ class SnapsScreen extends ConsumerWidget {
     );
   }
 
-  void _showFull(BuildContext context, MessageModel snap) {
+  void _showFull(BuildContext context, MessageModel message) {
     showDialog(
       context: context,
-      builder: (_) => Dialog(
+      builder: (dialogCtx) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: EdgeInsets.zero,
         child: GestureDetector(
-          onTap: () => Navigator.pop(context),
+          onTap: () => Navigator.pop(dialogCtx),
           child: Stack(
             children: [
               SizedBox.expand(
                 child: CachedNetworkImage(
-                  imageUrl: snap.content,
+                  imageUrl: message.content,
                   fit: BoxFit.contain,
                 ),
               ),
@@ -121,7 +116,7 @@ class SnapsScreen extends ConsumerWidget {
                 top: 48,
                 right: 16,
                 child: GestureDetector(
-                  onTap: () => Navigator.pop(context),
+                  onTap: () => Navigator.pop(dialogCtx),
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
@@ -133,7 +128,7 @@ class SnapsScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              if (snap.snapViewed)
+              if (message.isSnap)
                 Positioned(
                   bottom: 48,
                   left: 0,
@@ -146,10 +141,8 @@ class SnapsScreen extends ConsumerWidget {
                         color: Colors.black54,
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Text('Snap viewed 👻',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13)),
+                      child: const Text('👻 Snap',
+                          style: TextStyle(color: Colors.white, fontSize: 13)),
                     ),
                   ),
                 ),
@@ -161,13 +154,13 @@ class SnapsScreen extends ConsumerWidget {
   }
 }
 
-class _SnapTile extends StatelessWidget {
-  final MessageModel snap;
+class _ImageTile extends StatelessWidget {
+  final MessageModel message;
   final Color accent;
   final VoidCallback onTap;
 
-  const _SnapTile({
-    required this.snap,
+  const _ImageTile({
+    required this.message,
     required this.accent,
     required this.onTap,
   });
@@ -182,39 +175,42 @@ class _SnapTile extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             CachedNetworkImage(
-              imageUrl: snap.content,
+              imageUrl: message.content,
               fit: BoxFit.cover,
               placeholder: (_, _) => Container(color: AppColors.bgCard),
               errorWidget: (_, _, _) => Container(
                 color: AppColors.bgCard,
                 child: const Center(
-                  child: Text('📸',
-                      style: TextStyle(fontSize: 24)),
+                  child: Text('📷', style: TextStyle(fontSize: 24)),
                 ),
               ),
             ),
-            if (snap.snapViewed)
-              Container(
-                color: Colors.black38,
-                child: const Center(
-                  child: Text('👻',
-                      style: TextStyle(fontSize: 20)),
+            if (message.isSnap)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text('👻', style: TextStyle(fontSize: 10)),
                 ),
               ),
             Positioned(
               bottom: 4,
               right: 4,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 6, vertical: 2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  _timeLabel(snap.sentAt),
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 9),
+                  _timeLabel(message.sentAt),
+                  style: const TextStyle(color: Colors.white, fontSize: 9),
                 ),
               ),
             ),

@@ -310,7 +310,7 @@ class _LetterTile extends StatelessWidget {
 
     showDialog(
       context: context,
-      builder: (_) => Dialog(
+      builder: (dialogCtx) => Dialog(
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: SingleChildScrollView(
@@ -332,7 +332,7 @@ class _LetterTile extends StatelessWidget {
               const SizedBox(height: 24),
               GradientButton(
                 label: 'Close ♡',
-                onTap: () => Navigator.pop(context),
+                onTap: () => Navigator.pop(dialogCtx),
               ),
             ],
           ),

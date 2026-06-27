@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -29,7 +30,7 @@ class MemoryDetailScreen extends ConsumerWidget {
     // Memory was deleted — go back instead of blank screen
     if (memory == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) Navigator.maybePop(context);
+        if (context.mounted) context.pop();
       });
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }

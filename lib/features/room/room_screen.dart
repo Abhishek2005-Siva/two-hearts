@@ -23,6 +23,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
   bool _heartVisible = false;
   late AnimationController _heartCtrl;
   double _heartX = 0.5;
+  String? _lastSignalId; // dedup — never show same signal twice
 
   // Partner mood overlay
   MoodType? _partnerMoodToShow;
@@ -43,18 +44,16 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
       ref.read(firestoreServiceProvider).watchSignals(coupleId).listen((snap) {
         if (!mounted) return;
         if (snap.docs.isNotEmpty) {
-          final data = snap.docs.first.data() as Map<String, dynamic>;
+          final doc = snap.docs.first;
+          final docId = doc.id;
+          if (docId == _lastSignalId) return; // already shown this signal
+          final data = doc.data() as Map<String, dynamic>;
           final uid = FirebaseAuth.instance.currentUser?.uid;
           if (uid != null && data['fromUid'] != uid) {
-            // Only show if signal is fresh (within 15 seconds)
-            final sentAt = (data['sentAt'] as dynamic)?.toDate() as DateTime?;
-            final isRecent = sentAt == null ||
-                DateTime.now().difference(sentAt).inSeconds < 15;
-            if (isRecent) {
-              final type = data['type'] as String? ?? 'thinkingOfYou';
-              final message = data['message'] as String?;
-              _showSignal(type: type, message: message);
-            }
+            _lastSignalId = docId;
+            final type = data['type'] as String? ?? 'thinkingOfYou';
+            final message = data['message'] as String?;
+            _showSignal(type: type, message: message);
           }
         }
       });
@@ -276,13 +275,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     final partner = ref.watch(partnerUserProvider).valueOrNull;
     final couple = ref.watch(coupleProvider).valueOrNull;
     final memories = ref.watch(memoriesProvider).valueOrNull ?? [];
-    final letters = ref.watch(lettersProvider).valueOrNull ?? [];
     final moods = ref.watch(moodsProvider).valueOrNull ?? [];
     final myUid = FirebaseAuth.instance.currentUser?.uid;
-
-    final daysTogether = couple != null
-        ? DateTime.now().difference(couple.createdAt).inDays
-        : 0;
 
     // On This Day
     final now = DateTime.now();
@@ -375,18 +369,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                       ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.1),
                       const SizedBox(height: 16),
 
-                      // Stats row
-                      Row(
-                        children: [
-                          _StatPill(value: '$daysTogether', label: 'days', accent: accent),
-                          const SizedBox(width: 10),
-                          _StatPill(value: '${memories.length}', label: 'memories', accent: accent),
-                          const SizedBox(width: 10),
-                          _StatPill(value: '${letters.length}', label: 'letters', accent: accent),
-                        ],
-                      ).animate().fadeIn(delay: 150.ms),
-                      const SizedBox(height: 16),
-
                       // On This Day banner
                       if (onThisDay.isNotEmpty) ...[
                         _OnThisDayBanner(memory: onThisDay.first, accent: accent)
@@ -397,54 +379,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                       // Thinking of you — hero button
                       _ThinkingOfYouButton(accent: accent, onTap: _sendThinkingOfYou)
                           .animate().fadeIn(delay: 200.ms).slideY(begin: 0.05),
-                      const SizedBox(height: 12),
-
-                      // Quick send row
-                      _QuickSendRow(
-                        accent: accent,
-                        onMorning: () {
-                          HapticFeedback.lightImpact();
-                          final coupleId = ref.read(coupleIdProvider);
-                          if (coupleId == null) return;
-                          ref.read(firestoreServiceProvider)
-                              .sendSignal(coupleId, 'goodMorning').ignore();
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: const Text('☀️ Good morning sent!'),
-                            backgroundColor: AppColors.bgCard,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            margin: const EdgeInsets.all(16),
-                          ));
-                        },
-                        onNight: () {
-                          HapticFeedback.lightImpact();
-                          final coupleId = ref.read(coupleIdProvider);
-                          if (coupleId == null) return;
-                          ref.read(firestoreServiceProvider)
-                              .sendSignal(coupleId, 'goodNight').ignore();
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: const Text('🌙 Good night sent!'),
-                            backgroundColor: AppColors.bgCard,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            margin: const EdgeInsets.all(16),
-                          ));
-                        },
-                        onGratitude: () {
-                          HapticFeedback.lightImpact();
-                          final coupleId = ref.read(coupleIdProvider);
-                          if (coupleId == null) return;
-                          ref.read(firestoreServiceProvider)
-                              .sendSignal(coupleId, 'gratitude').ignore();
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: const Text('🙏 Gratitude sent!'),
-                            backgroundColor: AppColors.bgCard,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            margin: const EdgeInsets.all(16),
-                          ));
-                        },
-                      ).animate().fadeIn(delay: 220.ms),
                       const SizedBox(height: 16),
 
                       // Recent memories — clickable
@@ -698,41 +632,6 @@ class _CharCol extends StatelessWidget {
 
 // ── Stat Pill ─────────────────────────────────────────────────────────────
 
-class _StatPill extends StatelessWidget {
-  final String value;
-  final String label;
-  final Color accent;
-  const _StatPill({required this.value, required this.label, required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.divider, width: 0.5),
-        ),
-        child: Column(
-          children: [
-            ShaderMask(
-              shaderCallback: (b) =>
-                  LinearGradient(colors: [accent, AppColors.coral]).createShader(b),
-              child: Text(value,
-                  style: const TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
-            ),
-            const SizedBox(height: 2),
-            Text(label,
-                style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ── Thinking Of You Button ────────────────────────────────────────────────
 
 class _ThinkingOfYouButton extends StatelessWidget {
@@ -942,76 +841,6 @@ class _OnThisDayBanner extends StatelessWidget {
           ),
           const SizedBox(width: 12),
         ],
-      ),
-    );
-  }
-}
-
-// ── Quick Send Row ────────────────────────────────────────────────────────
-
-class _QuickSendRow extends StatelessWidget {
-  final Color accent;
-  final VoidCallback onMorning;
-  final VoidCallback onNight;
-  final VoidCallback onGratitude;
-
-  const _QuickSendRow({
-    required this.accent,
-    required this.onMorning,
-    required this.onNight,
-    required this.onGratitude,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(child: _QuickBtn(emoji: '☀️', label: 'Morning',
-            onTap: onMorning, accent: accent)),
-        const SizedBox(width: 8),
-        Expanded(child: _QuickBtn(emoji: '🌙', label: 'Night',
-            onTap: onNight, accent: accent)),
-        const SizedBox(width: 8),
-        Expanded(child: _QuickBtn(emoji: '🙏', label: 'Grateful',
-            onTap: onGratitude, accent: accent)),
-      ],
-    );
-  }
-}
-
-class _QuickBtn extends StatelessWidget {
-  final String emoji;
-  final String label;
-  final VoidCallback onTap;
-  final Color accent;
-  const _QuickBtn({
-    required this.emoji,
-    required this.label,
-    required this.onTap,
-    required this.accent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.divider, width: 0.5),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 22)),
-            const SizedBox(height: 4),
-            Text(label,
-                style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 11)),
-          ],
-        ),
       ),
     );
   }

@@ -381,44 +381,42 @@ class _ChatAppBar extends StatelessWidget {
               ),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    partner?.displayName.split(' ').first ?? 'Partner',
-                    style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  if (isTyping)
-                    Text('typing…',
-                        style: TextStyle(
-                            color: accent,
-                            fontSize: 11,
-                            fontStyle: FontStyle.italic))
-                  else if (partnerOnline)
-                    Row(children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        margin: const EdgeInsets.only(right: 4),
-                        decoration: const BoxDecoration(
-                            color: Color(0xFF4CAF50),
-                            shape: BoxShape.circle),
-                      ),
-                      const Text('online',
+              child: GestureDetector(
+                onTap: () => context.push('/snaps'),
+                behavior: HitTestBehavior.opaque,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      partner?.displayName.split(' ').first ?? 'Partner',
+                      style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    if (isTyping)
+                      Text('typing…',
                           style: TextStyle(
-                              color: Color(0xFF4CAF50), fontSize: 11)),
-                    ]),
-                ],
+                              color: accent,
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic))
+                    else if (partnerOnline)
+                      Row(children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          margin: const EdgeInsets.only(right: 4),
+                          decoration: const BoxDecoration(
+                              color: Color(0xFF4CAF50),
+                              shape: BoxShape.circle),
+                        ),
+                        const Text('online',
+                            style: TextStyle(
+                                color: Color(0xFF4CAF50), fontSize: 11)),
+                      ]),
+                  ],
+                ),
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.photo_library_outlined,
-                  color: AppColors.textMuted, size: 20),
-              onPressed: () => context.push('/snaps'),
-              tooltip: 'Snap Gallery',
             ),
           ],
         ),
