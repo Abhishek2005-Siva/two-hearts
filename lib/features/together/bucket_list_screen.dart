@@ -24,19 +24,26 @@ const _kBookColors = [
   Color(0xFF5C3D2E), // chocolate
 ];
 
+// 4 visual styles — derived from id hash
+enum _BookStyle { solid, twoTone, stripe, embossed }
+
 class _BookProps {
   final Color color;
-  final double widthFraction;
-  final double thickness;
-  final double rotationDeg;
-  final double xOffset;
+  final Color accentBand; // secondary color band
+  final double widthFraction; // 0.55 – 0.92
+  final double thickness; // 42 – 78 px
+  final double rotationDeg; // –4 to +4 degrees
+  final double xOffset; // –14 to +14 px
+  final _BookStyle style;
 
   const _BookProps({
     required this.color,
+    required this.accentBand,
     required this.widthFraction,
     required this.thickness,
     required this.rotationDeg,
     required this.xOffset,
+    required this.style,
   });
 
   factory _BookProps.fromId(String id) {
@@ -46,18 +53,22 @@ class _BookProps {
       return h;
     }
 
-    final colorIdx = next() % _kBookColors.length;
-    final wf = 0.62 + (next() % 300) / 1000.0;
-    final th = 30.0 + (next() % 22).toDouble();
+    final ci = next() % _kBookColors.length;
+    final ci2 = (ci + 3 + next() % 4) % _kBookColors.length;
+    final wf = 0.55 + (next() % 370) / 1000.0;
+    final th = 42.0 + (next() % 37).toDouble();
     final rot = ((next() % 80) - 40) / 10.0;
-    final xOff = ((next() % 25) - 12).toDouble();
+    final xOff = ((next() % 29) - 14).toDouble();
+    final styleIdx = next() % 4;
 
     return _BookProps(
-      color: _kBookColors[colorIdx],
-      widthFraction: wf.clamp(0.62, 0.92),
+      color: _kBookColors[ci],
+      accentBand: _kBookColors[ci2],
+      widthFraction: wf.clamp(0.55, 0.92),
       thickness: th,
       rotationDeg: rot,
       xOffset: xOff,
+      style: _BookStyle.values[styleIdx],
     );
   }
 }
@@ -80,7 +91,7 @@ class _LibraryPainter extends CustomPainter {
         ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
     );
 
-    // Warm amber glow from top-center (lamp light)
+    // Amber lamp glow from top
     canvas.drawOval(
       Rect.fromCenter(
         center: Offset(size.width / 2, -size.height * 0.1),
@@ -93,44 +104,35 @@ class _LibraryPainter extends CustomPainter {
     );
 
     // Shelf planks
-    const shelfColor = Color(0xFF3A2510);
-    const shelfShadow = Color(0xFF000000);
     final shelfPositions = [
       size.height * 0.26,
       size.height * 0.52,
       size.height * 0.78,
     ];
     for (final y in shelfPositions) {
-      // Plank
       canvas.drawRect(
         Rect.fromLTWH(0, y, size.width, 11),
-        Paint()..color = shelfColor,
+        Paint()..color = const Color(0xFF3A2510),
       );
-      // Edge highlight
       canvas.drawRect(
         Rect.fromLTWH(0, y, size.width, 2),
         Paint()..color = const Color(0xFF6A4520).withValues(alpha: 0.6),
       );
-      // Drop shadow below plank
       canvas.drawRect(
         Rect.fromLTWH(0, y + 11, size.width, 10),
         Paint()
           ..shader = LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              shelfShadow.withValues(alpha: 0.5),
-              Colors.transparent,
-            ],
+            colors: [Colors.black.withValues(alpha: 0.5), Colors.transparent],
           ).createShader(Rect.fromLTWH(0, y + 11, size.width, 10)),
       );
-
-      // Blurred books on shelf
       _drawShelfBooks(canvas, size.width, y - 55, 55);
     }
   }
 
-  void _drawShelfBooks(Canvas canvas, double width, double top, double height) {
+  void _drawShelfBooks(
+      Canvas canvas, double width, double top, double height) {
     final rng = math.Random(top.toInt());
     double x = 6;
     while (x < width - 10) {
@@ -162,7 +164,7 @@ class BucketListScreen extends ConsumerStatefulWidget {
 
 class _BucketListScreenState extends ConsumerState<BucketListScreen> {
   final _textCtrl = TextEditingController();
-  String? _animatingId; // last added book plays fall animation
+  String? _animatingId;
   Set<String> _knownIds = {};
 
   @override
@@ -176,37 +178,30 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
         .map((i) => i.id)
         .where((id) => !_knownIds.contains(id))
         .lastOrNull;
+    _knownIds = items.map((i) => i.id).toSet();
     if (newId != null) {
-      _knownIds = items.map((i) => i.id).toSet();
-      // Schedule animation flag reset after animation completes
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() => _animatingId = newId);
-          Future.delayed(const Duration(milliseconds: 900), () {
-            if (mounted) setState(() => _animatingId = null);
-          });
+          Future.delayed(const Duration(milliseconds: 900),
+              () { if (mounted) setState(() => _animatingId = null); });
         }
       });
-    } else {
-      _knownIds = items.map((i) => i.id).toSet();
     }
   }
 
   Future<void> _addItem() async {
     final title = _textCtrl.text.trim();
     if (title.isEmpty) return;
-
     final coupleId = ref.read(coupleIdProvider);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (coupleId == null || uid == null) return;
-
     final item = BucketItem(
       id: const Uuid().v4(),
       title: title,
       createdAt: DateTime.now(),
       addedBy: uid,
     );
-
     _textCtrl.clear();
     HapticFeedback.mediumImpact();
     await ref.read(firestoreServiceProvider).addBucketItem(coupleId, item);
@@ -221,8 +216,7 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
       context: context,
       backgroundColor: AppColors.bgCard,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (sheetCtx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
@@ -251,9 +245,8 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                   onTap: () async {
                     Navigator.pop(sheetCtx);
                     HapticFeedback.lightImpact();
-                    await ref
-                        .read(firestoreServiceProvider)
-                        .updateBucketStatus(coupleId, item.id, BucketStatus.done);
+                    await ref.read(firestoreServiceProvider).updateBucketStatus(
+                        coupleId, item.id, BucketStatus.done);
                   },
                 )
               else
@@ -265,10 +258,8 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                       style: TextStyle(color: AppColors.textPrimary)),
                   onTap: () async {
                     Navigator.pop(sheetCtx);
-                    await ref
-                        .read(firestoreServiceProvider)
-                        .updateBucketStatus(
-                            coupleId, item.id, BucketStatus.someday);
+                    await ref.read(firestoreServiceProvider).updateBucketStatus(
+                        coupleId, item.id, BucketStatus.someday);
                   },
                 ),
               ListTile(
@@ -300,15 +291,10 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
       resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // Library background (full screen)
           const Positioned.fill(
-            child: CustomPaint(painter: _LibraryPainter()),
-          ),
-
-          // Warm desk-surface vignette at bottom
+              child: CustomPaint(painter: _LibraryPainter())),
           Positioned(
-            bottom: 0, left: 0, right: 0,
-            height: 120,
+            bottom: 0, left: 0, right: 0, height: 120,
             child: Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -319,8 +305,6 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
               ),
             ),
           ),
-
-          // Main content
           SafeArea(
             child: Column(
               children: [
@@ -335,15 +319,12 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                         onPressed: () => Navigator.maybePop(context),
                       ),
                       const Expanded(
-                        child: Text(
-                          'The Library',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
+                        child: Text('The Library',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5)),
                       ),
                     ],
                   ),
@@ -353,14 +334,12 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                 Expanded(
                   child: itemsAsync.when(
                     loading: () => const Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.rose)),
+                        child: CircularProgressIndicator(color: AppColors.rose)),
                     error: (e, _) => Center(
                         child: Text('$e',
                             style: const TextStyle(
                                 color: AppColors.textSecondary))),
                     data: (items) {
-                      // Detect newly added books
                       _onItemsUpdated(items);
 
                       final active = items
@@ -386,7 +365,8 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                               const SizedBox(height: 8),
                               Text('Add your first dream below ♡',
                                   style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.4),
+                                      color: Colors.white
+                                          .withValues(alpha: 0.4),
                                       fontSize: 13)),
                             ],
                           ),
@@ -394,31 +374,31 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                       }
 
                       return SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                        padding:
+                            const EdgeInsets.fromLTRB(20, 16, 20, 24),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            if (active.isNotEmpty) ...[
-                              // Active books — newest on top (reversed)
+                            if (active.isNotEmpty)
                               ...active.reversed.map((item) => _BookWidget(
                                     key: ValueKey(item.id),
                                     item: item,
                                     isDone: false,
                                     isNew: item.id == _animatingId,
-                                    onTap: () => _showItemOptions(context, item),
+                                    onTap: () =>
+                                        _showItemOptions(context, item),
                                   )),
-                            ],
 
                             if (done.isNotEmpty) ...[
                               const SizedBox(height: 32),
-                              // Divider label
                               Row(children: [
                                 Expanded(
                                     child: Divider(
-                                        color: Colors.white.withValues(alpha: 0.12))),
+                                        color: Colors.white
+                                            .withValues(alpha: 0.12))),
                                 Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(horizontal: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12),
                                   child: Text('COMPLETED',
                                       style: TextStyle(
                                           color: Colors.amber.shade400,
@@ -428,7 +408,8 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                                 ),
                                 Expanded(
                                     child: Divider(
-                                        color: Colors.white.withValues(alpha: 0.12))),
+                                        color: Colors.white
+                                            .withValues(alpha: 0.12))),
                               ]),
                               const SizedBox(height: 16),
                               ...done.reversed.map((item) => _BookWidget(
@@ -436,7 +417,8 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                                     item: item,
                                     isDone: true,
                                     isNew: false,
-                                    onTap: () => _showItemOptions(context, item),
+                                    onTap: () =>
+                                        _showItemOptions(context, item),
                                   )),
                             ],
                           ],
@@ -446,16 +428,15 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                   ),
                 ),
 
-                // Add book input
+                // Input
                 Container(
-                  padding: EdgeInsets.fromLTRB(
-                      16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+                  padding: EdgeInsets.fromLTRB(16, 12, 16,
+                      MediaQuery.of(context).padding.bottom + 12),
                   decoration: BoxDecoration(
                     color: const Color(0xFF1C1007).withValues(alpha: 0.95),
                     border: Border(
-                      top: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.08)),
-                    ),
+                        top: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.08))),
                   ),
                   child: Row(
                     children: [
@@ -467,12 +448,15 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                           decoration: InputDecoration(
                             hintText: 'A new dream for the shelf…',
                             hintStyle: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.35),
+                                color:
+                                    Colors.white.withValues(alpha: 0.35),
                                 fontSize: 14),
                             filled: true,
-                            fillColor: Colors.white.withValues(alpha: 0.07),
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
+                            fillColor:
+                                Colors.white.withValues(alpha: 0.07),
+                            contentPadding:
+                                const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
                               borderSide: BorderSide.none,
@@ -488,12 +472,12 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                           width: 44, height: 44,
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: [accent, AppColors.coral],
-                            ),
+                                colors: [accent, AppColors.coral]),
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
-                                  color: accent.withValues(alpha: 0.4),
+                                  color:
+                                      accent.withValues(alpha: 0.4),
                                   blurRadius: 12,
                                   offset: const Offset(0, 4))
                             ],
@@ -533,9 +517,6 @@ class _BookWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final props = _BookProps.fromId(item.id);
-    final baseColor = isDone
-        ? Color.lerp(props.color, Colors.grey, 0.55)!
-        : props.color;
 
     Widget book = LayoutBuilder(
       builder: (ctx, constraints) {
@@ -545,10 +526,16 @@ class _BookWidget extends StatelessWidget {
             offset: Offset(props.xOffset, 0),
             child: Transform.rotate(
               angle: props.rotationDeg * math.pi / 180,
-              child: _Spine(
+              child: _BookBody(
                 width: bookWidth,
                 thickness: props.thickness,
-                color: baseColor,
+                color: isDone
+                    ? Color.lerp(props.color, Colors.grey, 0.55)!
+                    : props.color,
+                accentBand: isDone
+                    ? Colors.grey.shade600
+                    : props.accentBand,
+                style: props.style,
                 title: item.title,
                 isDone: isDone,
               ),
@@ -561,146 +548,289 @@ class _BookWidget extends StatelessWidget {
     book = GestureDetector(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: SizedBox(height: props.thickness + 8, child: book),
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: SizedBox(height: props.thickness + 10, child: book),
       ),
     );
 
     if (isNew) {
       return book
           .animate()
-          .slideY(
-            begin: -4,
-            duration: 750.ms,
-            curve: Curves.elasticOut,
-          )
+          .slideY(begin: -4, duration: 750.ms, curve: Curves.elasticOut)
           .fadeIn(duration: 150.ms);
     }
     return book;
   }
 }
 
-class _Spine extends StatelessWidget {
+// ── Book body — renders the spine face with one of 4 visual styles ─────────
+
+class _BookBody extends StatelessWidget {
   final double width;
   final double thickness;
   final Color color;
+  final Color accentBand;
+  final _BookStyle style;
   final String title;
   final bool isDone;
 
-  const _Spine({
+  const _BookBody({
     required this.width,
     required this.thickness,
     required this.color,
+    required this.accentBand,
+    required this.style,
     required this.title,
     required this.isDone,
   });
 
   @override
   Widget build(BuildContext context) {
-    final light = Color.lerp(color, Colors.white, 0.18)!;
-    final dark = Color.lerp(color, Colors.black, 0.35)!;
-
-    return Container(
-      width: width,
-      height: thickness,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [light, color, dark],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        borderRadius: BorderRadius.circular(2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.55),
-            blurRadius: 8,
-            offset: const Offset(0, 5),
-            spreadRadius: -1,
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          // Top highlight band
-          Positioned(
-            top: 0, left: 0, right: 0,
-            child: Container(
-              height: 2.5,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.white.withValues(alpha: 0.25),
-                    Colors.white.withValues(alpha: 0.05),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          // Bottom shadow band
-          Positioned(
-            bottom: 0, left: 0, right: 0,
-            child: Container(
-                height: 3,
-                color: Colors.black.withValues(alpha: 0.4)),
-          ),
-          // Thin accent stripe (1/5 from left)
-          Positioned(
-            left: width * 0.12,
-            top: 4,
-            bottom: 4,
-            child: Container(
-              width: 3,
-              color: Colors.white.withValues(alpha: 0.12),
-            ),
-          ),
-          // Title text
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-                width * 0.2, 0, isDone ? 32 : 12, 0),
-            child: Center(
-              child: Text(
-                title,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: isDone ? 0.45 : 0.92),
-                  fontSize: thickness > 40 ? 13.5 : 11.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                  shadows: const [
-                    Shadow(
-                        color: Colors.black54,
-                        blurRadius: 3,
-                        offset: Offset(0, 1)),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          // Done checkmark
-          if (isDone)
-            Positioned(
-              right: 10,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: Text(
-                  '✓',
-                  style: TextStyle(
-                    color: Colors.amber.shade300,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    shadows: [
-                      Shadow(
-                          color: Colors.amber.shade900.withValues(alpha: 0.6),
-                          blurRadius: 4),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
+    return CustomPaint(
+      size: Size(width, thickness),
+      painter: _BookPainter(
+        color: color,
+        accentBand: accentBand,
+        style: style,
+        title: title,
+        isDone: isDone,
+        thickness: thickness,
       ),
     );
   }
+}
+
+class _BookPainter extends CustomPainter {
+  final Color color;
+  final Color accentBand;
+  final _BookStyle style;
+  final String title;
+  final bool isDone;
+  final double thickness;
+
+  const _BookPainter({
+    required this.color,
+    required this.accentBand,
+    required this.style,
+    required this.title,
+    required this.isDone,
+    required this.thickness,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final light = Color.lerp(color, Colors.white, 0.18)!;
+    final dark = Color.lerp(color, Colors.black, 0.38)!;
+
+    // ── Base gradient (all styles) ──────────────────────────────────────────
+    final bodyRect = Rect.fromLTWH(0, 0, w, h);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(bodyRect, const Radius.circular(2)),
+      Paint()
+        ..shader = LinearGradient(
+          colors: [light, color, dark],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ).createShader(bodyRect),
+    );
+
+    // ── Page-edge strip (right side, all styles) ───────────────────────────
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w - 6, 0, 6, h),
+        const Radius.circular(1),
+      ),
+      Paint()
+        ..shader = LinearGradient(
+          colors: [
+            const Color(0xFFF5EDD8).withValues(alpha: 0.9),
+            const Color(0xFFE8D8C0).withValues(alpha: 0.9),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ).createShader(Rect.fromLTWH(w - 6, 0, 6, h)),
+    );
+    // Page edge lines (fine horizontal lines to simulate pages)
+    final linePaint = Paint()
+      ..color = const Color(0xFFD4C4A8).withValues(alpha: 0.5)
+      ..strokeWidth = 0.5;
+    for (double y = 2; y < h - 2; y += 2.5) {
+      canvas.drawLine(Offset(w - 6, y), Offset(w - 0.5, y), linePaint);
+    }
+
+    // ── Style-specific decoration ──────────────────────────────────────────
+    switch (style) {
+      case _BookStyle.solid:
+        _paintSolid(canvas, w, h);
+      case _BookStyle.twoTone:
+        _paintTwoTone(canvas, w, h);
+      case _BookStyle.stripe:
+        _paintStripe(canvas, w, h);
+      case _BookStyle.embossed:
+        _paintEmbossed(canvas, w, h);
+    }
+
+    // ── Title text ─────────────────────────────────────────────────────────
+    _paintTitle(canvas, w, h);
+
+    // ── Done checkmark ─────────────────────────────────────────────────────
+    if (isDone) {
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '✓',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Colors.amber.shade300,
+            shadows: [
+              Shadow(
+                  color: Colors.amber.shade900.withValues(alpha: 0.6),
+                  blurRadius: 4),
+            ],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(w - 24, (h - tp.height) / 2));
+    }
+
+    // ── Drop shadow under book ─────────────────────────────────────────────
+    // (painted last so it appears below the next book)
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(-2, h - 1, w + 4, 8),
+        const Radius.circular(2),
+      ),
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withValues(alpha: 0.45),
+            Colors.transparent,
+          ],
+        ).createShader(Rect.fromLTWH(-2, h - 1, w + 4, 8)),
+    );
+  }
+
+  // Solid — two thin horizontal bands at edges
+  void _paintSolid(Canvas canvas, double w, double h) {
+    final bandPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.15);
+    canvas.drawRect(Rect.fromLTWH(0, 0, w - 6, 3), bandPaint);
+    canvas.drawRect(Rect.fromLTWH(0, h - 3, w - 6, 3),
+        Paint()..color = Colors.black.withValues(alpha: 0.3));
+
+    // Thin accent stripe on left edge
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, 4, h),
+      Paint()..color = accentBand.withValues(alpha: 0.6),
+    );
+  }
+
+  // Two-tone — top 35% is a lighter shade, bottom rest is main color
+  void _paintTwoTone(Canvas canvas, double w, double h) {
+    final splitY = h * 0.35;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, w - 6, splitY),
+        const Radius.circular(2),
+      ),
+      Paint()
+        ..color = accentBand.withValues(alpha: 0.85),
+    );
+    // Divider line
+    canvas.drawRect(
+      Rect.fromLTWH(0, splitY - 1, w - 6, 2),
+      Paint()..color = Colors.white.withValues(alpha: 0.2),
+    );
+  }
+
+  // Stripe — diagonal accent stripe across the spine
+  void _paintStripe(Canvas canvas, double w, double h) {
+    final stripeW = h * 0.45;
+    final path = Path()
+      ..moveTo(w * 0.38, 0)
+      ..lineTo(w * 0.38 + stripeW, 0)
+      ..lineTo(w * 0.38 + stripeW - h * 0.3, h)
+      ..lineTo(w * 0.38 - h * 0.3, h)
+      ..close();
+    canvas.clipRRect(RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, w - 6, h), const Radius.circular(2)));
+    canvas.drawPath(
+        path, Paint()..color = accentBand.withValues(alpha: 0.4));
+  }
+
+  // Embossed — a centered title plate rectangle with border
+  void _paintEmbossed(Canvas canvas, double w, double h) {
+    final plateH = h * 0.56;
+    final plateW = (w - 6) * 0.55;
+    final plateRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+          center: Offset((w - 6) / 2, h / 2),
+          width: plateW,
+          height: plateH),
+      const Radius.circular(3),
+    );
+    // Raised plate (lighter than base)
+    canvas.drawRRect(
+        plateRect,
+        Paint()
+          ..color = Color.lerp(color, Colors.white, 0.22)!.withValues(alpha: 0.9));
+    // Plate border
+    canvas.drawRRect(
+        plateRect,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.18)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
+    // Thin decorative bands at top and bottom of book
+    canvas.drawRect(Rect.fromLTWH(0, 0, w - 6, 2),
+        Paint()..color = Colors.white.withValues(alpha: 0.15));
+    canvas.drawRect(Rect.fromLTWH(0, h - 2, w - 6, 2),
+        Paint()..color = Colors.black.withValues(alpha: 0.3));
+  }
+
+  void _paintTitle(Canvas canvas, double w, double h) {
+    final isDoneOpacity = isDone ? 0.45 : 0.92;
+    // Clip so text doesn't bleed into the page-edge strip
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, w - 10, h));
+
+    final leftPad = style == _BookStyle.twoTone ? 8.0 : 6.0;
+    final rightPad = isDone ? 28.0 : 12.0;
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: title,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: isDoneOpacity),
+          fontSize: thickness > 52 ? 14.0 : 12.0,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
+          shadows: const [
+            Shadow(
+                color: Colors.black54,
+                blurRadius: 3,
+                offset: Offset(0, 1)),
+          ],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: w - leftPad - rightPad - 10);
+
+    tp.paint(canvas, Offset(leftPad, (h - tp.height) / 2));
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_BookPainter old) =>
+      old.color != color ||
+      old.style != style ||
+      old.title != title ||
+      old.isDone != isDone;
 }
