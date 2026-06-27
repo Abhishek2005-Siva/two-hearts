@@ -472,4 +472,29 @@ class FirestoreService {
   }
 
   double _randomPos() => (Random().nextDouble() * 4 - 2);
+
+  // ── Presence ──────────────────────────────────────────────────────────────
+
+  Future<void> setPresence(String coupleId) => _db
+      .collection('couples').doc(coupleId)
+      .update({'presence.$_uid': FieldValue.serverTimestamp()});
+
+  Stream<bool> watchPartnerOnline(String coupleId, String partnerUid) => _db
+      .collection('couples').doc(coupleId)
+      .snapshots()
+      .map((d) {
+        final ts = d.data()?['presence']?[partnerUid];
+        if (ts == null) return false;
+        return DateTime.now().difference((ts as Timestamp).toDate()).inMinutes < 5;
+      });
+
+  // ── Snaps / Whispers ──────────────────────────────────────────────────────
+
+  Future<void> deleteMessage(String coupleId, String msgId) => _db
+      .collection('couples').doc(coupleId).collection('messages').doc(msgId)
+      .delete();
+
+  Future<void> viewSnap(String coupleId, String msgId) => _db
+      .collection('couples').doc(coupleId).collection('messages').doc(msgId)
+      .update({'snapViewed': true});
 }

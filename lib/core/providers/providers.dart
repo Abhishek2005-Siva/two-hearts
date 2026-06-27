@@ -154,3 +154,15 @@ final compatibilityStatsProvider = FutureProvider<Map<String, int>>((ref) {
   if (coupleId == null) return Future.value({'total': 0, 'matched': 0});
   return ref.read(firestoreServiceProvider).getCompatibilityStats(coupleId);
 });
+
+// ── Partner online presence ───────────────────────────────────────────────
+
+final partnerOnlineProvider = StreamProvider<bool>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final couple = ref.watch(coupleProvider).valueOrNull;
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  if (coupleId == null || couple == null || me == null) return Stream.value(false);
+  final partnerUid = couple.partnerUid(me.uid);
+  if (partnerUid.isEmpty) return Stream.value(false);
+  return ref.read(firestoreServiceProvider).watchPartnerOnline(coupleId, partnerUid);
+});

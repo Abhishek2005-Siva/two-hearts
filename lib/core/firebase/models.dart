@@ -114,6 +114,9 @@ class MessageModel {
   final DateTime sentAt;
   final bool readByPartner;
   final String? reactionEmoji;
+  final bool isWhisper;
+  final bool isSnap;
+  final bool snapViewed;
 
   const MessageModel({
     required this.id,
@@ -123,6 +126,9 @@ class MessageModel {
     required this.sentAt,
     this.readByPartner = false,
     this.reactionEmoji,
+    this.isWhisper = false,
+    this.isSnap = false,
+    this.snapViewed = false,
   });
 
   factory MessageModel.fromDoc(DocumentSnapshot doc) {
@@ -135,6 +141,9 @@ class MessageModel {
       sentAt: (d['sentAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       readByPartner: d['readByPartner'] ?? false,
       reactionEmoji: d['reactionEmoji'],
+      isWhisper: d['isWhisper'] ?? false,
+      isSnap: d['isSnap'] ?? false,
+      snapViewed: d['snapViewed'] ?? false,
     );
   }
 
@@ -145,6 +154,9 @@ class MessageModel {
         'sentAt': Timestamp.fromDate(sentAt),
         'readByPartner': readByPartner,
         'reactionEmoji': reactionEmoji,
+        if (isWhisper) 'isWhisper': true,
+        if (isSnap) 'isSnap': true,
+        if (snapViewed) 'snapViewed': true,
       };
 }
 

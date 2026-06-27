@@ -54,7 +54,7 @@ class TogetherScreen extends ConsumerWidget {
                               : 'You wrote — waiting for partner',
                       badge: todayEntry != null && !todayEntry.bothSubmitted ? '1/2' : null,
                       accent: accent,
-                      onTap: () => context.go('/together/journal'),
+                      onTap: () => context.push('/together/journal'),
                     ).animate().fadeIn().slideX(begin: -0.05),
                     const SizedBox(height: 14),
                     _TogetherTile(
@@ -85,7 +85,7 @@ class TogetherScreen extends ConsumerWidget {
                       title: 'Games',
                       subtitle: 'Would You Rather — new question daily',
                       accent: accent,
-                      onTap: () => context.go('/games'),
+                      onTap: () => context.push('/games'),
                     ).animate().fadeIn(delay: 240.ms).slideX(begin: -0.05),
                   ]),
                 ),
@@ -212,7 +212,7 @@ class _LettersSheet extends ConsumerWidget {
             children: [
               Text('Letters 💌', style: Theme.of(context).textTheme.titleLarge),
               GestureDetector(
-                onTap: () { Navigator.pop(context); context.go('/together/letter/new'); },
+                onTap: () { Navigator.pop(context); context.push('/together/letter/new'); },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
