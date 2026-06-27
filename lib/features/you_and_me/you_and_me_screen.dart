@@ -123,21 +123,11 @@ class YouAndMeScreen extends ConsumerWidget {
                       const SizedBox(height: 20),
                     ],
 
-                    // Profile / personal details
+                    // Mood picker — also accessible by tapping your avatar on the home screen
                     _SectionLabel(label: 'YOUR PROFILE'),
                     const SizedBox(height: 10),
                     _ProfileCard(me: me, accent: accent, ref: ref)
                         .animate().fadeIn(delay: 200.ms),
-                    const SizedBox(height: 20),
-
-                    // Partner details (read-only)
-                    if (partner != null) ...[
-                      _SectionLabel(
-                          label: '${partner.displayName.split(' ').first.toUpperCase()}\'S DETAILS'),
-                      const SizedBox(height: 10),
-                      _PartnerDetailsCard(partner: partner, accent: accent)
-                          .animate().fadeIn(delay: 250.ms),
-                    ],
                   ]),
                 ),
               ),
@@ -247,74 +237,6 @@ class _ProfileCard extends StatelessWidget {
 }
 
 // ── Partner Details Card ──────────────────────────────────────────────────
-
-class _PartnerDetailsCard extends StatelessWidget {
-  final UserModel partner;
-  final Color accent;
-  const _PartnerDetailsCard({required this.partner, required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    final birthday = partner.birthday;
-    final age = birthday != null ? _calcAge(birthday) : null;
-    final daysUntil = partner.nextBirthday != null
-        ? DateTime.now().difference(partner.nextBirthday!).inDays.abs()
-        : null;
-
-    return GlassCard(
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.lavender.withValues(alpha: 0.2),
-                  border: Border.all(color: AppColors.lavender.withValues(alpha: 0.4)),
-                ),
-                child: Center(
-                  child: Text(
-                    partner.displayName.isNotEmpty ? partner.displayName[0].toUpperCase() : '?',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
-                        color: AppColors.lavender),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(partner.displayName,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary)),
-            ],
-          ),
-          if (birthday != null) ...[
-            const SizedBox(height: 12),
-            const Divider(color: AppColors.divider, height: 1),
-            const SizedBox(height: 12),
-            _DetailRow(
-              icon: Icons.cake_outlined,
-              label: 'Birthday',
-              value: '${_monthName(birthday.month)} ${birthday.day}'
-                  '${age != null ? '  (${age}y)' : ''}'
-                  '${daysUntil != null && daysUntil <= 30 ? '  🎉 ${daysUntil}d away!' : ''}',
-              accent: AppColors.lavender,
-            ),
-          ] else ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.info_outline_rounded, color: AppColors.textMuted, size: 16),
-                const SizedBox(width: 8),
-                Text('${partner.displayName.split(' ').first} hasn\'t set their birthday yet',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
 
 // ── Detail Row ────────────────────────────────────────────────────────────
 

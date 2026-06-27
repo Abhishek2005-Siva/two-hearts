@@ -11,15 +11,26 @@ class MemoryDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final memories = ref.watch(memoriesProvider).valueOrNull ?? [];
-    final memory = memories.cast<dynamic>().firstWhere(
-          (m) => m.id == memoryId,
-          orElse: () => null,
-        );
+    final memoriesAsync = ref.watch(memoriesProvider);
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final coupleId = ref.watch(coupleIdProvider) ?? '';
 
+    // While loading show spinner
+    if (memoriesAsync.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final memories = memoriesAsync.valueOrNull ?? [];
+    final memory = memories.cast<dynamic>().firstWhere(
+      (m) => m.id == memoryId,
+      orElse: () => null,
+    );
+
+    // Memory was deleted — go back instead of blank screen
     if (memory == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) Navigator.maybePop(context);
+      });
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -48,7 +59,8 @@ class MemoryDetailScreen extends ConsumerWidget {
               right: 0,
               child: Container(
                 padding: EdgeInsets.fromLTRB(
-                  24, 24, 24, hasDeletion ? 12 : MediaQuery.of(context).padding.bottom + 24),
+                  24, 24, 24,
+                  hasDeletion ? 12 : MediaQuery.of(context).padding.bottom + 24),
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
@@ -63,7 +75,7 @@ class MemoryDetailScreen extends ConsumerWidget {
               ),
             ),
 
-          // Deletion request banner pinned to bottom
+          // Deletion request banner
           if (hasDeletion)
             Positioned(
               bottom: 0, left: 0, right: 0,
@@ -74,9 +86,17 @@ class MemoryDetailScreen extends ConsumerWidget {
                   color: Colors.black.withValues(alpha: 0.7),
                 ),
                 child: iRequested
-                    ? _MyRequestBanner(coupleId: coupleId, memoryId: memory.id, ref: ref)
+                    ? _MyRequestBanner(
+                        coupleId: coupleId,
+                        memoryId: memory.id,
+                        ref: ref,
+                      )
                     : partnerRequested
-                        ? _PartnerRequestBanner(coupleId: coupleId, memoryId: memory.id, ref: ref, context: context)
+                        ? _PartnerRequestBanner(
+                            coupleId: coupleId,
+                            memoryId: memory.id,
+                            ref: ref,
+                          )
                         : const SizedBox.shrink(),
               ),
             ),
@@ -91,7 +111,11 @@ class _MyRequestBanner extends StatelessWidget {
   final String memoryId;
   final WidgetRef ref;
 
-  const _MyRequestBanner({required this.coupleId, required this.memoryId, required this.ref});
+  const _MyRequestBanner({
+    required this.coupleId,
+    required this.memoryId,
+    required this.ref,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -123,21 +147,20 @@ class _MyRequestBanner extends StatelessWidget {
   }
 }
 
+// No longer stores BuildContext as a field — gets it from build()
 class _PartnerRequestBanner extends StatelessWidget {
   final String coupleId;
   final String memoryId;
   final WidgetRef ref;
-  final BuildContext context;
 
   const _PartnerRequestBanner({
     required this.coupleId,
     required this.memoryId,
     required this.ref,
-    required this.context,
   });
 
   @override
-  Widget build(BuildContext ctx) {
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -171,7 +194,8 @@ class _PartnerRequestBanner extends StatelessWidget {
               child: GestureDetector(
                 onTap: () async {
                   await ref.read(firestoreServiceProvider).approveMemoryDeletion(coupleId, memoryId);
-                  if (context.mounted) Navigator.pop(context);
+                  // Navigator.pop is called automatically when memory disappears and
+                  // MemoryDetailScreen detects memory == null via addPostFrameCallback
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 10),

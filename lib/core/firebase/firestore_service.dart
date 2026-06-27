@@ -194,7 +194,7 @@ class FirestoreService {
       .add({
         'type': 'thinkingOfYou',
         'fromUid': _uid,
-        'message': message,
+        if (message != null) 'message': message,
         'sentAt': FieldValue.serverTimestamp(),
       });
 

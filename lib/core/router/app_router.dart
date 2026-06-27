@@ -17,6 +17,7 @@ import '../../features/memory/memory_detail_screen.dart';
 import '../../features/games/games_screen.dart';
 import '../../features/chat/snaps_screen.dart';
 import '../../features/memory/photo_booth_screen.dart';
+import '../../features/together/bucket_list_screen.dart';
 import '../firebase/models.dart';
 import '../providers/providers.dart';
 import '../shell/main_shell.dart';
@@ -96,6 +97,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/games', builder: (_, _) => const GamesScreen()),
           GoRoute(path: '/snaps', builder: (_, _) => const SnapsScreen()),
           GoRoute(path: '/photo_booth', builder: (_, _) => const PhotoBoothScreen()),
+          GoRoute(path: '/together/bucket', builder: (_, _) => const BucketListScreen()),
         ],
       ),
     ],

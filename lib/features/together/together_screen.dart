@@ -1,10 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -78,7 +75,7 @@ class TogetherScreen extends ConsumerWidget {
                           ? 'Dream together — build your ladder'
                           : '$bucketDone of ${bucket.length} done',
                       accent: accent,
-                      onTap: () => _showBucketSheet(context, ref, accent),
+                      onTap: () => context.push('/together/bucket'),
                     ).animate().fadeIn(delay: 160.ms).slideX(begin: -0.05),
                     const SizedBox(height: 14),
                     _TogetherTile(
@@ -124,18 +121,6 @@ class TogetherScreen extends ConsumerWidget {
     );
   }
 
-  void _showBucketSheet(BuildContext context, WidgetRef ref, Color accent) {
-    final container = ProviderScope.containerOf(context);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => UncontrolledProviderScope(
-        container: container,
-        child: _BucketSheet(accent: accent),
-      ),
-    );
-  }
 }
 
 // ── Shared tile ───────────────────────────────────────────────────────────
@@ -353,225 +338,6 @@ class _LetterTile extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ── Bucket List Sheet — Ladder visualization ──────────────────────────────
-
-class _BucketSheet extends ConsumerStatefulWidget {
-  final Color accent;
-  const _BucketSheet({required this.accent});
-
-  @override
-  ConsumerState<_BucketSheet> createState() => _BucketSheetState();
-}
-
-class _BucketSheetState extends ConsumerState<_BucketSheet> {
-  final _ctrl = TextEditingController();
-
-  Future<void> _add() async {
-    final title = _ctrl.text.trim();
-    if (title.isEmpty) return;
-    final coupleId = ref.read(coupleIdProvider);
-    if (coupleId == null) return;
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    _ctrl.clear();
-    HapticFeedback.lightImpact();
-    await ref.read(firestoreServiceProvider).addBucketItem(
-      coupleId,
-      BucketItem(
-        id: const Uuid().v4(),
-        title: title,
-        createdAt: DateTime.now(),
-        addedBy: uid,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final items = ref.watch(bucketListProvider).valueOrNull ?? [];
-    final doneCount = items.where((i) => i.status == BucketStatus.done).length;
-
-    return _Sheet(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(children: [
-            Text('Bucket List 🪜', style: Theme.of(context).textTheme.titleLarge),
-            const Spacer(),
-            if (items.isNotEmpty)
-              Text('$doneCount/${items.length} done',
-                  style: TextStyle(color: widget.accent, fontSize: 12,
-                      fontWeight: FontWeight.w600)),
-          ]),
-          const SizedBox(height: 6),
-          Text('Each step is a dream. Climb together.',
-              style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 16),
-
-          // Add input
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _ctrl,
-                  style: const TextStyle(color: AppColors.textPrimary),
-                  decoration: const InputDecoration(
-                      hintText: 'Add a step to the ladder…'),
-                  onSubmitted: (_) => _add(),
-                ),
-              ),
-              const SizedBox(width: 10),
-              GestureDetector(
-                onTap: _add,
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    gradient:
-                        LinearGradient(colors: [widget.accent, AppColors.coral]),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Icon(Icons.add_rounded, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          if (items.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text('Add your first dream step ✨',
-                    style: Theme.of(context).textTheme.bodyMedium),
-              ),
-            )
-          else
-            _LadderView(items: items, accent: widget.accent, ref: ref),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Ladder visualization ──────────────────────────────────────────────────
-
-class _LadderView extends StatelessWidget {
-  final List<BucketItem> items;
-  final Color accent;
-  final WidgetRef ref;
-  const _LadderView({required this.items, required this.accent, required this.ref});
-
-  @override
-  Widget build(BuildContext context) {
-    // Show in reverse: top of ladder (most recent / not done) at top, done items below
-    final active = items.where((i) => i.status != BucketStatus.done).toList();
-    final done = items.where((i) => i.status == BucketStatus.done).toList();
-    final all = [...active, ...done];
-
-    return Column(
-      children: List.generate(all.length, (i) {
-        final item = all[i];
-        final isDone = item.status == BucketStatus.done;
-        final isLast = i == all.length - 1;
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Ladder rail + rung connector
-            SizedBox(
-              width: 48,
-              child: Column(
-                children: [
-                  // Step circle
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: isDone
-                          ? LinearGradient(colors: [accent, AppColors.coral])
-                          : null,
-                      color: isDone ? null : AppColors.bgCardLight,
-                      border: isDone
-                          ? null
-                          : Border.all(color: accent.withValues(alpha: 0.5), width: 1.5),
-                    ),
-                    child: Center(
-                      child: isDone
-                          ? const Icon(Icons.check_rounded, color: Colors.white, size: 18)
-                          : Text(
-                              '${active.length - (i < active.length ? i : 0)}',
-                              style: TextStyle(
-                                  color: accent,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                    ),
-                  ),
-                  // Connector line to next rung
-                  if (!isLast)
-                    Container(
-                      width: 2,
-                      height: 48,
-                      color: accent.withValues(alpha: 0.25),
-                    ),
-                ],
-              ),
-            ),
-
-            const SizedBox(width: 12),
-
-            // Step card
-            Expanded(
-              child: GestureDetector(
-                onTap: () async {
-                  final coupleId = ref.read(coupleIdProvider);
-                  if (coupleId == null) return;
-                  HapticFeedback.selectionClick();
-                  final next = isDone
-                      ? BucketStatus.someday
-                      : BucketStatus.done;
-                  await ref
-                      .read(firestoreServiceProvider)
-                      .updateBucketStatus(coupleId, item.id, next);
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 0),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: isDone
-                        ? accent.withValues(alpha: 0.08)
-                        : AppColors.bgCardLight,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isDone
-                          ? accent.withValues(alpha: 0.3)
-                          : AppColors.divider,
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Text(
-                    item.title,
-                    style: TextStyle(
-                      color: isDone
-                          ? AppColors.textMuted
-                          : AppColors.textPrimary,
-                      fontSize: 15,
-                      decoration: isDone ? TextDecoration.lineThrough : null,
-                      decorationColor: AppColors.textMuted,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ).animate().fadeIn(delay: Duration(milliseconds: i * 40));
-      }),
     );
   }
 }

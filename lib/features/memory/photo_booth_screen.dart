@@ -159,7 +159,7 @@ class PhotoBoothScreen extends ConsumerWidget {
     final ctrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -173,10 +173,18 @@ class PhotoBoothScreen extends ConsumerWidget {
             hintText: 'Album name…',
             hintStyle: TextStyle(color: AppColors.textMuted),
           ),
+          onSubmitted: (_) async {
+            final name = ctrl.text.trim();
+            if (name.isEmpty) return;
+            final coupleId = ref.read(coupleIdProvider);
+            if (coupleId == null) return;
+            Navigator.pop(dialogCtx);
+            await ref.read(firestoreServiceProvider).createCollection(coupleId, name);
+          },
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Cancel',
                 style: TextStyle(color: AppColors.textMuted)),
           ),
@@ -186,7 +194,7 @@ class PhotoBoothScreen extends ConsumerWidget {
               if (name.isEmpty) return;
               final coupleId = ref.read(coupleIdProvider);
               if (coupleId == null) return;
-              Navigator.pop(context);
+              Navigator.pop(dialogCtx);
               await ref
                   .read(firestoreServiceProvider)
                   .createCollection(coupleId, name);
