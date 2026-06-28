@@ -274,7 +274,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                       const SizedBox(height: 8),
                       _UnlockChip(
                         emoji: '💙',
-                        label: 'Open When Sad',
+                        label: 'Open When...',
                         subtitle: 'Unlocks any time',
                         selected: _mode == _UnlockMode.openWhenSad,
                         accent: accent,

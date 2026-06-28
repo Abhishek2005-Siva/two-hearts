@@ -213,6 +213,13 @@ class FirestoreService {
       .limit(1)
       .snapshots();
 
+  Future<void> deleteSignal(String coupleId, String signalId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('signals')
+      .doc(signalId)
+      .delete();
+
   Future<void> sendSignal(String coupleId, String type, {String? message}) => _db
       .collection('couples').doc(coupleId).collection('signals').add({
         'type': type,

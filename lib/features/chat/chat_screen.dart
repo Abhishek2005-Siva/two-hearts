@@ -314,6 +314,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                   .reactToMessage(coupleId, msg.id, emoji)
                                   .ignore();
                             },
+                            onDelete: coupleId == null ? null : () {
+                              ref
+                                  .read(firestoreServiceProvider)
+                                  .deleteMessage(coupleId, msg.id)
+                                  .ignore();
+                            },
                           ),
                         ],
                       );
@@ -391,7 +397,8 @@ class _ChatAppBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: Padding(
+      child: Container(
+        color: const Color(0xFF0D0D0D),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(
           children: [
@@ -783,12 +790,14 @@ class _MessageBubble extends StatelessWidget {
   final bool isMe;
   final Color accent;
   final void Function(String) onReact;
+  final VoidCallback? onDelete;
 
   const _MessageBubble({
     required this.msg,
     required this.isMe,
     required this.accent,
     required this.onReact,
+    this.onDelete,
   });
 
   @override
@@ -916,124 +925,117 @@ class _MessageBubble extends StatelessWidget {
     final isExpired =
         DateTime.now().difference(msg.sentAt) > const Duration(hours: 24);
 
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 4),
+    // Expired snaps show nothing — just a subtle label
+    if (isExpired) return const SizedBox.shrink();
+
+    return GestureDetector(
+      onLongPress: () => _snapDeleteSheet(context),
+      child: Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          child: Column(
+            crossAxisAlignment:
+                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: () => _openFullscreen(context, msg.content),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: SizedBox(
+                    width: 160,
+                    height: 200,
+                    child: CachedNetworkImage(
+                      imageUrl: msg.content,
+                      fit: BoxFit.cover,
+                      placeholder: (_, _) => Container(
+                        color: AppColors.bgCard,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                              color: AppColors.rose, strokeWidth: 2),
+                        ),
+                      ),
+                      errorWidget: (_, _, _) => Container(
+                        color: AppColors.bgCard,
+                        child: const Center(
+                          child: Icon(Icons.broken_image_outlined,
+                              color: AppColors.textMuted, size: 32),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 3, left: 2, right: 2),
+                child: Text(
+                  'Snap · ${timeago.format(msg.sentAt, allowFromNow: true)}',
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 10),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).animate().fadeIn(duration: 200.ms);
+  }
+
+  void _snapDeleteSheet(BuildContext context) {
+    if (onDelete == null) return;
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
         child: Column(
-          crossAxisAlignment:
-              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            isExpired
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: Container(
-                      width: 160,
-                      height: 200,
-                      color: AppColors.bgCard,
-                      child: const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text('👻', style: TextStyle(fontSize: 36)),
-                            SizedBox(height: 8),
-                            Text(
-                              'Snap expired',
-                              style: TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                : GestureDetector(
-                    onTap: () => _openFullscreen(context, msg.content),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: SizedBox(
-                        width: 160,
-                        height: 200,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            CachedNetworkImage(
-                              imageUrl: msg.content,
-                              fit: BoxFit.cover,
-                              placeholder: (_, _) => Container(
-                                color: AppColors.bgCard,
-                                child: const Center(
-                                  child: CircularProgressIndicator(
-                                      color: AppColors.rose, strokeWidth: 2),
-                                ),
-                              ),
-                              errorWidget: (_, _, _) => Container(
-                                color: AppColors.bgCard,
-                                child: const Center(
-                                  child: Icon(Icons.broken_image_outlined,
-                                      color: AppColors.textMuted, size: 32),
-                                ),
-                              ),
-                            ),
-                            // Ghost badge — top-left
-                            Positioned(
-                              top: 8,
-                              left: 8,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text('👻',
-                                    style: TextStyle(fontSize: 14)),
-                              ),
-                            ),
-                            // Save button — bottom-right
-                            Positioned(
-                              bottom: 8,
-                              right: 8,
-                              child: GestureDetector(
-                                onTap: () =>
-                                    _openFullscreen(context, msg.content),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.55),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(Icons.save_alt_rounded,
-                                      color: Colors.white, size: 16),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-            Padding(
-              padding: const EdgeInsets.only(top: 3, left: 2, right: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('👻',
-                      style: TextStyle(fontSize: 10)),
-                  const SizedBox(width: 3),
-                  Text(
-                    'Snap · ${timeago.format(msg.sentAt, allowFromNow: true)}',
-                    style: const TextStyle(
-                        color: AppColors.textMuted, fontSize: 10),
-                  ),
-                ],
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            GestureDetector(
+              onTap: () {
+                Navigator.pop(context);
+                onDelete!();
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                      color: Colors.red.withValues(alpha: 0.3), width: 1),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.delete_outline_rounded,
+                        color: Colors.redAccent, size: 18),
+                    SizedBox(width: 8),
+                    Text('Delete Snap',
+                        style: TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15)),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
-    ).animate().fadeIn(duration: 200.ms);
+    );
   }
 
   static void _openFullscreen(BuildContext context, String url) {

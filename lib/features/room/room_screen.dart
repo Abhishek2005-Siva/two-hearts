@@ -14,12 +14,6 @@ import '../../shared/widgets/app_logo.dart';
 import '../../shared/widgets/character_avatar.dart';
 
 // Book colors used in shelf painting
-const List<Color> _kBookColors = [
-  Color(0xFF8B4513),
-  Color(0xFF2E6B3E),
-  Color(0xFF1A3A6B),
-  Color(0xFF7A2B5F),
-];
 
 class RoomScreen extends ConsumerStatefulWidget {
   const RoomScreen({super.key});
@@ -85,6 +79,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
             final type = data['type'] as String? ?? 'thinkingOfYou';
             final message = data['message'] as String?;
             _showSignal(type: type, message: message);
+            // Delete so it never re-shows on app reopen
+            ref.read(firestoreServiceProvider)
+                .deleteSignal(coupleId, docId)
+                .ignore();
           }
         }
       });
@@ -140,66 +138,16 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
   void _sendThinkingOfYou() {
     final coupleId = ref.read(coupleIdProvider);
     if (coupleId == null) return;
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
+    ref.read(firestoreServiceProvider).sendThinkingOfYou(coupleId).ignore();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('♡ Sent to your person'),
         backgroundColor: AppColors.bgCard,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('♡',
-                  style: TextStyle(fontSize: 52, color: AppColors.rose)),
-              const SizedBox(height: 12),
-              Text('Thinking Of You',
-                  style: Theme.of(ctx).textTheme.titleLarge),
-              const SizedBox(height: 6),
-              Text('Send a little love to their screen',
-                  style: Theme.of(ctx).textTheme.bodyMedium,
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 20),
-              TextField(
-                controller: ctrl,
-                maxLength: 80,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                  hintText: 'Add a note (optional)',
-                  counterText: '',
-                ),
-              ),
-              const SizedBox(height: 20),
-              GradientButton(
-                label: 'Send ♡',
-                onTap: () async {
-                  final msg = ctrl.text.trim();
-                  Navigator.pop(ctx);
-                  await ref
-                      .read(firestoreServiceProvider)
-                      .sendThinkingOfYou(
-                    coupleId,
-                    message: msg.isEmpty ? null : msg,
-                  );
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: const Text('♡ Sent to your person'),
-                      backgroundColor: AppColors.bgCard,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      margin: const EdgeInsets.all(16),
-                    ));
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        margin: const EdgeInsets.all(16),
+      ));
+    }
   }
 
   void _showMoodPicker() {
@@ -404,22 +352,20 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                           couple != null
                               ? '${me?.displayName.split(' ').first ?? '?'} & ${partner?.displayName.split(' ').first ?? '?'}'
                               : 'Two Hearts',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(
-                                color: nightness > 0.5
-                                    ? AppColors.textPrimary
-                                    : const Color(0xFF3A1A0A),
-                              ),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.3,
+                            shadows: [
+                              Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2)),
+                            ],
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       IconButton(
-                        icon: Icon(Icons.tune_rounded,
-                            color: nightness > 0.5
-                                ? AppColors.textSecondary
-                                : const Color(0xFF7A4020)),
+                        icon: const Icon(Icons.tune_rounded, color: Colors.white),
                         onPressed: () => _showSettings(context),
                       ),
                     ],
@@ -579,228 +525,6 @@ class _RoomScenePainter extends CustomPainter {
 
     final floorTop = h * 0.78;
 
-    // ── 3. WINDOW (top-right) ─────────────────────────────────────────────
-    final winLeft = w * 0.60;
-    final winTop = h * 0.04;
-    final winWidth = w * 0.35;
-    final winHeight = h * 0.32;
-    final winRect =
-        Rect.fromLTWH(winLeft, winTop, winWidth, winHeight);
-
-    // Sky gradient inside window
-    final skyTopDay = const Color(0xFF87CEEB);
-    final skyTopNight = const Color(0xFF0A0A2A);
-    final skyBotDay = const Color(0xFFB0D9F0);
-    final skyBotNight = const Color(0xFF050510);
-
-    final skyGrad = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [
-        Color.lerp(skyTopDay, skyTopNight, nightness)!,
-        Color.lerp(skyBotDay, skyBotNight, nightness)!,
-      ],
-    );
-    paint
-      ..shader = skyGrad.createShader(winRect)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(winRect, paint);
-    paint.shader = null;
-
-    // Stars at night
-    if (nightness > 0.3) {
-      final rng = math.Random(42);
-      final starPaint = Paint()
-        ..color =
-            Colors.white.withValues(alpha: nightness * 0.9)
-        ..style = PaintingStyle.fill;
-      for (int i = 0; i < 15; i++) {
-        final sx = winLeft + rng.nextDouble() * winWidth;
-        final sy = winTop + rng.nextDouble() * winHeight * 0.7;
-        final sr = 0.8 + rng.nextDouble() * 1.2;
-        canvas.drawCircle(Offset(sx, sy), sr, starPaint);
-      }
-    }
-
-    // Moon at night
-    if (nightness > 0.4) {
-      final moonPaint = Paint()
-        ..color = Colors.white.withValues(alpha: nightness * 0.95)
-        ..style = PaintingStyle.fill;
-      final moonX = winLeft + winWidth * 0.78;
-      final moonY = winTop + winHeight * 0.18;
-      canvas.drawCircle(Offset(moonX, moonY), 9 * nightness, moonPaint);
-      // Crescent cutout
-      final cutPaint = Paint()
-        ..color = Color.lerp(
-            skyTopNight, const Color(0xFF0A0A2A), nightness)!
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(
-          Offset(moonX + 5, moonY - 3), 7 * nightness, cutPaint);
-    }
-
-    // Day glow rays from top of window
-    if (nightness < 0.8) {
-      final glowPaint = Paint()
-        ..color = Colors.white.withValues(alpha: (1 - nightness) * 0.18)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
-      canvas.drawOval(
-          Rect.fromCenter(
-              center: Offset(winLeft + winWidth / 2, winTop),
-              width: winWidth * 0.8,
-              height: winHeight * 0.5),
-          glowPaint);
-      glowPaint.maskFilter = null;
-    }
-
-    // Night blue glow
-    if (nightness > 0.2) {
-      final nightGlowPaint = Paint()
-        ..color = const Color(0xFF1040A0)
-            .withValues(alpha: nightness * 0.22)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 24);
-      canvas.drawRect(winRect, nightGlowPaint);
-      nightGlowPaint.maskFilter = null;
-    }
-
-    // Window frame
-    final frameColor =
-        _lerp(const Color(0xFF8B5E3C), const Color(0xFF4A2A10));
-    paint
-      ..color = frameColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 5;
-    canvas.drawRect(winRect, paint);
-
-    // Cross dividers
-    paint.strokeWidth = 2.5;
-    canvas.drawLine(
-        Offset(winLeft + winWidth / 2, winTop),
-        Offset(winLeft + winWidth / 2, winTop + winHeight),
-        paint);
-    canvas.drawLine(
-        Offset(winLeft, winTop + winHeight / 2),
-        Offset(winLeft + winWidth, winTop + winHeight / 2),
-        paint);
-    paint.style = PaintingStyle.fill;
-
-    // Window sill
-    paint.color =
-        _lerp(const Color(0xFFA07040), const Color(0xFF3A1A08));
-    canvas.drawRect(
-        Rect.fromLTWH(
-            winLeft - 4, winTop + winHeight, winWidth + 8, 8),
-        paint);
-
-    // ── 4. SHELF (top-left) ───────────────────────────────────────────────
-    final shelfLeft = w * 0.04;
-    final shelfY = h * 0.20;
-    final shelfWidth = w * 0.40;
-    const shelfH = 8.0;
-
-    // Shadow below shelf
-    final shelfShadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.25)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
-    canvas.drawRect(
-        Rect.fromLTWH(shelfLeft, shelfY + shelfH, shelfWidth, 8),
-        shelfShadowPaint);
-    shelfShadowPaint.maskFilter = null;
-
-    // Shelf plank
-    paint.color =
-        _lerp(const Color(0xFF8B5E3C), const Color(0xFF3A1A08));
-    canvas.drawRect(
-        Rect.fromLTWH(shelfLeft, shelfY, shelfWidth, shelfH), paint);
-
-    // Books on shelf
-    final bookBaseY = shelfY - 2;
-    final bookHeights = [32.0, 40.0, 28.0, 36.0];
-    double bookX = shelfLeft + 8;
-    for (int i = 0; i < 4; i++) {
-      final bh = bookHeights[i];
-      final bw = 14.0 + i * 2;
-      paint.color = _lerp(
-          _kBookColors[i],
-          Color.lerp(_kBookColors[i], Colors.black, 0.5)!);
-      canvas.drawRect(
-          Rect.fromLTWH(bookX, bookBaseY - bh, bw, bh), paint);
-      // Book spine highlight
-      paint.color = Colors.white.withValues(alpha: 0.1);
-      canvas.drawRect(
-          Rect.fromLTWH(bookX, bookBaseY - bh, 2, bh), paint);
-      bookX += bw + 4;
-    }
-
-    // Small frame on shelf
-    final frameX = shelfLeft + shelfWidth * 0.70;
-    final frameYy = shelfY - 30.0;
-    paint
-      ..color = _lerp(const Color(0xFFC0904A), const Color(0xFF5A3010))
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-    canvas.drawRect(
-        Rect.fromLTWH(frameX, frameYy, 22, 28), paint);
-    paint
-      ..color =
-          _lerp(const Color(0xFFD4E8C2), const Color(0xFF102008))
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(
-        Rect.fromLTWH(frameX + 2.5, frameYy + 2.5, 17, 23), paint);
-
-    // ── 5. LAMP (left side) ───────────────────────────────────────────────
-    final lampX = w * 0.12;
-    final shadeTop = h * 0.40;
-    final shadeH = h * 0.09;
-    final poleBottom = floorTop;
-    final poleTop = shadeTop + shadeH;
-
-    // Amber glow at night
-    if (nightness > 0.1) {
-      final glowPaint = Paint()
-        ..color = const Color(0xFFFFB347)
-            .withValues(alpha: nightness * 0.28)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 40);
-      canvas.drawCircle(
-          Offset(lampX, shadeTop + shadeH / 2),
-          80 * nightness,
-          glowPaint);
-      glowPaint.maskFilter = null;
-    }
-
-    // Pole
-    paint.color =
-        _lerp(const Color(0xFF6B4020), const Color(0xFF2A100A));
-    canvas.drawRect(
-        Rect.fromLTWH(lampX - 3, poleTop, 6, poleBottom - poleTop),
-        paint);
-
-    // Shade (trapezoid)
-    final shadePath = Path()
-      ..moveTo(lampX - 22, shadeTop + shadeH)
-      ..lineTo(lampX + 22, shadeTop + shadeH)
-      ..lineTo(lampX + 14, shadeTop)
-      ..lineTo(lampX - 14, shadeTop)
-      ..close();
-    paint.color = nightness > 0.5
-        ? const Color(0xFFD4820A).withValues(alpha: 0.9)
-        : _lerp(const Color(0xFFF0C080), const Color(0xFFD4820A));
-    canvas.drawPath(shadePath, paint);
-
-    // Shade border
-    paint
-      ..color = _lerp(const Color(0xFFB07030), const Color(0xFF7A4010))
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    canvas.drawPath(shadePath, paint);
-    paint.style = PaintingStyle.fill;
-
-    // Base
-    paint.color =
-        _lerp(const Color(0xFF6B4020), const Color(0xFF2A100A));
-    canvas.drawRect(
-        Rect.fromLTWH(lampX - 12, poleBottom - 8, 24, 8), paint);
-
     // ── 6. FAIRY LIGHTS ───────────────────────────────────────────────────
     const numBulbs = 12;
     const stringY = 0.04;
@@ -861,85 +585,6 @@ class _RoomScenePainter extends CustomPainter {
         ..style = PaintingStyle.fill;
       canvas.drawCircle(Offset(bx, by + 5), 3.5, bulbPaint);
     }
-
-    // ── 8. PLANT (bottom-left) ────────────────────────────────────────────
-    final plantX = w * 0.08;
-    final potBottom = floorTop - 2;
-    final potH = h * 0.06;
-    final potW = w * 0.08;
-    final potTop = potBottom - potH;
-
-    // Pot trapezoid
-    final potPath = Path()
-      ..moveTo(plantX - potW * 0.35, potTop)
-      ..lineTo(plantX + potW * 0.35, potTop)
-      ..lineTo(plantX + potW * 0.5, potBottom)
-      ..lineTo(plantX - potW * 0.5, potBottom)
-      ..close();
-    paint.color =
-        _lerp(const Color(0xFFB05C34), const Color(0xFF4A1A0A));
-    canvas.drawPath(potPath, paint);
-
-    // Pot rim
-    paint
-      ..color = _lerp(const Color(0xFFC87040), const Color(0xFF5A2010))
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawPath(potPath, paint);
-    paint.style = PaintingStyle.fill;
-
-    // Leaves
-    final leafColor =
-        _lerp(const Color(0xFF3A8A3A), const Color(0xFF1A4010));
-    paint.color = leafColor;
-
-    // Left leaf
-    final leaf1 = Path()
-      ..moveTo(plantX, potTop)
-      ..quadraticBezierTo(
-          plantX - w * 0.06, potTop - h * 0.06,
-          plantX - w * 0.04, potTop - h * 0.11)
-      ..quadraticBezierTo(
-          plantX - w * 0.01, potTop - h * 0.06,
-          plantX, potTop);
-    canvas.drawPath(leaf1, paint);
-
-    // Center leaf
-    final leaf2 = Path()
-      ..moveTo(plantX, potTop)
-      ..quadraticBezierTo(
-          plantX, potTop - h * 0.12,
-          plantX + w * 0.01, potTop - h * 0.14)
-      ..quadraticBezierTo(
-          plantX + w * 0.02, potTop - h * 0.09,
-          plantX, potTop);
-    canvas.drawPath(leaf2, paint);
-
-    // Right leaf
-    final leaf3 = Path()
-      ..moveTo(plantX, potTop)
-      ..quadraticBezierTo(
-          plantX + w * 0.06, potTop - h * 0.07,
-          plantX + w * 0.05, potTop - h * 0.12)
-      ..quadraticBezierTo(
-          plantX + w * 0.01, potTop - h * 0.07,
-          plantX, potTop);
-    canvas.drawPath(leaf3, paint);
-
-    // Leaf highlights
-    paint.color =
-        _lerp(const Color(0xFF5AB85A), const Color(0xFF2A6018))
-            .withValues(alpha: 0.5);
-    final leafHL1 = Path()
-      ..moveTo(plantX - w * 0.01, potTop - h * 0.01)
-      ..quadraticBezierTo(
-          plantX - w * 0.04, potTop - h * 0.05,
-          plantX - w * 0.035, potTop - h * 0.09);
-    final leafStroke = Paint()
-      ..color = paint.color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    canvas.drawPath(leafHL1, leafStroke);
 
     // ── 9. RUG (floor center) ─────────────────────────────────────────────
     final rugCx = w * 0.50;

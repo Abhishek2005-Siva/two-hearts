@@ -38,7 +38,7 @@ class YouAndMeScreen extends ConsumerWidget {
               const SliverAppBar(
                 pinned: true,
                 backgroundColor: Colors.transparent,
-                title: Text('You & Me'),
+                title: Text('Settings'),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
