@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../features/avatar/avatar_model.dart';
 
 // ──────────────── User ────────────────
 
@@ -10,6 +11,7 @@ class UserModel {
   final String? coupleId;
   final DateTime? birthday;
   final String? gender;
+  final AvatarConfig? avatarConfig;
 
   const UserModel({
     required this.uid,
@@ -19,10 +21,12 @@ class UserModel {
     this.coupleId,
     this.birthday,
     this.gender,
+    this.avatarConfig,
   });
 
   factory UserModel.fromDoc(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
+    final avatarMap = d['avatarConfig'] as Map<String, dynamic>?;
     return UserModel(
       uid: doc.id,
       displayName: d['displayName'] ?? '',
@@ -31,6 +35,7 @@ class UserModel {
       coupleId: d['coupleId'],
       birthday: (d['birthday'] as Timestamp?)?.toDate(),
       gender: d['gender'],
+      avatarConfig: avatarMap != null ? AvatarConfig.fromMap(avatarMap) : null,
     );
   }
 
@@ -41,9 +46,17 @@ class UserModel {
         'coupleId': coupleId,
         'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
         if (gender != null) 'gender': gender,
+        if (avatarConfig != null) 'avatarConfig': avatarConfig!.toMap(),
       };
 
-  UserModel copyWith({String? displayName, String? avatarUrl, String? coupleId, DateTime? birthday, String? gender}) =>
+  UserModel copyWith({
+    String? displayName,
+    String? avatarUrl,
+    String? coupleId,
+    DateTime? birthday,
+    String? gender,
+    AvatarConfig? avatarConfig,
+  }) =>
       UserModel(
         uid: uid,
         displayName: displayName ?? this.displayName,
@@ -52,6 +65,7 @@ class UserModel {
         coupleId: coupleId ?? this.coupleId,
         birthday: birthday ?? this.birthday,
         gender: gender ?? this.gender,
+        avatarConfig: avatarConfig ?? this.avatarConfig,
       );
 
   DateTime? get nextBirthday {

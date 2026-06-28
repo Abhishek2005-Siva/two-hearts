@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'models.dart';
+import '../../features/avatar/avatar_model.dart';
 
 class FirestoreService {
   final _db = FirebaseFirestore.instance;
@@ -645,6 +646,11 @@ class FirestoreService {
   Future<void> saveFCMToken(String token) => _db
       .collection('users').doc(_uid)
       .update({'fcmToken': token});
+
+  // ── Avatar ────────────────────────────────────────────────────────────────
+
+  Future<void> updateAvatarConfig(String uid, AvatarConfig config) =>
+      _db.collection('users').doc(uid).update({'avatarConfig': config.toMap()});
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 

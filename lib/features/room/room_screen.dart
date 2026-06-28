@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../features/avatar/avatar_widget.dart';
 import '../../shared/widgets/app_logo.dart';
 import '../../shared/widgets/character_avatar.dart';
 
@@ -733,13 +734,26 @@ class _CharCol extends StatelessWidget {
     final name =
         user?.displayName as String? ?? (isMe ? 'You' : '?');
     final gender = user?.gender as String?;
+    final avatarConfig = user?.avatarConfig;
+
+    Widget avatarWidget = avatarConfig != null
+        ? AvatarWidget(config: avatarConfig, size: 86)
+        : CharacterAvatar(color: color, name: name, size: 86, gender: gender);
+
+    if (isMe) {
+      avatarWidget = GestureDetector(
+        onTap: () => context.push('/avatar-creator'),
+        child: avatarWidget,
+      );
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Stack(
           clipBehavior: Clip.none,
           children: [
-            CharacterAvatar(color: color, name: name, size: 86, gender: gender),
+            avatarWidget,
             if (mood != null)
               Positioned(
                 bottom: -4,
