@@ -10,9 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
-import '../../features/avatar/avatar_widget.dart';
 import '../../shared/widgets/app_logo.dart';
-import '../../shared/widgets/character_avatar.dart';
 
 // Book colors used in shelf painting
 
@@ -731,62 +729,27 @@ class _CharCol extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name =
-        user?.displayName as String? ?? (isMe ? 'You' : '?');
-    final gender = user?.gender as String?;
-    final avatarConfig = user?.avatarConfig;
-
-    Widget avatarWidget = avatarConfig != null
-        ? AvatarWidget(config: avatarConfig, size: 86)
-        : CharacterAvatar(color: color, name: name, size: 86, gender: gender);
-
-    if (isMe) {
-      avatarWidget = GestureDetector(
-        onTap: () => context.push('/avatar-creator'),
-        child: avatarWidget,
-      );
-    }
+    final name = user?.displayName as String? ?? (isMe ? 'You' : '?');
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            avatarWidget,
-            if (mood != null)
-              Positioned(
-                bottom: -4,
-                right: -4,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: AppColors.bgCard,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                        color: AppColors.divider, width: 0.5),
-                  ),
-                  child: Text(mood!.emoji,
-                      style: const TextStyle(fontSize: 16)),
-                ),
-              ),
-            if (showTapHint)
-              Positioned(
-                top: -6,
-                right: -6,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.9),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.mood_rounded,
-                      color: Colors.white, size: 12),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
+        // Mood bubble (floats above the name)
+        if (mood != null)
+          Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppColors.bgCard.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.divider, width: 0.5),
+            ),
+            child: Text(mood!.emoji, style: const TextStyle(fontSize: 18)),
+          )
+        else
+          const SizedBox(height: 30),
+
+        // Name label
         ShaderMask(
           shaderCallback: (bounds) => LinearGradient(
             colors: [color, Colors.white],
@@ -797,10 +760,10 @@ class _CharCol extends StatelessWidget {
             name.split(' ').first,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-              shadows: [Shadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 2))],
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+              shadows: [Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2))],
             ),
             textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,
@@ -884,49 +847,63 @@ class _PolaroidStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = memories.take(8).toList();
+    final items = memories.take(6).toList();
     return SizedBox(
-      height: 130,
+      height: 175,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(left: 16),
-        itemCount: items.length + 1,
+        padding: const EdgeInsets.only(left: 20),
+        itemCount: items.length + 1, // +1 for sticky note
         itemBuilder: (ctx, i) {
           if (i < items.length) {
             return Padding(
-              padding: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.only(right: 12),
               child: _PolaroidCard(
-                  memory: items[i], nightness: nightness),
+                  memory: items[i], index: i, nightness: nightness),
             );
           }
-          // "See all" tile
+          // Sticky note "see all"
           return Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.only(right: 20, top: 12),
             child: GestureDetector(
               onTap: () => ctx.push('/memory'),
-              child: Container(
-                width: 80,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: AppColors.bgCard,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                      color: AppColors.divider, width: 1),
-                ),
-                child: const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.photo_library_outlined,
-                        color: AppColors.textMuted, size: 22),
-                    SizedBox(height: 6),
-                    Text(
-                      'See all',
-                      style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500),
+              child: Transform.rotate(
+                angle: 0.03,
+                child: Container(
+                  width: 95,
+                  height: 95,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF5C2),
+                    borderRadius: BorderRadius.circular(3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 8,
+                        offset: const Offset(2, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'little\nmemories,\nbig\nmeaning',
+                          style: TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 12,
+                            color: Color(0xFF6B5A3A),
+                            height: 1.4,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text('♡', style: TextStyle(fontSize: 14, color: Color(0xFFD4849A))),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -939,59 +916,124 @@ class _PolaroidStrip extends StatelessWidget {
 
 // ── Polaroid Card ─────────────────────────────────────────────────────────
 
+// Decorations cycle across cards: pin, tape, heart sticker, tape, pin, heart
+const _kPolaroidDecos = ['pin', 'tape', 'heart', 'tape', 'pin', 'heart'];
+
 class _PolaroidCard extends StatelessWidget {
   final dynamic memory;
+  final int index;
   final double nightness;
   const _PolaroidCard(
-      {required this.memory, required this.nightness});
+      {required this.memory, required this.index, required this.nightness});
 
   @override
   Widget build(BuildContext context) {
-    final rotationRad =
-        ((memory.id.hashCode % 16) - 8) / 100.0;
-    final bgColor = Color.lerp(
-        Colors.white, const Color(0xFFF5EAD8), nightness)!;
-    final shadowOpacity = 0.15 + nightness * 0.25;
+    // Alternate slight rotations per index for a casual pinboard look
+    final angles = [-0.04, 0.03, -0.02, 0.05, -0.03, 0.02];
+    final rotationRad = angles[index % angles.length];
+    final bgColor = Color.lerp(Colors.white, const Color(0xFFF8F0E8), nightness)!;
+    final shadowOpacity = 0.18 + nightness * 0.2;
+    final deco = _kPolaroidDecos[index % _kPolaroidDecos.length];
 
     return GestureDetector(
       onTap: () => context.push('/memory/${memory.id}'),
-      child: Transform.rotate(
-        angle: rotationRad,
-        child: Container(
-          width: 80,
-          height: 100,
-          padding: const EdgeInsets.fromLTRB(5, 5, 5, 20),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(3),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: shadowOpacity),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: memory.imageUrl?.isNotEmpty == true
-                ? CachedNetworkImage(
-                    imageUrl: memory.imageUrl as String,
-                    fit: BoxFit.cover,
-                    placeholder: (_, _) =>
-                        Container(color: const Color(0xFFDDCCBB)),
-                    errorWidget: (_, _, _) => Container(
-                      color: const Color(0xFFDDCCBB),
-                      child: const Icon(Icons.image_outlined,
-                          color: Colors.grey, size: 18),
-                    ),
-                  )
-                : Container(
-                    color: const Color(0xFFDDCCBB),
-                    child: const Icon(Icons.image_outlined,
-                        color: Colors.grey, size: 18),
+      child: SizedBox(
+        width: 110,
+        height: 155,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
+          children: [
+            // Polaroid frame
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Transform.rotate(
+                angle: rotationRad,
+                child: Container(
+                  width: 110,
+                  height: 140,
+                  padding: const EdgeInsets.fromLTRB(7, 7, 7, 28),
+                  decoration: BoxDecoration(
+                    color: bgColor,
+                    borderRadius: BorderRadius.circular(3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: shadowOpacity),
+                        blurRadius: 12,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
                   ),
-          ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: memory.imageUrl?.isNotEmpty == true
+                        ? CachedNetworkImage(
+                            imageUrl: memory.imageUrl as String,
+                            fit: BoxFit.cover,
+                            placeholder: (_, _) =>
+                                Container(color: const Color(0xFFE8D8C8)),
+                            errorWidget: (_, _, _) => Container(
+                              color: const Color(0xFFE8D8C8),
+                              child: const Icon(Icons.image_outlined,
+                                  color: Colors.grey, size: 22),
+                            ),
+                          )
+                        : Container(
+                            color: const Color(0xFFE8D8C8),
+                            child: const Icon(Icons.image_outlined,
+                                color: Colors.grey, size: 22),
+                          ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Decoration overlay (pin / tape / heart)
+            if (deco == 'pin')
+              Positioned(
+                top: 0,
+                child: Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE88080),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.25),
+                          blurRadius: 3,
+                          offset: const Offset(0, 2)),
+                    ],
+                  ),
+                ),
+              )
+            else if (deco == 'tape')
+              Positioned(
+                top: 4,
+                child: Transform.rotate(
+                  angle: rotationRad * -1.5,
+                  child: Container(
+                    width: 38,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8D8A0).withValues(alpha: 0.75),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              )
+            else if (deco == 'heart')
+              Positioned(
+                top: 2,
+                right: 8,
+                child: const Text('♡',
+                    style: TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFFD4849A))),
+              ),
+          ],
         ),
       ),
     );
