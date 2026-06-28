@@ -365,7 +365,15 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Room background — full screen animated scene
+          // 1. Room background — photo behind the animated scene
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/main_page_bg.png',
+              fit: BoxFit.cover,
+            ),
+          ),
+
+          // 2. Animated overlays (window, stars, curtains, fairy lights)
           AnimatedBuilder(
             animation: _twinkleCtrl,
             builder: (_, _) {
@@ -569,30 +577,7 @@ class _RoomScenePainter extends CustomPainter {
     final h = size.height;
     final paint = Paint();
 
-    // ── 1. WALL ──────────────────────────────────────────────────────────
-    final wallColor =
-        _lerp(const Color(0xFFF5EAD8), const Color(0xFF16102A));
-    paint
-      ..color = wallColor
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), paint);
-
-    // ── 2. FLOOR STRIP ───────────────────────────────────────────────────
     final floorTop = h * 0.78;
-    final floorColor =
-        _lerp(const Color(0xFFD4A878), const Color(0xFF1C1008));
-    paint.color = floorColor;
-    canvas.drawRect(Rect.fromLTWH(0, floorTop, w, h - floorTop), paint);
-
-    // Baseboard line
-    final baseboardColor =
-        _lerp(const Color(0xFFC08050), const Color(0xFF0E0804));
-    paint
-      ..color = baseboardColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-    canvas.drawLine(Offset(0, floorTop), Offset(w, floorTop), paint);
-    paint.style = PaintingStyle.fill;
 
     // ── 3. WINDOW (top-right) ─────────────────────────────────────────────
     final winLeft = w * 0.60;
@@ -877,79 +862,6 @@ class _RoomScenePainter extends CustomPainter {
       canvas.drawCircle(Offset(bx, by + 5), 3.5, bulbPaint);
     }
 
-    // ── 7. BED (right side) ───────────────────────────────────────────────
-    final bedLeft = w * 0.55;
-    final bedRight = w * 0.97;
-    final bedTop = floorTop - h * 0.16;
-    final bedWidth = bedRight - bedLeft;
-
-    // Night glow under blanket
-    if (nightness > 0.1) {
-      final bedGlowPaint = Paint()
-        ..color = const Color(0xFF4060A0)
-            .withValues(alpha: nightness * 0.12)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
-      canvas.drawRect(
-          Rect.fromLTWH(bedLeft, bedTop, bedWidth, h * 0.16),
-          bedGlowPaint);
-      bedGlowPaint.maskFilter = null;
-    }
-
-    // Headboard
-    paint.color =
-        _lerp(const Color(0xFF7A4E2D), const Color(0xFF2C1208));
-    canvas.drawRRect(
-        RRect.fromRectAndCorners(
-          Rect.fromLTWH(bedLeft, bedTop - h * 0.08, bedWidth, h * 0.09),
-          topLeft: const Radius.circular(10),
-          topRight: const Radius.circular(10),
-        ),
-        paint);
-
-    // Mattress
-    paint.color =
-        _lerp(const Color(0xFFEEDDCC), const Color(0xFF2A1A10));
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-              bedLeft - 2, bedTop, bedWidth + 4, h * 0.12),
-          const Radius.circular(6),
-        ),
-        paint);
-
-    // Blanket
-    final blanketColor =
-        _lerp(const Color(0xFF7090C8), const Color(0xFF1A2860));
-    paint.color = blanketColor;
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(bedLeft, bedTop + h * 0.03, bedWidth,
-              h * 0.09),
-          const Radius.circular(6),
-        ),
-        paint);
-
-    // Blanket fold highlight
-    paint.color = Colors.white.withValues(alpha: 0.08);
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(bedLeft, bedTop + h * 0.03,
-              bedWidth, h * 0.015),
-          const Radius.circular(6),
-        ),
-        paint);
-
-    // Pillow
-    paint.color =
-        _lerp(const Color(0xFFF8EEE4), const Color(0xFF3A2820));
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(bedLeft + 8, bedTop + 4,
-              bedWidth * 0.38, h * 0.055),
-          const Radius.circular(8),
-        ),
-        paint);
-
     // ── 8. PLANT (bottom-left) ────────────────────────────────────────────
     final plantX = w * 0.08;
     final potBottom = floorTop - 2;
@@ -1124,13 +1036,14 @@ class _CharCol extends StatelessWidget {
   Widget build(BuildContext context) {
     final name =
         user?.displayName as String? ?? (isMe ? 'You' : '?');
+    final gender = user?.gender as String?;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Stack(
           clipBehavior: Clip.none,
           children: [
-            CharacterAvatar(color: color, name: name, size: 86),
+            CharacterAvatar(color: color, name: name, size: 86, gender: gender),
             if (mood != null)
               Positioned(
                 bottom: -4,
@@ -1163,19 +1076,33 @@ class _CharCol extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 6),
-        Text(
-          name.split(' ').first,
-          style: Theme.of(context).textTheme.bodyMedium,
-          textAlign: TextAlign.center,
-          overflow: TextOverflow.ellipsis,
+        const SizedBox(height: 8),
+        ShaderMask(
+          shaderCallback: (bounds) => LinearGradient(
+            colors: [color, Colors.white],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ).createShader(bounds),
+          child: Text(
+            name.split(' ').first,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+              shadows: [Shadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 2))],
+            ),
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         if (showTapHint)
-          Text('tap to share mood',
+          Text('tap to set mood',
               style: TextStyle(
                   fontSize: 9,
-                  color: color.withValues(alpha: 0.7),
-                  letterSpacing: 0.3)),
+                  color: color.withValues(alpha: 0.75),
+                  letterSpacing: 0.4,
+                  fontWeight: FontWeight.w500)),
       ],
     );
   }

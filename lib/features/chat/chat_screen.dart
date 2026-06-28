@@ -14,6 +14,26 @@ import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
 
+// ── Background enum ───────────────────────────────────────────────────────
+
+enum ChatBackground {
+  dark,
+  bg1, bg2, bg3, bg4, bg5, bg6, bg7, bg8, bg9, bg10,
+}
+
+const _chatBgAssets = {
+  ChatBackground.bg1:  'assets/images/chat_bg1.png',
+  ChatBackground.bg2:  'assets/images/chat_bg2.png',
+  ChatBackground.bg3:  'assets/images/chat_bg3.jpg',
+  ChatBackground.bg4:  'assets/images/chat_bg4.jpg',
+  ChatBackground.bg5:  'assets/images/chat_bg5.jpeg',
+  ChatBackground.bg6:  'assets/images/chat_bg6.jpeg',
+  ChatBackground.bg7:  'assets/images/chat_bg7.jpeg',
+  ChatBackground.bg8:  'assets/images/chat_bg8.jpeg',
+  ChatBackground.bg9:  'assets/images/chat_bg9.jpg',
+  ChatBackground.bg10: 'assets/images/chat_bg10.jpeg',
+};
+
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
 
@@ -27,8 +47,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _sending = false;
   bool _isTyping = false;
   bool _whisperMode = false;
-  String? _viewingSnapId;
   final _scheduledDeletes = <String>{};
+  ChatBackground _background = ChatBackground.dark;
 
   @override
   void initState() {
@@ -126,6 +146,40 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
+  BoxDecoration _backgroundDecoration() {
+    final asset = _chatBgAssets[_background];
+    if (asset != null) {
+      return BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage(asset),
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    // Default dark gradient
+    return const BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: AppColors.bgGradient,
+      ),
+    );
+  }
+
+  void _showBackgroundPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _BackgroundPickerSheet(
+        current: _background,
+        onSelect: (bg) {
+          setState(() => _background = bg);
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+
   @override
   void dispose() {
     final coupleId = ref.read(coupleIdProvider);
@@ -166,13 +220,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: AppColors.bgGradient,
-          ),
-        ),
+        decoration: _backgroundDecoration(),
         child: Column(
           children: [
             _ChatAppBar(
@@ -180,6 +228,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               accent: accent,
               isTyping: isTyping,
               partnerOnline: partnerOnline,
+              onBackgroundTap: () => _showBackgroundPicker(context),
             ),
             Expanded(
               child: messagesAsync.when(
@@ -257,18 +306,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             msg: msg,
                             isMe: msg.senderId == uid,
                             accent: accent,
-                            isViewingSnap: _viewingSnapId == msg.id,
-                            onSnapHoldStart: () =>
-                                setState(() => _viewingSnapId = msg.id),
-                            onSnapHoldEnd: () {
-                              setState(() => _viewingSnapId = null);
-                              if (coupleId != null && !msg.snapViewed) {
-                                ref
-                                    .read(firestoreServiceProvider)
-                                    .viewSnap(coupleId, msg.id)
-                                    .ignore();
-                              }
-                            },
                             onReact: (emoji) {
                               HapticFeedback.selectionClick();
                               if (coupleId == null) return;
@@ -340,12 +377,14 @@ class _ChatAppBar extends StatelessWidget {
   final Color accent;
   final bool isTyping;
   final bool partnerOnline;
+  final VoidCallback? onBackgroundTap;
 
   const _ChatAppBar({
     required this.partner,
     required this.accent,
     required this.isTyping,
     required this.partnerOnline,
+    this.onBackgroundTap,
   });
 
   @override
@@ -418,8 +457,141 @@ class _ChatAppBar extends StatelessWidget {
                 ),
               ),
             ),
+            IconButton(
+              icon: const Icon(Icons.wallpaper_outlined,
+                  color: AppColors.textMuted, size: 20),
+              onPressed: onBackgroundTap,
+              tooltip: 'Chat background',
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Background Picker Sheet ───────────────────────────────────────────────
+
+class _BackgroundPickerSheet extends StatelessWidget {
+  final ChatBackground current;
+  final void Function(ChatBackground) onSelect;
+
+  const _BackgroundPickerSheet({
+    required this.current,
+    required this.onSelect,
+  });
+
+  static final _imageOptions = [
+    ChatBackground.bg1,  ChatBackground.bg2,  ChatBackground.bg3,
+    ChatBackground.bg4,  ChatBackground.bg5,  ChatBackground.bg6,
+    ChatBackground.bg7,  ChatBackground.bg8,  ChatBackground.bg9,
+    ChatBackground.bg10,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.6,
+      ),
+      padding: EdgeInsets.fromLTRB(
+        24, 20, 24,
+        MediaQuery.of(context).padding.bottom + 24,
+      ),
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 36,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 18),
+            decoration: BoxDecoration(
+                color: AppColors.divider,
+                borderRadius: BorderRadius.circular(2)),
+          ),
+          const Text(
+            'Chat Background',
+            style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 16),
+          Flexible(
+            child: GridView.builder(
+              shrinkWrap: true,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 0.65,
+              ),
+              itemCount: _imageOptions.length + 1, // +1 for Dark
+              itemBuilder: (_, i) {
+                final bg = i == 0 ? ChatBackground.dark : _imageOptions[i - 1];
+                final isSelected = current == bg;
+                final asset = _chatBgAssets[bg];
+                return GestureDetector(
+                  onTap: () => onSelect(bg),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: asset != null
+                            ? Image.asset(asset, fit: BoxFit.cover)
+                            : Container(
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: AppColors.bgGradient,
+                                  ),
+                                ),
+                                child: const Center(
+                                  child: Text('Dark',
+                                      style: TextStyle(
+                                          color: AppColors.textMuted,
+                                          fontSize: 12)),
+                                ),
+                              ),
+                      ),
+                      // Selection border + checkmark
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected ? AppColors.rose : Colors.transparent,
+                            width: 2.5,
+                          ),
+                        ),
+                        child: isSelected
+                            ? const Align(
+                                alignment: Alignment.topRight,
+                                child: Padding(
+                                  padding: EdgeInsets.all(6),
+                                  child: CircleAvatar(
+                                    radius: 10,
+                                    backgroundColor: AppColors.rose,
+                                    child: Icon(Icons.check_rounded,
+                                        color: Colors.white, size: 13),
+                                  ),
+                                ),
+                              )
+                            : null,
+                      ),
+                    ],
+                ),
+              );
+            },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -610,18 +782,12 @@ class _MessageBubble extends StatelessWidget {
   final MessageModel msg;
   final bool isMe;
   final Color accent;
-  final bool isViewingSnap;
-  final VoidCallback onSnapHoldStart;
-  final VoidCallback onSnapHoldEnd;
   final void Function(String) onReact;
 
   const _MessageBubble({
     required this.msg,
     required this.isMe,
     required this.accent,
-    required this.isViewingSnap,
-    required this.onSnapHoldStart,
-    required this.onSnapHoldEnd,
     required this.onReact,
   });
 
@@ -747,73 +913,140 @@ class _MessageBubble extends StatelessWidget {
   }
 
   Widget _snap(BuildContext context) {
+    final isExpired =
+        DateTime.now().difference(msg.sentAt) > const Duration(hours: 24);
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 4),
-        width: 160,
-        height: 200,
-        child: GestureDetector(
-          onLongPressStart:
-              msg.snapViewed ? null : (_) {
-            HapticFeedback.mediumImpact();
-            onSnapHoldStart();
-          },
-          onLongPressEnd: msg.snapViewed ? null : (_) => onSnapHoldEnd(),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (isViewingSnap && !msg.snapViewed)
-                  CachedNetworkImage(
-                      imageUrl: msg.content, fit: BoxFit.cover)
-                else
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: msg.snapViewed
-                            ? [AppColors.bgCard, AppColors.bgMid]
-                            : [
-                                accent.withValues(alpha: 0.3),
-                                AppColors.bgCard
-                              ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+        child: Column(
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            isExpired
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      width: 160,
+                      height: 200,
+                      color: AppColors.bgCard,
+                      child: const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('👻', style: TextStyle(fontSize: 36)),
+                            SizedBox(height: 8),
+                            Text(
+                              'Snap expired',
+                              style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                : GestureDetector(
+                    onTap: () => _openFullscreen(context, msg.content),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: SizedBox(
+                        width: 160,
+                        height: 200,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            CachedNetworkImage(
+                              imageUrl: msg.content,
+                              fit: BoxFit.cover,
+                              placeholder: (_, _) => Container(
+                                color: AppColors.bgCard,
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                      color: AppColors.rose, strokeWidth: 2),
+                                ),
+                              ),
+                              errorWidget: (_, _, _) => Container(
+                                color: AppColors.bgCard,
+                                child: const Center(
+                                  child: Icon(Icons.broken_image_outlined,
+                                      color: AppColors.textMuted, size: 32),
+                                ),
+                              ),
+                            ),
+                            // Ghost badge — top-left
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text('👻',
+                                    style: TextStyle(fontSize: 14)),
+                              ),
+                            ),
+                            // Save button — bottom-right
+                            Positioned(
+                              bottom: 8,
+                              right: 8,
+                              child: GestureDetector(
+                                onTap: () =>
+                                    _openFullscreen(context, msg.content),
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.55),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.save_alt_rounded,
+                                      color: Colors.white, size: 16),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                if (!isViewingSnap)
-                  Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(msg.snapViewed ? '👻' : '📸',
-                            style: const TextStyle(fontSize: 36)),
-                        const SizedBox(height: 8),
-                        Text(
-                          msg.snapViewed
-                              ? 'Snap viewed'
-                              : isMe
-                                  ? 'Your snap'
-                                  : 'Hold to view',
-                          style: TextStyle(
-                            color: msg.snapViewed
-                                ? AppColors.textMuted
-                                : AppColors.textPrimary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
+            Padding(
+              padding: const EdgeInsets.only(top: 3, left: 2, right: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('👻',
+                      style: TextStyle(fontSize: 10)),
+                  const SizedBox(width: 3),
+                  Text(
+                    'Snap · ${timeago.format(msg.sentAt, allowFromNow: true)}',
+                    style: const TextStyle(
+                        color: AppColors.textMuted, fontSize: 10),
                   ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     ).animate().fadeIn(duration: 200.ms);
+  }
+
+  static void _openFullscreen(BuildContext context, String url) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: true,
+        pageBuilder: (_, _, _) => _FullscreenImageView(url: url),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 180),
+      ),
+    );
   }
 
   void _reactSheet(BuildContext context) {
@@ -856,6 +1089,59 @@ class _MessageBubble extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Fullscreen Image Viewer ───────────────────────────────────────────────
+
+class _FullscreenImageView extends StatelessWidget {
+  final String url;
+  const _FullscreenImageView({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                placeholder: (_, _) => const Center(
+                  child: CircularProgressIndicator(
+                      color: AppColors.rose, strokeWidth: 2),
+                ),
+                errorWidget: (_, _, _) => const Center(
+                  child: Icon(Icons.broken_image_outlined,
+                      color: Colors.white54, size: 48),
+                ),
+              ),
+            ),
+          ),
+          // Close button — top-right
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            right: 12,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close_rounded,
+                    color: Colors.white, size: 22),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -582,10 +582,22 @@ class _ComposeSheetState extends ConsumerState<_ComposeSheet> {
   Future<void> _submit() async {
     final title = _titleCtrl.text.trim();
     final body = _bodyCtrl.text.trim();
-    if (body.isEmpty) return;
+    if (body.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Write something first ♡'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     final coupleId = ref.read(coupleIdProvider);
     final partner = ref.read(partnerUserProvider).valueOrNull;
-    if (coupleId == null) return;
+    if (coupleId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Not connected to a couple yet'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     setState(() => _submitting = true);
     HapticFeedback.mediumImpact();
     try {
@@ -597,6 +609,14 @@ class _ComposeSheetState extends ConsumerState<_ComposeSheet> {
         title: title.isNotEmpty ? title : null,
       );
       if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Could not save: ${e.toString().split(']').last.trim()}'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade800,
+        ));
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -707,32 +727,26 @@ class _ComposeSheetState extends ConsumerState<_ComposeSheet> {
             const SizedBox(height: 12),
 
             // Entry field
-            Flexible(
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 140),
-                decoration: BoxDecoration(
-                  color: AppColors.bgCard,
-                  borderRadius: BorderRadius.circular(14),
-                  border:
-                      Border.all(color: AppColors.divider, width: 0.5),
-                ),
-                child: TextField(
-                  controller: _bodyCtrl,
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 15,
-                      height: 1.7),
-                  decoration: const InputDecoration(
-                    hintText:
-                        'What\'s on your mind today?',
-                    hintStyle:
-                        TextStyle(color: AppColors.textMuted),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.all(16),
-                  ),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.divider, width: 0.5),
+              ),
+              child: TextField(
+                controller: _bodyCtrl,
+                maxLines: null,
+                minLines: 6,
+                textAlignVertical: TextAlignVertical.top,
+                style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    height: 1.7),
+                decoration: const InputDecoration(
+                  hintText: 'What\'s on your mind today?',
+                  hintStyle: TextStyle(color: AppColors.textMuted),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.all(16),
                 ),
               ),
             ),

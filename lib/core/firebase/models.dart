@@ -9,6 +9,7 @@ class UserModel {
   final String? avatarUrl;
   final String? coupleId;
   final DateTime? birthday;
+  final String? gender;
 
   const UserModel({
     required this.uid,
@@ -17,6 +18,7 @@ class UserModel {
     this.avatarUrl,
     this.coupleId,
     this.birthday,
+    this.gender,
   });
 
   factory UserModel.fromDoc(DocumentSnapshot doc) {
@@ -28,6 +30,7 @@ class UserModel {
       avatarUrl: d['avatarUrl'],
       coupleId: d['coupleId'],
       birthday: (d['birthday'] as Timestamp?)?.toDate(),
+      gender: d['gender'],
     );
   }
 
@@ -37,9 +40,10 @@ class UserModel {
         'avatarUrl': avatarUrl,
         'coupleId': coupleId,
         'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
+        if (gender != null) 'gender': gender,
       };
 
-  UserModel copyWith({String? displayName, String? avatarUrl, String? coupleId, DateTime? birthday}) =>
+  UserModel copyWith({String? displayName, String? avatarUrl, String? coupleId, DateTime? birthday, String? gender}) =>
       UserModel(
         uid: uid,
         displayName: displayName ?? this.displayName,
@@ -47,6 +51,7 @@ class UserModel {
         avatarUrl: avatarUrl ?? this.avatarUrl,
         coupleId: coupleId ?? this.coupleId,
         birthday: birthday ?? this.birthday,
+        gender: gender ?? this.gender,
       );
 
   DateTime? get nextBirthday {

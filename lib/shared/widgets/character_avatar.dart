@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 
 /// Animated 3D-style character that represents one person in the couple.
 /// Draws a floating person figure with a glowing sphere head, body, and arms.
+/// Pass [gender] ('male', 'female', or null) to show gender-specific hair.
 class CharacterAvatar extends StatefulWidget {
   final Color color;
   final String name;
   final double size;
+  final String? gender;
 
   const CharacterAvatar({
     super.key,
     required this.color,
     required this.name,
     this.size = 100,
+    this.gender,
   });
 
   @override
@@ -56,6 +59,7 @@ class _CharacterAvatarState extends State<CharacterAvatar>
             painter: _CharacterPainter(
               color: widget.color,
               initial: initial,
+              gender: widget.gender,
             ),
           ),
         ),
@@ -67,8 +71,13 @@ class _CharacterAvatarState extends State<CharacterAvatar>
 class _CharacterPainter extends CustomPainter {
   final Color color;
   final String initial;
+  final String? gender;
 
-  const _CharacterPainter({required this.color, required this.initial});
+  const _CharacterPainter({
+    required this.color,
+    required this.initial,
+    this.gender,
+  });
 
   // ── Colour helpers ──────────────────────────────────────────────────────
 
@@ -183,9 +192,43 @@ class _CharacterPainter extends CustomPainter {
       Paint()..color = _lighten(color, 0.18),
     );
 
-    // ── Head ───────────────────────────────────────────────────────────────
+    // ── Head geometry (computed early for hair placement) ──────────────────
     final headR = w * 0.265;
     final headC = Offset(cx, bodyTop - headR * 0.85);
+
+    // ── Female side hair strands — drawn BEFORE head so head sits on top ──
+    if (gender == 'female') {
+      final hairColor = _darken(color, 0.3);
+      final hairPaint = Paint()
+        ..color = hairColor
+        ..style = PaintingStyle.fill;
+
+      // Left side hair strand
+      final leftHair = Path()
+        ..moveTo(headC.dx - headR * 0.85, headC.dy - headR * 0.6)
+        ..quadraticBezierTo(
+            headC.dx - headR * 1.4, headC.dy + headR * 0.4,
+            headC.dx - headR * 0.9, headC.dy + headR * 1.1)
+        ..quadraticBezierTo(
+            headC.dx - headR * 1.1, headC.dy + headR * 0.3,
+            headC.dx - headR * 0.7, headC.dy - headR * 0.5)
+        ..close();
+      canvas.drawPath(leftHair, hairPaint);
+
+      // Right side hair strand
+      final rightHair = Path()
+        ..moveTo(headC.dx + headR * 0.85, headC.dy - headR * 0.6)
+        ..quadraticBezierTo(
+            headC.dx + headR * 1.4, headC.dy + headR * 0.4,
+            headC.dx + headR * 0.9, headC.dy + headR * 1.1)
+        ..quadraticBezierTo(
+            headC.dx + headR * 1.1, headC.dy + headR * 0.3,
+            headC.dx + headR * 0.7, headC.dy - headR * 0.5)
+        ..close();
+      canvas.drawPath(rightHair, hairPaint);
+    }
+
+    // ── Head ───────────────────────────────────────────────────────────────
 
     // Outer aura glow
     canvas.drawCircle(
@@ -247,6 +290,43 @@ class _CharacterPainter extends CustomPainter {
         ..color = Colors.white.withValues(alpha: 0.18),
     );
 
+    // ── Gender hair — drawn AFTER head so top cap overlaps sphere ─────────
+    if (gender == 'female') {
+      final hairColor = _darken(color, 0.3);
+      final hairPaint = Paint()
+        ..color = hairColor
+        ..style = PaintingStyle.fill;
+
+      // Top hair cap — semi-circle with flowing top
+      canvas.drawPath(
+        Path()
+          ..moveTo(headC.dx - headR, headC.dy)
+          ..arcToPoint(
+            Offset(headC.dx + headR, headC.dy),
+            radius: Radius.circular(headR),
+            clockwise: false,
+          )
+          ..quadraticBezierTo(
+              headC.dx + headR * 0.6, headC.dy - headR * 1.5,
+              headC.dx, headC.dy - headR * 1.4)
+          ..quadraticBezierTo(
+              headC.dx - headR * 0.6, headC.dy - headR * 1.5,
+              headC.dx - headR, headC.dy)
+          ..close(),
+        hairPaint,
+      );
+    } else if (gender == 'male') {
+      // Short flat-top cap
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(headC.dx, headC.dy - headR * 0.82),
+          width: headR * 1.8,
+          height: headR * 0.5,
+        ),
+        Paint()..color = _darken(color, 0.25),
+      );
+    }
+
     // ── Initial letter ─────────────────────────────────────────────────────
     final tp = TextPainter(
       text: TextSpan(
@@ -267,5 +347,5 @@ class _CharacterPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CharacterPainter old) =>
-      old.color != color || old.initial != initial;
+      old.color != color || old.initial != initial || old.gender != gender;
 }

@@ -22,6 +22,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _name = TextEditingController();
   bool _obscure = true;
   String? _error;
+  DateTime? _dob;
+  String? _gender;
+
+  Future<void> _pickDob() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime(2000, 1, 1),
+      firstDate: DateTime(1940),
+      lastDate: DateTime.now().subtract(const Duration(days: 365 * 13)),
+      builder: (ctx, child) => Theme(data: ThemeData.dark(), child: child!),
+    );
+    if (picked != null) setState(() => _dob = picked);
+  }
 
   Future<void> _submit() async {
     setState(() { _loading = true; _error = null; });
@@ -42,6 +55,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             uid: cred.user!.uid,
             displayName: _name.text.trim(),
             email: _email.text.trim(),
+            birthday: _dob,
+            gender: _gender,
           ));
         }
       }
@@ -152,6 +167,58 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             icon: Icons.person_outline_rounded,
                           ).animate().fadeIn(delay: 250.ms).slideX(begin: -0.05),
                           const SizedBox(height: 14),
+                          // DOB picker row
+                          GestureDetector(
+                            onTap: _pickDob,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.05),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.cake_outlined, color: AppColors.textMuted, size: 20),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    _dob == null
+                                        ? 'Date of birth (optional)'
+                                        : '${_dob!.day.toString().padLeft(2, '0')} / ${_dob!.month.toString().padLeft(2, '0')} / ${_dob!.year}',
+                                    style: TextStyle(
+                                      color: _dob == null ? AppColors.textMuted : AppColors.textPrimary,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ).animate().fadeIn(delay: 270.ms).slideX(begin: -0.05),
+                          const SizedBox(height: 14),
+                          // Gender selector
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _GenderChip(
+                                label: '👦 Male',
+                                selected: _gender == 'male',
+                                onTap: () => setState(() => _gender = 'male'),
+                              ),
+                              const SizedBox(width: 10),
+                              _GenderChip(
+                                label: '👧 Female',
+                                selected: _gender == 'female',
+                                onTap: () => setState(() => _gender = 'female'),
+                              ),
+                              const SizedBox(width: 10),
+                              _GenderChip(
+                                label: 'Skip',
+                                selected: _gender == null,
+                                onTap: () => setState(() => _gender = null),
+                              ),
+                            ],
+                          ).animate().fadeIn(delay: 285.ms),
+                          const SizedBox(height: 14),
                         ],
                         _Field(
                           controller: _email,
@@ -217,6 +284,47 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GenderChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _GenderChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.rose.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppColors.rose : Colors.white.withValues(alpha: 0.12),
+            width: selected ? 1.5 : 0.8,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            color: selected ? AppColors.rose : AppColors.textSecondary,
+          ),
+        ),
       ),
     );
   }

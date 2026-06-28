@@ -25,20 +25,33 @@ import '../shell/main_shell.dart';
 // Notifier that fires whenever auth or couple state changes so GoRouter
 // re-evaluates its redirect without recreating the router instance.
 class _RouterNotifier extends ChangeNotifier {
-  bool _isPaired = false; // true only when couple.members.length >= 2
+  bool _isPaired = false;
+  // Stays false until coupleProvider emits its first non-loading value.
+  // While false we suppress the /pair redirect to avoid a flash on auto sign-in.
+  bool _coupleLoaded = false;
 
   _RouterNotifier(Ref ref) {
-    FirebaseAuth.instance.authStateChanges().listen((_) => notifyListeners());
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      // Reset loaded flag when the auth user changes so we wait for fresh data.
+      if (user == null) {
+        _coupleLoaded = false;
+        _isPaired = false;
+      }
+      notifyListeners();
+    });
     ref.listen<AsyncValue<CoupleModel?>>(coupleProvider, (_, next) {
+      if (next is AsyncLoading) return; // still fetching — don't decide yet
+      _coupleLoaded = true;
       final paired = (next.valueOrNull?.members.length ?? 0) >= 2;
       if (paired != _isPaired) {
         _isPaired = paired;
-        notifyListeners();
       }
+      notifyListeners();
     });
   }
 
   bool get isPaired => _isPaired;
+  bool get coupleLoaded => _coupleLoaded;
 }
 
 final _routerNotifierProvider = Provider<_RouterNotifier>((ref) {
@@ -54,13 +67,21 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final isAuth = FirebaseAuth.instance.currentUser != null;
       final isPaired = notifier.isPaired;
+      final coupleLoaded = notifier.coupleLoaded;
 
       final onAuth = state.matchedLocation.startsWith('/auth') ||
           state.matchedLocation.startsWith('/pair') ||
           state.matchedLocation.startsWith('/onboarding');
 
+      // Not signed in → force to auth.
       if (!isAuth) return onAuth ? null : '/auth';
-      if (isAuth && !isPaired) return onAuth ? null : '/pair';
+
+      // Signed in but Firestore hasn't confirmed couple status yet.
+      // Stay put (or leave auth screens to /room) — never flash /pair.
+      if (!coupleLoaded) return onAuth ? '/room' : null;
+
+      // Couple data loaded — now we know for certain.
+      if (!isPaired) return onAuth ? null : '/pair';
       if (onAuth) return '/room';
       return null;
     },

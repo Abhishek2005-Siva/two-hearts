@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart' show CupertinoDatePicker, CupertinoDatePickerMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -68,32 +69,29 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
 
   Future<void> _pickDateAndTime() async {
     final accent = ref.read(accentColorProvider);
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: _customDate ?? DateTime.now().add(const Duration(days: 1)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2100),
-      helpText: 'When can they open the letter?',
-      builder: (ctx, child) => Theme(
-        data: _pickerTheme(ctx, accent), child: child!,
-      ),
-    );
-    if (pickedDate == null || !mounted) return;
+    var picked = _customDate != null
+        ? DateTime(
+            _customDate!.year, _customDate!.month, _customDate!.day,
+            _customTime.hour, _customTime.minute)
+        : DateTime.now().add(const Duration(days: 1, hours: 1)).copyWith(
+            minute: 0, second: 0, millisecond: 0, microsecond: 0);
 
-    final pickedTime = await showTimePicker(
+    await showModalBottomSheet<void>(
       context: context,
-      initialTime: _customTime,
-      helpText: 'What time?',
-      builder: (ctx, child) => Theme(
-        data: _pickerTheme(ctx, accent), child: child!,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) => _DateWheelSheet(
+        initial: picked,
+        accent: accent,
+        onConfirm: (dt) {
+          setState(() {
+            _customDate = DateTime(dt.year, dt.month, dt.day);
+            _customTime = TimeOfDay(hour: dt.hour, minute: dt.minute);
+            _mode = _UnlockMode.custom;
+          });
+        },
       ),
     );
-    if (!mounted) return;
-    setState(() {
-      _customDate = pickedDate;
-      if (pickedTime != null) _customTime = pickedTime;
-      _mode = _UnlockMode.custom;
-    });
   }
 
   Future<void> _send() async {
@@ -626,13 +624,198 @@ String _daysUntil(DateTime date) {
   return 'in $months month${months > 1 ? 's' : ''}';
 }
 
-ThemeData _pickerTheme(BuildContext context, Color accent) {
-  return Theme.of(context).copyWith(
-    colorScheme: ColorScheme.dark(
-      primary: accent,
-      onPrimary: Colors.white,
-      surface: AppColors.bgCard,
-      onSurface: AppColors.textPrimary,
-    ),
-  );
+// ── Date & Time Wheel Sheet ────────────────────────────────────────────────
+
+class _DateWheelSheet extends StatefulWidget {
+  final DateTime initial;
+  final Color accent;
+  final void Function(DateTime) onConfirm;
+
+  const _DateWheelSheet({
+    required this.initial,
+    required this.accent,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_DateWheelSheet> createState() => _DateWheelSheetState();
+}
+
+class _DateWheelSheetState extends State<_DateWheelSheet> {
+  late DateTime _picked;
+
+  @override
+  void initState() {
+    super.initState();
+    _picked = widget.initial;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.accent;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF12090F),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        24, 16, 24,
+        MediaQuery.of(context).padding.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            width: 36, height: 4,
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: AppColors.divider,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Header
+          Row(
+            children: [
+              Icon(Icons.lock_clock_outlined, color: accent, size: 20),
+              const SizedBox(width: 10),
+              Text(
+                'When can they open it?',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Spin the wheels to set the unlock date & time',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 20),
+
+          // Wheel picker in a frosted card
+          Container(
+            height: 220,
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.divider, width: 0.5),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Selection highlight band
+                Center(
+                  child: Container(
+                    height: 44,
+                    margin: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          accent.withValues(alpha: 0.15),
+                          AppColors.coral.withValues(alpha: 0.10),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: accent.withValues(alpha: 0.35),
+                        width: 1,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Top + bottom fade overlays
+                Positioned(
+                  top: 0, left: 0, right: 0, height: 56,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          const Color(0xFF12090F),
+                          const Color(0xFF12090F).withValues(alpha: 0),
+                        ],
+                      ),
+                      borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(20)),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 0, left: 0, right: 0, height: 56,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          const Color(0xFF12090F),
+                          const Color(0xFF12090F).withValues(alpha: 0),
+                        ],
+                      ),
+                      borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(20)),
+                    ),
+                  ),
+                ),
+
+                // The CupertinoDatePicker
+                CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.dateAndTime,
+                  initialDateTime: _picked,
+                  minimumDate: DateTime.now(),
+                  maximumDate: DateTime(2100),
+                  use24hFormat: false,
+                  itemExtent: 44,
+                  onDateTimeChanged: (dt) => setState(() => _picked = dt),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Confirm button
+          GestureDetector(
+            onTap: () {
+              Navigator.pop(context);
+              widget.onConfirm(_picked);
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [accent, AppColors.coral]),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.4),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Text(
+                'Set Unlock Date',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

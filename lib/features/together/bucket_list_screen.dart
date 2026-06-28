@@ -165,6 +165,7 @@ class BucketListScreen extends ConsumerStatefulWidget {
 class _BucketListScreenState extends ConsumerState<BucketListScreen> {
   final _textCtrl = TextEditingController();
   String? _animatingId;
+  String? _throwingId;
   Set<String> _knownIds = {};
 
   @override
@@ -245,8 +246,11 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                   onTap: () async {
                     Navigator.pop(sheetCtx);
                     HapticFeedback.lightImpact();
+                    setState(() => _throwingId = item.id);
+                    await Future.delayed(const Duration(milliseconds: 500));
                     await ref.read(firestoreServiceProvider).updateBucketStatus(
                         coupleId, item.id, BucketStatus.done);
+                    if (mounted) setState(() => _throwingId = null);
                   },
                 )
               else
@@ -385,6 +389,7 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                                     item: item,
                                     isDone: false,
                                     isNew: item.id == _animatingId,
+                                    isThrowingOff: item.id == _throwingId,
                                     onTap: () =>
                                         _showItemOptions(context, item),
                                   )),
@@ -417,6 +422,7 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                                     item: item,
                                     isDone: true,
                                     isNew: false,
+                                    isThrowingOff: false,
                                     onTap: () =>
                                         _showItemOptions(context, item),
                                   )),
@@ -504,6 +510,7 @@ class _BookWidget extends StatelessWidget {
   final BucketItem item;
   final bool isDone;
   final bool isNew;
+  final bool isThrowingOff;
   final VoidCallback onTap;
 
   const _BookWidget({
@@ -511,6 +518,7 @@ class _BookWidget extends StatelessWidget {
     required this.item,
     required this.isDone,
     required this.isNew,
+    required this.isThrowingOff,
     required this.onTap,
   });
 
@@ -547,12 +555,17 @@ class _BookWidget extends StatelessWidget {
 
     book = GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: SizedBox(height: props.thickness + 10, child: book),
-      ),
+      // No vertical padding — books stack flush against each other
+      child: SizedBox(height: props.thickness + 6, child: book),
     );
 
+    if (isThrowingOff) {
+      return book
+          .animate()
+          .slideX(begin: 0, end: 2.5, duration: 480.ms, curve: Curves.easeIn)
+          .rotate(begin: 0, end: -0.12, duration: 480.ms)
+          .fadeOut(begin: 1.0, duration: 480.ms, curve: Curves.easeIn);
+    }
     if (isNew) {
       return book
           .animate()
