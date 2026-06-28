@@ -188,6 +188,10 @@ final compatibilityStatsProvider = FutureProvider<Map<String, int>>((ref) {
   return ref.read(firestoreServiceProvider).getCompatibilityStats(coupleId);
 });
 
+// ── Theme Mode ───────────────────────────────────────────────────────────
+
+final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.dark);
+
 // ── Scribble ─────────────────────────────────────────────────────────────
 
 final scribbleProvider = StreamProvider<Map<String, dynamic>?>((ref) {

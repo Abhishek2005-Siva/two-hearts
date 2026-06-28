@@ -32,6 +32,133 @@ class AppColors {
 }
 
 class AppTheme {
+  static ThemeData get darkTheme => build(AppColors.defaultAccent);
+
+  static ThemeData get lightTheme {
+    const accent = AppColors.defaultAccent;
+    const bgColor = Color(0xFFFAF6F2);
+    const cardColor = Color(0xFFFFFFFF);
+    const textPrimary = Color(0xFF1A1A2E);
+    const textSecondary = Color(0xFF5C5C7A);
+    const textMuted = Color(0xFF9999AA);
+    const dividerColor = Color(0xFFE8E0F0);
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: bgColor,
+      colorScheme: const ColorScheme.light(
+        primary: accent,
+        secondary: AppColors.coral,
+        surface: cardColor,
+        onPrimary: Colors.white,
+        onSurface: textPrimary,
+        outline: dividerColor,
+      ),
+      textTheme: TextTheme(
+        displayLarge: GoogleFonts.playfairDisplay(
+          fontSize: 36,
+          fontWeight: FontWeight.bold,
+          color: textPrimary,
+          height: 1.1,
+        ),
+        displayMedium: GoogleFonts.playfairDisplay(
+          fontSize: 26,
+          fontWeight: FontWeight.bold,
+          color: textPrimary,
+        ),
+        titleLarge: GoogleFonts.playfairDisplay(
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          color: textPrimary,
+        ),
+        titleMedium: GoogleFonts.lato(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: textPrimary,
+          letterSpacing: 0.2,
+        ),
+        bodyLarge: GoogleFonts.lato(
+          fontSize: 16,
+          color: textPrimary,
+          height: 1.6,
+        ),
+        bodyMedium: GoogleFonts.lato(
+          fontSize: 14,
+          color: textSecondary,
+          height: 1.5,
+        ),
+        labelSmall: GoogleFonts.lato(
+          fontSize: 11,
+          letterSpacing: 1.2,
+          color: textMuted,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: cardColor,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: dividerColor, width: 0.5),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: cardColor,
+        hintStyle: const TextStyle(color: textMuted),
+        labelStyle: const TextStyle(color: textSecondary),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: dividerColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: dividerColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: accent, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 15),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          textStyle: GoogleFonts.lato(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: accent,
+          textStyle: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        titleTextStyle: GoogleFonts.playfairDisplay(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          color: textPrimary,
+        ),
+        iconTheme: const IconThemeData(color: textPrimary),
+      ),
+      dividerTheme: const DividerThemeData(color: dividerColor, space: 1, thickness: 0.5),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: Colors.white,
+        selectedItemColor: accent,
+        unselectedItemColor: textMuted,
+      ),
+    );
+  }
+
   static ThemeData build(Color accent) {
     return ThemeData(
       useMaterial3: true,

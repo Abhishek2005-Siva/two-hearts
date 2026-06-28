@@ -1,5 +1,4 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart' show CupertinoDatePicker, CupertinoDatePickerMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,7 +7,21 @@ import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
-enum _UnlockMode { tomorrow, nextWeek, openWhenSad, myBirthday, partnerBirthday, anniversary, custom }
+enum _UnlockMode { tomorrow, nextWeek, openWhen, myBirthday, partnerBirthday, anniversary, custom }
+
+// Emotions for "Open When…"
+const _openWhenEmotions = [
+  ('😢', 'Sad'),
+  ('😊', 'Happy'),
+  ('😤', 'Angry'),
+  ('😰', 'Anxious'),
+  ('💔', 'Lonely'),
+  ('🥺', 'Missing You'),
+  ('🌟', 'Proud'),
+  ('😨', 'Scared'),
+  ('😵', 'Overwhelmed'),
+  ('💌', 'Any time'),
+];
 
 class LetterComposeScreen extends ConsumerStatefulWidget {
   const LetterComposeScreen({super.key});
@@ -23,6 +36,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
   _UnlockMode _mode = _UnlockMode.tomorrow;
   DateTime? _customDate;
   TimeOfDay _customTime = const TimeOfDay(hour: 8, minute: 0);
+  String _openWhenEmotion = 'Any time';
   bool _sending = false;
 
   @override
@@ -43,7 +57,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
         return DateTime(now.year, now.month, now.day + 1, 8, 0);
       case _UnlockMode.nextWeek:
         return now.add(const Duration(days: 7));
-      case _UnlockMode.openWhenSad:
+      case _UnlockMode.openWhen:
         return null;
       case _UnlockMode.myBirthday:
         return myBirthday != null ? _nextOccurrence(myBirthday) : null;
@@ -69,29 +83,104 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
 
   Future<void> _pickDateAndTime() async {
     final accent = ref.read(accentColorProvider);
-    var picked = _customDate != null
-        ? DateTime(
-            _customDate!.year, _customDate!.month, _customDate!.day,
-            _customTime.hour, _customTime.minute)
-        : DateTime.now().add(const Duration(days: 1, hours: 1)).copyWith(
-            minute: 0, second: 0, millisecond: 0, microsecond: 0);
+    final initialDate = _customDate ?? DateTime.now().add(const Duration(days: 1));
 
+    // Step 1 — Calendar date picker
+    DateTime? pickedDate;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (sheetCtx) => _DateWheelSheet(
-        initial: picked,
-        accent: accent,
-        onConfirm: (dt) {
-          setState(() {
-            _customDate = DateTime(dt.year, dt.month, dt.day);
-            _customTime = TimeOfDay(hour: dt.hour, minute: dt.minute);
-            _mode = _UnlockMode.custom;
-          });
-        },
+      builder: (sheetCtx) {
+        DateTime tempDate = initialDate;
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) => Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF12090F),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              24, 16, 24,
+              MediaQuery.of(ctx).padding.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(color: AppColors.divider,
+                      borderRadius: BorderRadius.circular(2)),
+                ),
+                Row(children: [
+                  Icon(Icons.calendar_month_outlined, color: accent, size: 20),
+                  const SizedBox(width: 10),
+                  Text('When can they open it?',
+                      style: const TextStyle(color: AppColors.textPrimary,
+                          fontSize: 16, fontWeight: FontWeight.w600)),
+                ]),
+                const SizedBox(height: 4),
+                const Text('Pick a date', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                const SizedBox(height: 12),
+                Theme(
+                  data: ThemeData.dark().copyWith(
+                    colorScheme: ColorScheme.dark(primary: accent),
+                  ),
+                  child: CalendarDatePicker(
+                    initialDate: tempDate,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime(2100),
+                    onDateChanged: (d) => setSheetState(() => tempDate = d),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: () {
+                    pickedDate = tempDate;
+                    Navigator.pop(ctx);
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [accent, AppColors.coral]),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Text('Next →',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white,
+                            fontSize: 15, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (pickedDate == null || !mounted) return;
+
+    // Step 2 — Circular clock time picker
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: _customTime,
+      builder: (ctx, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: ColorScheme.dark(primary: accent),
+        ),
+        child: child!,
       ),
     );
+
+    if (pickedTime == null || !mounted) return;
+
+    setState(() {
+      _customDate = pickedDate;
+      _customTime = pickedTime;
+      _mode = _UnlockMode.custom;
+    });
   }
 
   Future<void> _send() async {
@@ -151,7 +240,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
     switch (mode) {
       case _UnlockMode.tomorrow: return LetterUnlockType.tomorrow;
       case _UnlockMode.nextWeek: return LetterUnlockType.custom;
-      case _UnlockMode.openWhenSad: return LetterUnlockType.openWhenSad;
+      case _UnlockMode.openWhen: return LetterUnlockType.openWhenSad;
       case _UnlockMode.myBirthday: return LetterUnlockType.birthday;
       case _UnlockMode.partnerBirthday: return LetterUnlockType.birthday;
       case _UnlockMode.anniversary: return LetterUnlockType.anniversary;
@@ -274,12 +363,62 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                       const SizedBox(height: 8),
                       _UnlockChip(
                         emoji: '💙',
-                        label: 'Open When...',
-                        subtitle: 'Unlocks any time',
-                        selected: _mode == _UnlockMode.openWhenSad,
+                        label: 'Open When…',
+                        subtitle: _mode == _UnlockMode.openWhen
+                            ? _openWhenEmotions.firstWhere(
+                                (e) => e.$2 == _openWhenEmotion,
+                                orElse: () => _openWhenEmotions.last).$1 +
+                                ' $_openWhenEmotion'
+                            : 'Pick an emotion — unlocks any time',
+                        selected: _mode == _UnlockMode.openWhen,
                         accent: accent,
-                        onTap: () => setState(() { _mode = _UnlockMode.openWhenSad; _customDate = null; }),
+                        onTap: () => setState(() { _mode = _UnlockMode.openWhen; _customDate = null; }),
                       ),
+                      if (_mode == _UnlockMode.openWhen) ...[
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          height: 44,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _openWhenEmotions.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 8),
+                            itemBuilder: (_, i) {
+                              final e = _openWhenEmotions[i];
+                              final selected = _openWhenEmotion == e.$2;
+                              return GestureDetector(
+                                onTap: () => setState(() => _openWhenEmotion = e.$2),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? accent.withValues(alpha: 0.2)
+                                        : AppColors.bgCard,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: selected ? accent : AppColors.divider,
+                                      width: selected ? 1.5 : 0.5,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(e.$1, style: const TextStyle(fontSize: 16)),
+                                      const SizedBox(width: 6),
+                                      Text(e.$2,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: selected ? accent : AppColors.textSecondary,
+                                            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                                          )),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
 
                       // Special dates (show only if data available)
                       if (myBirthday != null || partnerBirthday != null || anniversary != null) ...[
@@ -422,7 +561,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                       ),
 
                       // Unlock date preview card
-                      if (_mode != _UnlockMode.openWhenSad && _mode != _UnlockMode.custom) ...[
+                      if (_mode != _UnlockMode.openWhen && _mode != _UnlockMode.custom) ...[
                         const SizedBox(height: 12),
                         _UnlockPreview(
                           mode: _mode,
@@ -624,198 +763,3 @@ String _daysUntil(DateTime date) {
   return 'in $months month${months > 1 ? 's' : ''}';
 }
 
-// ── Date & Time Wheel Sheet ────────────────────────────────────────────────
-
-class _DateWheelSheet extends StatefulWidget {
-  final DateTime initial;
-  final Color accent;
-  final void Function(DateTime) onConfirm;
-
-  const _DateWheelSheet({
-    required this.initial,
-    required this.accent,
-    required this.onConfirm,
-  });
-
-  @override
-  State<_DateWheelSheet> createState() => _DateWheelSheetState();
-}
-
-class _DateWheelSheetState extends State<_DateWheelSheet> {
-  late DateTime _picked;
-
-  @override
-  void initState() {
-    super.initState();
-    _picked = widget.initial;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = widget.accent;
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF12090F),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-        24, 16, 24,
-        MediaQuery.of(context).padding.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Drag handle
-          Container(
-            width: 36, height: 4,
-            margin: const EdgeInsets.only(bottom: 20),
-            decoration: BoxDecoration(
-              color: AppColors.divider,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-
-          // Header
-          Row(
-            children: [
-              Icon(Icons.lock_clock_outlined, color: accent, size: 20),
-              const SizedBox(width: 10),
-              Text(
-                'When can they open it?',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Spin the wheels to set the unlock date & time',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-          ),
-          const SizedBox(height: 20),
-
-          // Wheel picker in a frosted card
-          Container(
-            height: 220,
-            decoration: BoxDecoration(
-              color: AppColors.bgCard,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.divider, width: 0.5),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Selection highlight band
-                Center(
-                  child: Container(
-                    height: 44,
-                    margin: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          accent.withValues(alpha: 0.15),
-                          AppColors.coral.withValues(alpha: 0.10),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: accent.withValues(alpha: 0.35),
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Top + bottom fade overlays
-                Positioned(
-                  top: 0, left: 0, right: 0, height: 56,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          const Color(0xFF12090F),
-                          const Color(0xFF12090F).withValues(alpha: 0),
-                        ],
-                      ),
-                      borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(20)),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  bottom: 0, left: 0, right: 0, height: 56,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          const Color(0xFF12090F),
-                          const Color(0xFF12090F).withValues(alpha: 0),
-                        ],
-                      ),
-                      borderRadius: const BorderRadius.vertical(
-                          bottom: Radius.circular(20)),
-                    ),
-                  ),
-                ),
-
-                // The CupertinoDatePicker
-                CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.dateAndTime,
-                  initialDateTime: _picked,
-                  minimumDate: DateTime.now(),
-                  maximumDate: DateTime(2100),
-                  use24hFormat: false,
-                  itemExtent: 44,
-                  onDateTimeChanged: (dt) => setState(() => _picked = dt),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // Confirm button
-          GestureDetector(
-            onTap: () {
-              Navigator.pop(context);
-              widget.onConfirm(_picked);
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [accent, AppColors.coral]),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.4),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Text(
-                'Set Unlock Date',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

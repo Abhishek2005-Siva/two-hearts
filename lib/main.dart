@@ -109,11 +109,14 @@ class _TwoHeartsAppState extends ConsumerState<TwoHeartsApp> {
   Widget build(BuildContext context) {
     final accent = ref.watch(accentColorProvider);
     final router = ref.watch(routerProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp.router(
       title: 'Two Hearts',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.build(accent),
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.build(accent),
+      themeMode: themeMode,
       routerConfig: router,
     );
   }

@@ -1,295 +1,253 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../core/providers/providers.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/firebase/models.dart';
+import '../../core/theme/app_theme.dart';
 
-// ── Main journal list (bookshelf) ─────────────────────────────────────────
+// ─── Bookshelf color palette ──────────────────────────────────────────────
+
+const List<Color> _kBookColors = [
+  Color(0xFF8B3A3A), // deep red
+  Color(0xFF2E5E8E), // navy blue
+  Color(0xFF4A7C59), // forest green
+  Color(0xFF7B4E9E), // purple
+  Color(0xFFB5681F), // burnt orange
+  Color(0xFF3D6E8E), // teal
+  Color(0xFF8E4A6A), // mauve
+  Color(0xFF5C6E3E), // olive
+  Color(0xFF6B4226), // chocolate
+  Color(0xFF1E5E5E), // dark teal
+];
+
+Color _bookColor(String id) =>
+    _kBookColors[id.hashCode.abs() % _kBookColors.length];
+
+double _bookWidth(String id) {
+  final w = (id.hashCode.abs() % 17) + 36.0; // 36–52
+  return w;
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────
 
 class JournalScreen extends ConsumerWidget {
   const JournalScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final accent = ref.watch(accentColorProvider);
-    final journal = ref.watch(journalProvider).valueOrNull ?? [];
-    final me = ref.watch(currentUserProvider).valueOrNull;
+    final journalAsync = ref.watch(journalProvider);
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: AppColors.bgGradient,
+      backgroundColor: const Color(0xFF2A1F14),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1A1208),
+        title: Text(
+          'Our Journal',
+          style: GoogleFonts.playfairDisplay(
+            color: const Color(0xFFF5DEB3),
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
           ),
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                          color: AppColors.textPrimary),
-                      onPressed: () => Navigator.maybePop(context),
-                    ),
-                    Expanded(
-                      child: Text('Our Journal',
-                          style: Theme.of(context).textTheme.titleLarge),
-                    ),
-                    GestureDetector(
-                      onTap: () => _openCompose(context, ref, accent, me),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          gradient:
-                              LinearGradient(colors: [accent, AppColors.coral]),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text('Write',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              if (journal.isEmpty)
-                Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('📖',
-                            style: TextStyle(fontSize: 64)),
-                        const SizedBox(height: 16),
-                        Text('Start your first journal entry ♡',
-                            style: Theme.of(context).textTheme.bodyMedium),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                Expanded(
-                  child: ListView.builder(
-                    padding:
-                        const EdgeInsets.fromLTRB(20, 8, 20, 32),
-                    itemCount: journal.length,
-                    itemBuilder: (context, i) {
-                      final entry = journal[i];
-                      return _BookCover(
-                        entry: entry,
-                        accent: accent,
-                        index: i,
-                        myUid: me?.uid ?? '',
-                        myName:
-                            me?.displayName.split(' ').first ?? 'You',
-                        onTap: () =>
-                            _openBook(context, ref, entry, accent, me),
-                      ).animate().fadeIn(
-                          delay: Duration(milliseconds: i * 60));
-                    },
-                  ),
-                ),
-            ],
-          ),
+        iconTheme: const IconThemeData(color: Color(0xFFF5DEB3)),
+      ),
+      body: journalAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(
+          child: Text('Error: $e',
+              style: const TextStyle(color: AppColors.textPrimary)),
         ),
+        data: (entries) => _BookshelfBody(entries: entries),
+      ),
+      floatingActionButton: _LecternButton(
+        onTap: () => _showCreateSheet(context, ref),
       ),
     );
   }
 
-  void _openCompose(BuildContext context, WidgetRef ref, Color accent,
-      UserModel? me) {
-    final container = ProviderScope.containerOf(context);
+  void _showCreateSheet(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => UncontrolledProviderScope(
-        container: container,
-        child: _ComposeSheet(accent: accent),
-      ),
+      builder: (_) => const _CreateJournalSheet(),
     );
   }
+}
 
-  void _openBook(BuildContext context, WidgetRef ref, JournalDay entry,
-      Color accent, UserModel? me) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _BookDetailScreen(
-          entry: entry,
-          accent: accent,
-          myUid: me?.uid ?? '',
-          myName: me?.displayName ?? 'You',
-          ref: ref,
+// ─── Bookshelf body ───────────────────────────────────────────────────────
+
+class _BookshelfBody extends StatelessWidget {
+  final List<JournalDay> entries;
+  const _BookshelfBody({required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    final mid = (entries.length / 2).ceil();
+    final shelf1 = entries.take(mid).toList();
+    final shelf2 = entries.skip(mid).toList();
+
+    return CustomPaint(
+      painter: _WallPainter(),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            const SizedBox(height: 24),
+            _Shelf(books: shelf1),
+            const SizedBox(height: 32),
+            _Shelf(books: shelf2),
+            const SizedBox(height: 100),
+          ],
         ),
       ),
     );
   }
 }
 
-// ── Book Cover Card ───────────────────────────────────────────────────────
+// ─── Single shelf ─────────────────────────────────────────────────────────
 
-class _BookCover extends StatelessWidget {
-  final JournalDay entry;
-  final Color accent;
-  final int index;
-  final String myUid;
-  final String myName;
-  final VoidCallback onTap;
-
-  const _BookCover({
-    required this.entry,
-    required this.accent,
-    required this.index,
-    required this.myUid,
-    required this.myName,
-    required this.onTap,
-  });
-
-  // Cycle through a few book spine colors
-  static const _spineColors = [
-    Color(0xFF6B3A6B),
-    Color(0xFF2A4A6B),
-    Color(0xFF3A6B4A),
-    Color(0xFF6B4A2A),
-    Color(0xFF4A2A6B),
-    Color(0xFF6B2A3A),
-  ];
+class _Shelf extends StatelessWidget {
+  final List<JournalDay> books;
+  const _Shelf({required this.books});
 
   @override
   Widget build(BuildContext context) {
-    final spineColor = _spineColors[index % _spineColors.length];
-    final title = entry.title?.isNotEmpty == true
-        ? entry.title!
-        : _dateLabel(entry.id);
-    final hasMyEntry = entry.uidA == myUid
-        ? entry.entryA != null
-        : entry.entryB != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 130,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: _buildBookItems(context),
+            ),
+          ),
+        ),
+        CustomPaint(
+          painter: _ShelfPainter(),
+          child: const SizedBox(height: 22),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildBookItems(BuildContext context) {
+    final items = <Widget>[];
+    for (int i = 0; i < books.length; i++) {
+      if (i > 0 && i % 6 == 0) {
+        items.add(_DecoItem());
+      }
+      items.add(_BookSpine(
+        day: books[i],
+        onTap: () => _showDetailSheet(context, books[i]),
+      ));
+    }
+    // Always show at least the lectern placeholder if empty
+    if (books.isEmpty) {
+      items.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 16, bottom: 8),
+          child: Text(
+            'No entries yet',
+            style: GoogleFonts.lato(
+              color: const Color(0xFFF5DEB3).withValues(alpha: 0.4),
+              fontSize: 13,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      );
+    }
+    return items;
+  }
+
+  void _showDetailSheet(BuildContext context, JournalDay day) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _BookDetailSheet(day: day),
+    );
+  }
+}
+
+// ─── Book spine widget ────────────────────────────────────────────────────
+
+class _BookSpine extends StatelessWidget {
+  final JournalDay day;
+  final VoidCallback onTap;
+
+  const _BookSpine({required this.day, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _bookColor(day.id);
+    final width = _bookWidth(day.id);
+    final title = day.title ?? 'Untitled';
+    final dateStr = _formatId(day.id);
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 14),
-        height: 100,
+        width: width,
+        height: 120,
+        margin: const EdgeInsets.only(right: 2),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            colors: [
+              color.withValues(alpha: 0.85),
+              color,
+              color.withValues(alpha: 0.7),
+            ],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(3),
+            topRight: Radius.circular(3),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 12,
-              offset: const Offset(4, 4),
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 4,
+              offset: const Offset(2, 2),
             ),
           ],
         ),
-        child: Row(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Book spine
-            Container(
-              width: 16,
-              decoration: BoxDecoration(
-                color: spineColor.withValues(alpha: 0.7),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(12),
-                  bottomLeft: Radius.circular(12),
+            Expanded(
+              child: Center(
+                child: RotatedBox(
+                  quarterTurns: 3,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.lato(
+                      fontSize: 10,
+                      color: Colors.white.withValues(alpha: 0.95),
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
                 ),
               ),
             ),
-            // Cover
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 18, vertical: 14),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      spineColor.withValues(alpha: 0.25),
-                      AppColors.bgCard,
-                    ],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: Text(
+                  dateStr,
+                  style: GoogleFonts.lato(
+                    fontSize: 7,
+                    color: Colors.white.withValues(alpha: 0.6),
                   ),
-                  borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(12),
-                    bottomRight: Radius.circular(12),
-                  ),
-                  border: Border.all(
-                    color: spineColor.withValues(alpha: 0.3),
-                    width: 0.5,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            title,
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              height: 1.2,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _dateLabel(entry.id),
-                            style: const TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (entry.bothSubmitted)
-                          Icon(Icons.lock_open_rounded,
-                              color: accent, size: 20)
-                        else if (hasMyEntry)
-                          const Icon(Icons.hourglass_top_rounded,
-                              color: AppColors.textMuted, size: 18)
-                        else
-                          Icon(Icons.edit_note_rounded,
-                              color: accent.withValues(alpha: 0.6),
-                              size: 20),
-                        const SizedBox(height: 4),
-                        Text(
-                          entry.bothSubmitted
-                              ? 'Unlocked'
-                              : hasMyEntry
-                                  ? 'Waiting'
-                                  : 'Write',
-                          style: TextStyle(
-                            color: entry.bothSubmitted
-                                ? accent
-                                : AppColors.textMuted,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ),
               ),
             ),
@@ -299,363 +257,238 @@ class _BookCover extends StatelessWidget {
     );
   }
 
-  String _dateLabel(String id) {
-    // id format: YYYY-MM-DD
-    final parts = id.split('-');
-    if (parts.length != 3) return id;
-    const months = [
-      '', 'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    final m = int.tryParse(parts[1]) ?? 0;
-    final d = int.tryParse(parts[2]) ?? 0;
-    return '${months[m]} $d, ${parts[0]}';
+  String _formatId(String id) {
+    final dateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}');
+    if (dateRegex.hasMatch(id)) return id.substring(0, 10);
+    if (id.length >= 4) return id.substring(0, 4);
+    return id;
   }
 }
 
-// ── Book Detail Screen (open book) ────────────────────────────────────────
+// ─── Decorative candle ────────────────────────────────────────────────────
 
-class _BookDetailScreen extends StatelessWidget {
-  final JournalDay entry;
-  final Color accent;
-  final String myUid;
-  final String myName;
-  final WidgetRef ref;
-
-  const _BookDetailScreen({
-    required this.entry,
-    required this.accent,
-    required this.myUid,
-    required this.myName,
-    required this.ref,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final partner = ref.read(partnerUserProvider).valueOrNull;
-    final partnerName = partner?.displayName ?? 'Partner';
-
-    final myEntry = entry.uidA == myUid ? entry.entryA : entry.entryB;
-    final theirEntry = entry.uidA == myUid ? entry.entryB : entry.entryA;
-
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: AppColors.bgGradient,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                          color: AppColors.textPrimary),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    const Spacer(),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
-                  child: Column(
-                    children: [
-                      // ── Book cover page ────────────────────────
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(32),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              accent.withValues(alpha: 0.25),
-                              AppColors.bgCard,
-                            ],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: accent.withValues(alpha: 0.3),
-                              width: 0.5),
-                        ),
-                        child: Column(
-                          children: [
-                            const Text('📖',
-                                style: TextStyle(fontSize: 48)),
-                            const SizedBox(height: 20),
-                            Text(
-                              entry.title?.isNotEmpty == true
-                                  ? entry.title!
-                                  : _dateLabel(entry.id),
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                height: 1.2,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 12),
-                            Container(
-                              width: 60,
-                              height: 1,
-                              color: accent.withValues(alpha: 0.4),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Signed by $myName'
-                              '${entry.bothSubmitted ? ' & $partnerName' : ''}',
-                              style: TextStyle(
-                                color: accent,
-                                fontSize: 13,
-                                fontStyle: FontStyle.italic,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _dateLabel(entry.id),
-                              style: const TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 11),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      if (!entry.bothSubmitted)
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: AppColors.bgCard,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                                color: AppColors.divider, width: 0.5),
-                          ),
-                          child: Row(
-                            children: [
-                              const Text('🔒',
-                                  style: TextStyle(fontSize: 24)),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Text(
-                                  myEntry != null
-                                      ? 'Waiting for your partner to write before the pages unlock ♡'
-                                      : 'Write your entry so the book can open together ♡',
-                                  style: const TextStyle(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 13,
-                                      height: 1.5),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else ...[
-                        _EntryPage(
-                          label: 'YOUR WORDS',
-                          name: myName,
-                          entry: myEntry ?? '',
-                          accent: accent,
-                        ),
-                        const SizedBox(height: 16),
-                        _EntryPage(
-                          label: 'THEIR WORDS',
-                          name: partnerName,
-                          entry: theirEntry ?? '',
-                          accent: AppColors.rose,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _dateLabel(String id) {
-    final parts = id.split('-');
-    if (parts.length != 3) return id;
-    const months = [
-      '', 'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    final m = int.tryParse(parts[1]) ?? 0;
-    final d = int.tryParse(parts[2]) ?? 0;
-    return '${months[m]} $d, ${parts[0]}';
-  }
-}
-
-class _EntryPage extends StatelessWidget {
-  final String label;
-  final String name;
-  final String entry;
-  final Color accent;
-
-  const _EntryPage({
-    required this.label,
-    required this.name,
-    required this.entry,
-    required this.accent,
-  });
-
+class _DecoItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            accent.withValues(alpha: 0.08),
-            AppColors.bgCard,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-            color: accent.withValues(alpha: 0.2), width: 0.5),
-      ),
+      width: 28,
+      height: 120,
+      margin: const EdgeInsets.only(right: 4),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Text(label,
-              style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: accent,
-                  letterSpacing: 1.5)),
-          const SizedBox(height: 2),
-          Text(name,
-              style: TextStyle(
-                  fontSize: 13,
-                  color: accent,
-                  fontStyle: FontStyle.italic)),
-          const SizedBox(height: 14),
-          Text(entry,
-              style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  height: 1.75)),
+          // Flame
+          Container(
+            width: 8,
+            height: 12,
+            decoration: BoxDecoration(
+              gradient: const RadialGradient(
+                colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          // Candle body
+          Container(
+            width: 10,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F0E0),
+              borderRadius: BorderRadius.circular(2),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFFD700).withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+          ),
+          // Candle holder
+          Container(
+            width: 18,
+            height: 8,
+            decoration: BoxDecoration(
+              color: const Color(0xFF8B6340),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-// ── Compose Sheet ─────────────────────────────────────────────────────────
+// ─── Painters ─────────────────────────────────────────────────────────────
 
-class _ComposeSheet extends ConsumerStatefulWidget {
-  final Color accent;
-  const _ComposeSheet({required this.accent});
+class _WallPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = const Color(0xFF2A1F14),
+    );
+  }
 
   @override
-  ConsumerState<_ComposeSheet> createState() => _ComposeSheetState();
+  bool shouldRepaint(_WallPainter old) => false;
 }
 
-class _ComposeSheetState extends ConsumerState<_ComposeSheet> {
+class _ShelfPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Shelf plank
+    final woodPaint = Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFFA0733A), Color(0xFF8B6340), Color(0xFF7A5530)],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), woodPaint);
+
+    // Top shadow
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, 8),
+      Paint()
+        ..shader = LinearGradient(
+          colors: [
+            Colors.black.withValues(alpha: 0.5),
+            Colors.black.withValues(alpha: 0.0),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ).createShader(Rect.fromLTWH(0, 0, size.width, 8)),
+    );
+
+    // Bottom shadow
+    canvas.drawRect(
+      Rect.fromLTWH(0, size.height - 6, size.width, 6),
+      Paint()
+        ..shader = LinearGradient(
+          colors: [
+            Colors.black.withValues(alpha: 0.0),
+            Colors.black.withValues(alpha: 0.4),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ).createShader(Rect.fromLTWH(0, size.height - 6, size.width, 6)),
+    );
+
+    // Wood grain
+    final grainPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.08)
+      ..strokeWidth = 0.5;
+    for (double x = 0; x < size.width; x += 30) {
+      canvas.drawLine(Offset(x, 0), Offset(x + 10, size.height), grainPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ShelfPainter old) => false;
+}
+
+// ─── Lectern FAB ──────────────────────────────────────────────────────────
+
+class _LecternButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _LecternButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [accent, AppColors.coral],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withValues(alpha: 0.45),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.menu_book_rounded, color: Colors.white, size: 28),
+      ),
+    );
+  }
+}
+
+// ─── Create journal bottom sheet ──────────────────────────────────────────
+
+class _CreateJournalSheet extends ConsumerStatefulWidget {
+  const _CreateJournalSheet();
+
+  @override
+  ConsumerState<_CreateJournalSheet> createState() =>
+      _CreateJournalSheetState();
+}
+
+class _CreateJournalSheetState extends ConsumerState<_CreateJournalSheet> {
   final _titleCtrl = TextEditingController();
-  final _bodyCtrl = TextEditingController();
-  bool _submitting = false;
-
-  String get _todayKey {
-    final n = DateTime.now();
-    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
-  }
-
-  Future<void> _submit() async {
-    final title = _titleCtrl.text.trim();
-    final body = _bodyCtrl.text.trim();
-    if (body.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Write something first ♡'),
-        behavior: SnackBarBehavior.floating,
-      ));
-      return;
-    }
-    final coupleId = ref.read(coupleIdProvider);
-    final partner = ref.read(partnerUserProvider).valueOrNull;
-    if (coupleId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Not connected to a couple yet'),
-        behavior: SnackBarBehavior.floating,
-      ));
-      return;
-    }
-    setState(() => _submitting = true);
-    HapticFeedback.mediumImpact();
-    try {
-      await ref.read(firestoreServiceProvider).submitJournalEntry(
-        coupleId,
-        _todayKey,
-        body,
-        partner?.uid ?? '',
-        title: title.isNotEmpty ? title : null,
-      );
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Could not save: ${e.toString().split(']').last.trim()}'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.red.shade800,
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
+  final _entryCtrl = TextEditingController();
+  bool _loading = false;
 
   @override
   void dispose() {
     _titleCtrl.dispose();
-    _bodyCtrl.dispose();
+    _entryCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _publish() async {
+    final title = _titleCtrl.text.trim();
+    final entry = _entryCtrl.text.trim();
+    if (title.isEmpty || entry.isEmpty) return;
+
+    final coupleId = ref.read(coupleIdProvider);
+    final me = ref.read(currentUserProvider).valueOrNull;
+    final partner = ref.read(partnerUserProvider).valueOrNull;
+    if (coupleId == null || me == null) return;
+
+    setState(() => _loading = true);
+    try {
+      final dayId = DateTime.now().toIso8601String().substring(0, 10);
+      await ref.read(firestoreServiceProvider).submitJournalEntry(
+            coupleId,
+            dayId,
+            entry,
+            partner?.uid ?? '',
+            title: title,
+          );
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() => _loading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final journal = ref.watch(journalProvider).valueOrNull ?? [];
-    final me = ref.watch(currentUserProvider).valueOrNull;
-    final todayEntry =
-        journal.where((j) => j.id == _todayKey).firstOrNull;
-    final alreadyWrote = todayEntry != null &&
-        (todayEntry.uidA == me?.uid
-            ? todayEntry.entryA != null
-            : todayEntry.entryB != null);
-
+    final insets = MediaQuery.of(context).viewInsets;
     return Container(
-      padding: EdgeInsets.fromLTRB(
-        24,
-        20,
-        24,
-        MediaQuery.of(context).viewInsets.bottom +
-            MediaQuery.of(context).padding.bottom +
-            24,
-      ),
-      constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.88),
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + insets.bottom),
       decoration: const BoxDecoration(
-        color: AppColors.bgMid,
+        color: Color(0xFF1E1208),
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        border:
-            Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+        border: Border(
+          top: BorderSide(color: Color(0xFF8B6340), width: 1.5),
+          left: BorderSide(color: Color(0xFF8B6340), width: 1.5),
+          right: BorderSide(color: Color(0xFF8B6340), width: 1.5),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -663,101 +496,342 @@ class _ComposeSheetState extends ConsumerState<_ComposeSheet> {
         children: [
           Center(
             child: Container(
-              width: 36,
+              width: 40,
               height: 4,
-              margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
-                  color: AppColors.divider,
-                  borderRadius: BorderRadius.circular(2)),
+                color: const Color(0xFF8B6340),
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
-
-          Text('Today\'s Entry',
-              style: Theme.of(context).textTheme.titleLarge),
-          Text('Write freely — unlocks when your partner writes too ♡',
-              style: Theme.of(context).textTheme.bodyMedium),
           const SizedBox(height: 20),
-
-          if (alreadyWrote)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: widget.accent.withValues(alpha: 0.08),
+          Text(
+            'New Journal Entry',
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 22,
+              color: const Color(0xFFF5DEB3),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _titleCtrl,
+            style: const TextStyle(color: Color(0xFFF5DEB3)),
+            decoration: InputDecoration(
+              hintText: 'Title',
+              hintStyle: TextStyle(
+                  color: const Color(0xFFF5DEB3).withValues(alpha: 0.4)),
+              filled: true,
+              fillColor: const Color(0xFF2A1A0A),
+              border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                    color: widget.accent.withValues(alpha: 0.3)),
+                borderSide: const BorderSide(color: Color(0xFF8B6340)),
               ),
-              child: Row(
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(
+                    color: const Color(0xFF8B6340).withValues(alpha: 0.5)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                    const BorderSide(color: Color(0xFF8B6340), width: 1.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _entryCtrl,
+            maxLines: 5,
+            style: const TextStyle(color: Color(0xFFF5DEB3)),
+            decoration: InputDecoration(
+              hintText: 'Write your entry...',
+              hintStyle: TextStyle(
+                  color: const Color(0xFFF5DEB3).withValues(alpha: 0.4)),
+              filled: true,
+              fillColor: const Color(0xFF2A1A0A),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: Color(0xFF8B6340)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(
+                    color: const Color(0xFF8B6340).withValues(alpha: 0.5)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                    const BorderSide(color: Color(0xFF8B6340), width: 1.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          GradientButton(
+            label: 'Publish',
+            onTap: _publish,
+            loading: _loading,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Book detail sheet ────────────────────────────────────────────────────
+
+class _BookDetailSheet extends ConsumerStatefulWidget {
+  final JournalDay day;
+  const _BookDetailSheet({required this.day});
+
+  @override
+  ConsumerState<_BookDetailSheet> createState() => _BookDetailSheetState();
+}
+
+class _BookDetailSheetState extends ConsumerState<_BookDetailSheet> {
+  final _editCtrl = TextEditingController();
+  bool _editing = false;
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _editCtrl.dispose();
+    super.dispose();
+  }
+
+  String _formatDate(String id) {
+    final dateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}');
+    if (dateRegex.hasMatch(id)) return id.substring(0, 10);
+    return id;
+  }
+
+  Future<void> _save() async {
+    final entry = _editCtrl.text.trim();
+    if (entry.isEmpty) return;
+
+    final coupleId = ref.read(coupleIdProvider);
+    final me = ref.read(currentUserProvider).valueOrNull;
+    final partner = ref.read(partnerUserProvider).valueOrNull;
+    if (coupleId == null || me == null) return;
+
+    setState(() => _loading = true);
+    try {
+      await ref.read(firestoreServiceProvider).submitJournalEntry(
+            coupleId,
+            widget.day.id,
+            entry,
+            partner?.uid ?? '',
+            title: widget.day.title,
+          );
+      setState(() {
+        _editing = false;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() => _loading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final me = ref.watch(currentUserProvider).valueOrNull;
+    final partner = ref.watch(partnerUserProvider).valueOrNull;
+    final day = widget.day;
+
+    final myUid = me?.uid ?? '';
+    final isA = day.uidA == myUid;
+    final myEntry = isA ? day.entryA : day.entryB;
+    final partnerEntry = isA ? day.entryB : day.entryA;
+    final myName = me?.displayName ?? 'You';
+    final partnerName = partner?.displayName ?? 'Partner';
+    final color = _bookColor(day.id);
+    final insets = MediaQuery.of(context).viewInsets;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + insets.bottom),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1008),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border(
+          top: BorderSide(color: color, width: 2),
+          left: BorderSide(color: color.withValues(alpha: 0.5)),
+          right: BorderSide(color: color.withValues(alpha: 0.5)),
+        ),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              day.title ?? 'Untitled',
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 24,
+                color: const Color(0xFFF5DEB3),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _formatDate(day.id),
+              style: GoogleFonts.lato(
+                fontSize: 13,
+                color: const Color(0xFFF5DEB3).withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(height: 24),
+            _EntryBlock(
+              name: myName,
+              entry: myEntry,
+              isMe: true,
+              color: color,
+            ),
+            const SizedBox(height: 16),
+            _EntryBlock(
+              name: partnerName,
+              entry: partnerEntry,
+              isMe: false,
+              color: color,
+            ),
+            const SizedBox(height: 20),
+            if (_editing) ...[
+              TextField(
+                controller: _editCtrl,
+                maxLines: 5,
+                style: const TextStyle(color: Color(0xFFF5DEB3)),
+                decoration: InputDecoration(
+                  hintText: 'Update your entry...',
+                  hintStyle: TextStyle(
+                      color: const Color(0xFFF5DEB3).withValues(alpha: 0.4)),
+                  filled: true,
+                  fillColor: const Color(0xFF2A1A0A),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: color),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: color.withValues(alpha: 0.5)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: color, width: 1.5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
                 children: [
-                  const Text('✅', style: TextStyle(fontSize: 20)),
-                  const SizedBox(width: 12),
                   Expanded(
+                    child: GradientButton(
+                      label: 'Save',
+                      onTap: _save,
+                      loading: _loading,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  TextButton(
+                    onPressed: () => setState(() => _editing = false),
                     child: Text(
-                      'You already wrote today! Waiting for your partner ♡',
-                      style: TextStyle(
-                          color: widget.accent, fontSize: 13),
+                      'Cancel',
+                      style: GoogleFonts.lato(color: AppColors.textSecondary),
                     ),
                   ),
                 ],
               ),
-            )
-          else ...[
-            // Title field
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.bgCard,
-                borderRadius: BorderRadius.circular(14),
-                border:
-                    Border.all(color: AppColors.divider, width: 0.5),
-              ),
-              child: TextField(
-                controller: _titleCtrl,
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600),
-                decoration: const InputDecoration(
-                  hintText: 'Title (optional)…',
-                  hintStyle: TextStyle(color: AppColors.textMuted),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(16),
+            ] else ...[
+              TextButton.icon(
+                onPressed: () {
+                  _editCtrl.text = myEntry ?? '';
+                  setState(() => _editing = true);
+                },
+                icon: Icon(Icons.edit_outlined, color: color, size: 18),
+                label: Text(
+                  myEntry == null ? 'Write your entry' : 'Edit your entry',
+                  style: GoogleFonts.lato(color: color, fontSize: 14),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-
-            // Entry field
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.bgCard,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.divider, width: 0.5),
-              ),
-              child: TextField(
-                controller: _bodyCtrl,
-                maxLines: null,
-                minLines: 6,
-                textAlignVertical: TextAlignVertical.top,
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    height: 1.7),
-                decoration: const InputDecoration(
-                  hintText: 'What\'s on your mind today?',
-                  hintStyle: TextStyle(color: AppColors.textMuted),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(16),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            GradientButton(
-              label: 'Save Entry',
-              onTap: _submit,
-              loading: _submitting,
-            ),
+            ],
+            const SizedBox(height: 8),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Entry block ──────────────────────────────────────────────────────────
+
+class _EntryBlock extends StatelessWidget {
+  final String name;
+  final String? entry;
+  final bool isMe;
+  final Color color;
+
+  const _EntryBlock({
+    required this.name,
+    required this.entry,
+    required this.isMe,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isMe
+            ? color.withValues(alpha: 0.1)
+            : Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isMe
+              ? color.withValues(alpha: 0.4)
+              : Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name,
+            style: GoogleFonts.lato(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: isMe ? color : AppColors.textSecondary,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            entry ??
+                (isMe
+                    ? "You haven't written yet."
+                    : 'Waiting for their entry...'),
+            style: GoogleFonts.lato(
+              fontSize: 14,
+              color: entry != null ? const Color(0xFFF5DEB3) : AppColors.textMuted,
+              height: 1.6,
+              fontStyle: entry == null ? FontStyle.italic : FontStyle.normal,
+            ),
+          ),
         ],
       ),
     );

@@ -287,6 +287,7 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
                 Expanded(
                   child: TabBarView(
                     controller: _tabCtrl,
+                    physics: const NeverScrollableScrollPhysics(),
                     children: [
                       // ── WYR ──────────────────────────────────────────
                       _WyrTab(

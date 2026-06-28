@@ -45,6 +45,10 @@ class YouAndMeScreen extends ConsumerWidget {
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
 
+                    // Appearance toggle
+                    _AppearanceSection(accent: accent),
+                    const SizedBox(height: 20),
+
                     // Mood match banner
                     if (bothHaveMood) ...[
                       _MoodMatchCard(
@@ -69,6 +73,58 @@ class YouAndMeScreen extends ConsumerWidget {
     );
   }
 
+}
+
+// ── Appearance Section ────────────────────────────────────────────────────
+
+class _AppearanceSection extends ConsumerWidget {
+  final Color accent;
+  const _AppearanceSection({required this.accent});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+    final isDark = themeMode == ThemeMode.dark;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: AppColors.bgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: Row(
+        children: [
+          Icon(isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+              color: accent, size: 22),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Appearance',
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600)),
+                Text(isDark ? 'Dark mode' : 'Light mode',
+                    style: const TextStyle(
+                        color: AppColors.textMuted, fontSize: 12)),
+              ],
+            ),
+          ),
+          Switch(
+            value: isDark,
+            onChanged: (val) {
+              ref.read(themeModeProvider.notifier).state =
+                  val ? ThemeMode.dark : ThemeMode.light;
+            },
+            activeColor: accent,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── Mood Match Banner ─────────────────────────────────────────────────────

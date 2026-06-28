@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -49,6 +50,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _whisperMode = false;
   final _scheduledDeletes = <String>{};
   ChatBackground _background = ChatBackground.dark;
+  String? _customBgPath;
 
   @override
   void initState() {
@@ -147,6 +149,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   BoxDecoration _backgroundDecoration() {
+    if (_customBgPath != null) {
+      return BoxDecoration(
+        image: DecorationImage(
+          image: FileImage(File(_customBgPath!)),
+          fit: BoxFit.cover,
+        ),
+      );
+    }
     final asset = _chatBgAssets[_background];
     if (asset != null) {
       return BoxDecoration(
@@ -166,15 +176,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  Future<void> _pickGalleryBackground() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null || !mounted) return;
+    setState(() {
+      _customBgPath = picked.path;
+      _background = ChatBackground.dark; // reset preset selection
+    });
+  }
+
   void _showBackgroundPicker(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _BackgroundPickerSheet(
         current: _background,
+        customBgPath: _customBgPath,
         onSelect: (bg) {
-          setState(() => _background = bg);
+          setState(() {
+            _background = bg;
+            _customBgPath = null;
+          });
           Navigator.pop(context);
+        },
+        onGalleryPick: () {
+          Navigator.pop(context);
+          _pickGalleryBackground();
         },
       ),
     );
@@ -482,11 +510,15 @@ class _ChatAppBar extends StatelessWidget {
 
 class _BackgroundPickerSheet extends StatelessWidget {
   final ChatBackground current;
+  final String? customBgPath;
   final void Function(ChatBackground) onSelect;
+  final VoidCallback onGalleryPick;
 
   const _BackgroundPickerSheet({
     required this.current,
+    required this.customBgPath,
     required this.onSelect,
+    required this.onGalleryPick,
   });
 
   static final _imageOptions = [
@@ -538,10 +570,67 @@ class _BackgroundPickerSheet extends StatelessWidget {
                 mainAxisSpacing: 10,
                 childAspectRatio: 0.65,
               ),
-              itemCount: _imageOptions.length + 1, // +1 for Dark
+              itemCount: _imageOptions.length + 2, // +1 Dark, +1 Gallery
               itemBuilder: (_, i) {
+                // Last tile = Gallery picker
+                if (i == _imageOptions.length + 1) {
+                  final isSelected = customBgPath != null;
+                  return GestureDetector(
+                    onTap: onGalleryPick,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: customBgPath != null
+                              ? Image.file(File(customBgPath!), fit: BoxFit.cover)
+                              : Container(
+                                  color: AppColors.bgCardLight,
+                                  child: const Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.photo_library_outlined,
+                                          color: AppColors.textSecondary, size: 28),
+                                      SizedBox(height: 6),
+                                      Text('Gallery',
+                                          style: TextStyle(
+                                              color: AppColors.textMuted,
+                                              fontSize: 11)),
+                                    ],
+                                  ),
+                                ),
+                        ),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected ? AppColors.rose : Colors.transparent,
+                              width: 2.5,
+                            ),
+                          ),
+                          child: isSelected
+                              ? const Align(
+                                  alignment: Alignment.topRight,
+                                  child: Padding(
+                                    padding: EdgeInsets.all(6),
+                                    child: CircleAvatar(
+                                      radius: 10,
+                                      backgroundColor: AppColors.rose,
+                                      child: Icon(Icons.check_rounded,
+                                          color: Colors.white, size: 13),
+                                    ),
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
                 final bg = i == 0 ? ChatBackground.dark : _imageOptions[i - 1];
-                final isSelected = current == bg;
+                final isSelected = customBgPath == null && current == bg;
                 final asset = _chatBgAssets[bg];
                 return GestureDetector(
                   onTap: () => onSelect(bg),
