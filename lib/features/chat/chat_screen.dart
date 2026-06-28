@@ -306,6 +306,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             msg: msg,
                             isMe: msg.senderId == uid,
                             accent: accent,
+                            hasWallpaper: _background != ChatBackground.dark,
                             onReact: (emoji) {
                               HapticFeedback.selectionClick();
                               if (coupleId == null) return;
@@ -789,6 +790,7 @@ class _MessageBubble extends StatelessWidget {
   final MessageModel msg;
   final bool isMe;
   final Color accent;
+  final bool hasWallpaper;
   final void Function(String) onReact;
   final VoidCallback? onDelete;
 
@@ -796,6 +798,7 @@ class _MessageBubble extends StatelessWidget {
     required this.msg,
     required this.isMe,
     required this.accent,
+    required this.hasWallpaper,
     required this.onReact,
     this.onDelete,
   });
@@ -827,18 +830,27 @@ class _MessageBubble extends StatelessWidget {
                   gradient: isMe
                       ? LinearGradient(colors: [accent, AppColors.coral])
                       : null,
-                  color: isMe ? null : AppColors.bgCardLight,
+                  color: isMe
+                      ? null
+                      : hasWallpaper
+                          ? Colors.black.withValues(alpha: 0.58)
+                          : AppColors.bgCardLight,
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(18),
                     topRight: const Radius.circular(18),
                     bottomLeft: Radius.circular(isMe ? 18 : 4),
                     bottomRight: Radius.circular(isMe ? 4 : 18),
                   ),
+                  border: (!isMe && hasWallpaper)
+                      ? Border.all(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          width: 0.5)
+                      : null,
                 ),
                 child: Text(
                   msg.content,
-                  style: TextStyle(
-                    color: isMe ? Colors.white : AppColors.textPrimary,
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontSize: 15,
                     height: 1.4,
                   ),
@@ -855,8 +867,11 @@ class _MessageBubble extends StatelessWidget {
                     const EdgeInsets.only(top: 2, left: 2, right: 2),
                 child: Text(
                   timeago.format(msg.sentAt, allowFromNow: true),
-                  style: const TextStyle(
-                      color: AppColors.textMuted, fontSize: 10),
+                  style: TextStyle(
+                      color: hasWallpaper
+                          ? Colors.white.withValues(alpha: 0.75)
+                          : AppColors.textMuted,
+                      fontSize: 10),
                 ),
               ),
             ],

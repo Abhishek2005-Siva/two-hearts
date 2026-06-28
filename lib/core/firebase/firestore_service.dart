@@ -194,16 +194,19 @@ class FirestoreService {
 
   // ── Thinking Of You ───────────────────────────────────────────────────────
 
-  Future<void> sendThinkingOfYou(String coupleId, {String? message}) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('signals')
-      .add({
-        'type': 'thinkingOfYou',
-        'fromUid': _uid,
-        if (message != null) 'message': message,
-        'sentAt': FieldValue.serverTimestamp(),
-      });
+  Future<void> sendThinkingOfYou(String coupleId,
+          {String? message, String? toUid}) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('signals')
+          .add({
+            'type': 'thinkingOfYou',
+            'fromUid': _uid,
+            if (toUid != null) 'toUid': toUid,
+            if (message != null) 'message': message,
+            'sentAt': FieldValue.serverTimestamp(),
+          });
 
   Stream<QuerySnapshot> watchSignals(String coupleId) => _db
       .collection('couples')

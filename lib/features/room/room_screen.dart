@@ -74,7 +74,11 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
           if (docId == _lastSignalId) return; // already shown this signal
           final data = doc.data() as Map<String, dynamic>;
           final uid = FirebaseAuth.instance.currentUser?.uid;
-          if (uid != null && data['fromUid'] != uid) {
+          // Only show if this signal was explicitly sent TO me,
+          // or (legacy) it wasn't sent BY me.
+          final toUid = data['toUid'] as String?;
+          final isForMe = toUid != null ? toUid == uid : data['fromUid'] != uid;
+          if (uid != null && isForMe) {
             _lastSignalId = docId;
             final type = data['type'] as String? ?? 'thinkingOfYou';
             final message = data['message'] as String?;
@@ -137,17 +141,64 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
 
   void _sendThinkingOfYou() {
     final coupleId = ref.read(coupleIdProvider);
+    final partner = ref.read(partnerUserProvider).valueOrNull;
     if (coupleId == null) return;
-    ref.read(firestoreServiceProvider).sendThinkingOfYou(coupleId).ignore();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('♡ Sent to your person'),
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
         backgroundColor: AppColors.bgCard,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        margin: const EdgeInsets.all(16),
-      ));
-    }
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('♡', style: TextStyle(fontSize: 52, color: AppColors.rose)),
+              const SizedBox(height: 12),
+              Text('Thinking Of You', style: Theme.of(ctx).textTheme.titleLarge),
+              const SizedBox(height: 6),
+              Text('Send a little love to their screen',
+                  style: Theme.of(ctx).textTheme.bodyMedium,
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              TextField(
+                controller: ctrl,
+                maxLength: 80,
+                style: const TextStyle(color: AppColors.textPrimary),
+                decoration: const InputDecoration(
+                  hintText: 'Add a note (optional)',
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 20),
+              GradientButton(
+                label: 'Send ♡',
+                onTap: () async {
+                  final msg = ctrl.text.trim();
+                  Navigator.pop(ctx);
+                  await ref.read(firestoreServiceProvider).sendThinkingOfYou(
+                    coupleId,
+                    message: msg.isEmpty ? null : msg,
+                    toUid: partner?.uid,
+                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: const Text('♡ Sent to your person'),
+                      backgroundColor: AppColors.bgCard,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      margin: const EdgeInsets.all(16),
+                    ));
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showMoodPicker() {
