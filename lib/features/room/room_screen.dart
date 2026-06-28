@@ -838,6 +838,8 @@ class _ThinkingOfYouPill extends StatelessWidget {
 }
 
 // ── Scrapbook Memory Strip ────────────────────────────────────────────────
+// Flat warm beige board — matches reference image exactly.
+// Each card gets ONE subtle decoration only: pin / tape / heart sticker.
 
 class _PolaroidStrip extends StatelessWidget {
   final List<dynamic> memories;
@@ -846,102 +848,55 @@ class _PolaroidStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = memories.take(7).toList();
-    // Warm cork/kraft background
+    final items = memories.take(6).toList();
     final boardColor = Color.lerp(
-      const Color(0xFFEDD9B8), const Color(0xFFC8B898), nightness)!;
+        const Color(0xFFE8D4B8), const Color(0xFFD0BC9C), nightness)!;
 
     return Container(
-      height: 215,
+      height: 195,
       decoration: BoxDecoration(
         color: boardColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 12,
+            offset: const Offset(0, -3),
           ),
         ],
       ),
-      child: Stack(
-        children: [
-          // Subtle cork grain texture
-          Positioned.fill(
-            child: CustomPaint(painter: _CorkPainter(nightness: nightness)),
-          ),
-          // Scrollable photos
-          ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(18, 24, 18, 12),
-            itemCount: items.length + 1,
-            itemBuilder: (ctx, i) {
-              if (i < items.length) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 14),
-                  child: _PolaroidCard(
-                      memory: items[i], index: i, nightness: nightness),
-                );
-              }
-              // Handwritten sticky note at the end
-              return Padding(
-                padding: const EdgeInsets.only(right: 18, top: 8),
-                child: GestureDetector(
-                  onTap: () => ctx.push('/memory'),
-                  child: _StickyNote(nightness: nightness),
-                ),
-              );
-            },
-          ),
-        ],
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 28, 16, 10),
+        itemCount: items.length + 1,
+        itemBuilder: (ctx, i) {
+          if (i < items.length) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: _PolaroidCard(
+                  memory: items[i], index: i, nightness: nightness),
+            );
+          }
+          // Sticky note at end
+          return Padding(
+            padding: const EdgeInsets.only(right: 16, top: 6),
+            child: GestureDetector(
+              onTap: () => ctx.push('/memory'),
+              child: _StickyNote(nightness: nightness),
+            ),
+          );
+        },
       ),
     );
   }
 }
 
-// Cork grain background painter
-class _CorkPainter extends CustomPainter {
-  final double nightness;
-  const _CorkPainter({required this.nightness});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rng = math.Random(42); // fixed seed for stable look
-    final dotColor = Color.lerp(
-      const Color(0xFFD4B890), const Color(0xFFB09070), nightness)!;
-    final paint = Paint()..color = dotColor.withValues(alpha: 0.35);
-    // Scattered tiny dots to mimic cork texture
-    for (int i = 0; i < 120; i++) {
-      final x = rng.nextDouble() * size.width;
-      final y = rng.nextDouble() * size.height;
-      final r = 0.8 + rng.nextDouble() * 1.6;
-      canvas.drawCircle(Offset(x, y), r, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_CorkPainter old) => old.nightness != nightness;
-}
-
 // ── Polaroid Card ─────────────────────────────────────────────────────────
-
-// Each index gets a unique decoration combination
-class _DecoScheme {
-  final String primary;   // 'thumbtack' | 'tape' | 'clothespin'
-  final Color primaryColor;
-  final String? extra;    // optional extra deco: 'heart' | 'sparkle' | 'flower' | 'stamp' | 'doodle'
-  final String? sideNote; // tiny handwritten-style label
-  const _DecoScheme(this.primary, this.primaryColor, {this.extra, this.sideNote});
-}
-
-const _kDecoSchemes = [
-  _DecoScheme('thumbtack', Color(0xFFE8735A), extra: 'heart'),           // 0 rose pin + heart
-  _DecoScheme('tape', Color(0xFFB8D4C0), extra: 'sparkle'),              // 1 sage tape + sparkle
-  _DecoScheme('thumbtack', Color(0xFF9B8FD4), extra: 'flower'),          // 2 lavender pin + flower
-  _DecoScheme('tape', Color(0xFFE8C49A), extra: 'stamp'),                // 3 peach tape + stamp
-  _DecoScheme('clothespin', Color(0xFF8FB4D4), extra: 'doodle'),         // 4 sky clothespin + doodle
-  _DecoScheme('thumbtack', Color(0xFFD4849A), extra: 'heart'),           // 5 dusty pink pin + heart
-  _DecoScheme('tape', Color(0xFFD4C4A0), extra: 'sparkle', sideNote: '♡'), // 6 kraft tape + note
-];
+//
+// Decoration per index (cycles every 4):
+//   0 → pink circle pin at top-center
+//   1 → beige tape strip across top
+//   2 → small pink heart '♥' sticker at top-right
+//   3 → no decoration (clean)
 
 class _PolaroidCard extends StatelessWidget {
   final dynamic memory;
@@ -952,19 +907,20 @@ class _PolaroidCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final angles = [-0.05, 0.04, -0.02, 0.06, -0.03, 0.05, -0.04];
+    // Very slight rotations — real polaroids are nearly straight
+    const angles = [-0.03, 0.02, -0.015, 0.025, -0.02, 0.03];
     final angle = angles[index % angles.length];
-    final bgColor = Color.lerp(const Color(0xFFFFFDF8), const Color(0xFFF5EDE0), nightness)!;
-    final shadowOpacity = 0.22 + nightness * 0.18;
-    final scheme = _kDecoSchemes[index % _kDecoSchemes.length];
+    final cardColor = Color.lerp(
+        const Color(0xFFFFFDF8), const Color(0xFFF5EDE0), nightness)!;
 
     return GestureDetector(
       onTap: () => context.push('/memory/${memory.id}'),
       child: SizedBox(
-        width: 118,
-        height: 178,
+        width: 112,
+        height: 157,
         child: Stack(
           clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
           children: [
             // ── Polaroid frame ──
             Positioned(
@@ -974,378 +930,125 @@ class _PolaroidCard extends StatelessWidget {
               child: Transform.rotate(
                 angle: angle,
                 child: Container(
-                  height: 156,
+                  height: 148,
                   decoration: BoxDecoration(
-                    color: bgColor,
+                    color: cardColor,
                     borderRadius: BorderRadius.circular(3),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: shadowOpacity),
-                        blurRadius: 14,
-                        offset: const Offset(2, 6),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
-                        blurRadius: 3,
-                        offset: const Offset(0, 1),
+                        color: Colors.black.withValues(alpha: 0.20 + nightness * 0.15),
+                        blurRadius: 10,
+                        offset: const Offset(1, 4),
                       ),
                     ],
                   ),
                   child: Column(
                     children: [
-                      // Photo area
+                      // Photo area — equal border on 3 sides, thick bottom
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(7, 7, 7, 0),
+                          padding: const EdgeInsets.fromLTRB(6, 6, 6, 0),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(2),
+                            borderRadius: BorderRadius.circular(1),
                             child: memory.imageUrl?.isNotEmpty == true
                                 ? CachedNetworkImage(
                                     imageUrl: memory.imageUrl as String,
                                     fit: BoxFit.cover,
                                     width: double.infinity,
-                                    placeholder: (_, _) => Container(
-                                        color: const Color(0xFFE0CEB8)),
+                                    placeholder: (_, _) =>
+                                        Container(color: const Color(0xFFDDCAB4)),
                                     errorWidget: (_, _, _) => Container(
-                                      color: const Color(0xFFE0CEB8),
+                                      color: const Color(0xFFDDCAB4),
                                       child: const Icon(Icons.image_outlined,
-                                          color: Colors.grey, size: 24),
+                                          color: Colors.grey, size: 22),
                                     ),
                                   )
                                 : Container(
-                                    color: const Color(0xFFE0CEB8),
+                                    color: const Color(0xFFDDCAB4),
                                     child: const Icon(Icons.image_outlined,
-                                        color: Colors.grey, size: 24),
+                                        color: Colors.grey, size: 22),
                                   ),
                           ),
                         ),
                       ),
-                      // Bottom caption strip
-                      SizedBox(
-                        height: 30,
-                        child: Center(
-                          child: memory.title?.isNotEmpty == true
-                              ? Text(
-                                  memory.title as String,
-                                  style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Color(0xFF8A7060),
-                                    fontStyle: FontStyle.italic,
-                                    letterSpacing: 0.2,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                )
-                              : null,
-                        ),
-                      ),
+                      // Thick bottom white strip — polaroid signature
+                      const SizedBox(height: 28),
                     ],
                   ),
                 ),
               ),
             ),
 
-            // ── Primary decoration ──
-            if (scheme.primary == 'thumbtack')
+            // ── Decoration ──
+            if (index % 4 == 0)
+              // Pink circle push-pin at top center
               Positioned(
                 top: 0,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: _Thumbtack(color: scheme.primaryColor),
-                ),
-              )
-            else if (scheme.primary == 'tape')
-              Positioned(
-                top: 10,
-                left: 10,
-                right: 10,
-                child: Center(
-                  child: Transform.rotate(
-                    angle: angle * -1.2,
-                    child: _WashiTape(color: scheme.primaryColor),
+                child: Container(
+                  width: 13,
+                  height: 13,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE88A8A),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.28),
+                        blurRadius: 3,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ),
-              )
-            else if (scheme.primary == 'clothespin')
-              Positioned(
-                top: 2,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: _Clothespin(color: scheme.primaryColor),
-                ),
-              ),
-
-            // ── Extra decoration ──
-            if (scheme.extra == 'heart')
-              Positioned(
-                bottom: 36,
-                right: -6,
-                child: Transform.rotate(
-                  angle: 0.3,
-                  child: Text('♡',
-                      style: TextStyle(
-                          fontSize: 18,
-                          color: scheme.primaryColor.withValues(alpha: 0.9))),
-                ),
-              )
-            else if (scheme.extra == 'sparkle')
-              Positioned(
-                bottom: 38,
-                left: -4,
-                child: Transform.rotate(
-                  angle: -0.2,
-                  child: Text('✦',
-                      style: TextStyle(
-                          fontSize: 14,
-                          color: scheme.primaryColor.withValues(alpha: 0.85))),
-                ),
-              )
-            else if (scheme.extra == 'flower')
-              Positioned(
-                bottom: 34,
-                right: -8,
-                child: Text('✿',
-                    style: TextStyle(
-                        fontSize: 16,
-                        color: scheme.primaryColor.withValues(alpha: 0.85))),
-              )
-            else if (scheme.extra == 'stamp')
-              Positioned(
-                bottom: 34,
-                right: 4,
-                child: Transform.rotate(
-                  angle: 0.1,
-                  child: CustomPaint(
-                    size: const Size(22, 22),
-                    painter: _StampPainter(color: scheme.primaryColor),
-                  ),
-                ),
-              )
-            else if (scheme.extra == 'doodle')
-              Positioned(
-                bottom: 36,
-                left: -4,
-                child: Transform.rotate(
-                  angle: -0.15,
-                  child: Text('★',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: scheme.primaryColor.withValues(alpha: 0.8))),
-                ),
-              ),
-
-            // ── Side note ──
-            if (scheme.sideNote != null)
-              Positioned(
-                top: 60,
-                right: -10,
-                child: Transform.rotate(
-                  angle: math.pi / 2,
-                  child: Text(
-                    scheme.sideNote!,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFFD4849A),
-                      fontStyle: FontStyle.italic,
+                  // Tiny highlight dot
+                  child: const Align(
+                    alignment: Alignment(-0.4, -0.4),
+                    child: SizedBox(
+                      width: 4,
+                      height: 4,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Color(0x88FFFFFF),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                     ),
                   ),
                 ),
+              )
+            else if (index % 4 == 1)
+              // Beige/cream tape strip across the top edge
+              Positioned(
+                top: 8,
+                child: Transform.rotate(
+                  angle: angle * -0.8,
+                  child: Container(
+                    width: 46,
+                    height: 13,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0C898).withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                ),
+              )
+            else if (index % 4 == 2)
+              // Small heart sticker at top-right
+              const Positioned(
+                top: 4,
+                right: 6,
+                child: Text(
+                  '♥',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Color(0xFFD4849A),
+                  ),
+                ),
               ),
+            // index % 4 == 3 → no decoration (clean polaroid)
           ],
         ),
       ),
     );
   }
-}
-
-// ── Decoration Widgets ────────────────────────────────────────────────────
-
-class _Thumbtack extends StatelessWidget {
-  final Color color;
-  const _Thumbtack({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 20,
-      height: 20,
-      child: CustomPaint(painter: _ThumbTackPainter(color: color)),
-    );
-  }
-}
-
-class _ThumbTackPainter extends CustomPainter {
-  final Color color;
-  const _ThumbTackPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-
-    // Pin head shadow
-    final shadowP = Paint()
-      ..color = Colors.black.withValues(alpha: 0.3)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-    canvas.drawCircle(Offset(cx, cy + 2), 7, shadowP);
-
-    // Pin head
-    final headP = Paint()..color = color;
-    canvas.drawCircle(Offset(cx, cy), 7, headP);
-
-    // Highlight
-    final hlP = Paint()..color = Colors.white.withValues(alpha: 0.55);
-    canvas.drawCircle(Offset(cx - 2, cy - 2), 3, hlP);
-
-    // Pin needle
-    final needleP = Paint()
-      ..color = const Color(0xFF888888)
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(Offset(cx, cy + 6), Offset(cx, cy + 12), needleP);
-  }
-
-  @override
-  bool shouldRepaint(_ThumbTackPainter old) => old.color != color;
-}
-
-class _WashiTape extends StatelessWidget {
-  final Color color;
-  const _WashiTape({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 16,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.68),
-        borderRadius: BorderRadius.circular(2),
-      ),
-      child: CustomPaint(painter: _WashiPatternPainter(color: color)),
-    );
-  }
-}
-
-class _WashiPatternPainter extends CustomPainter {
-  final Color color;
-  const _WashiPatternPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Subtle stripe pattern on washi tape
-    final p = Paint()
-      ..color = Colors.white.withValues(alpha: 0.22)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-    for (double x = 6; x < size.width; x += 10) {
-      canvas.drawLine(Offset(x, 0), Offset(x + 4, size.height), p);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_WashiPatternPainter old) => false;
-}
-
-class _Clothespin extends StatelessWidget {
-  final Color color;
-  const _Clothespin({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 28,
-      height: 22,
-      child: CustomPaint(painter: _ClothespinPainter(color: color)),
-    );
-  }
-}
-
-class _ClothespinPainter extends CustomPainter {
-  final Color color;
-  const _ClothespinPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final wood = Color.lerp(color, const Color(0xFFD4A870), 0.5)!;
-    final dark = Color.lerp(color, Colors.black, 0.3)!;
-
-    // Left arm
-    final leftPath = Path()
-      ..moveTo(w * 0.1, 0)
-      ..lineTo(w * 0.4, 0)
-      ..lineTo(w * 0.45, h)
-      ..lineTo(w * 0.05, h)
-      ..close();
-    canvas.drawPath(leftPath, Paint()..color = wood);
-    canvas.drawPath(leftPath, Paint()..color = dark..style = PaintingStyle.stroke..strokeWidth = 0.8);
-
-    // Right arm
-    final rightPath = Path()
-      ..moveTo(w * 0.6, 0)
-      ..lineTo(w * 0.9, 0)
-      ..lineTo(w * 0.95, h)
-      ..lineTo(w * 0.55, h)
-      ..close();
-    canvas.drawPath(rightPath, Paint()..color = wood);
-    canvas.drawPath(rightPath, Paint()..color = dark..style = PaintingStyle.stroke..strokeWidth = 0.8);
-
-    // Spring coil
-    final springP = Paint()
-      ..color = const Color(0xFFAAAAAA)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(w / 2, h * 0.4), width: w * 0.35, height: h * 0.5),
-      springP,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_ClothespinPainter old) => old.color != color;
-}
-
-class _StampPainter extends CustomPainter {
-  final Color color;
-  const _StampPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final borderP = Paint()
-      ..color = color.withValues(alpha: 0.7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    // Dashed stamp border
-    final rect = Rect.fromLTWH(1, 1, size.width - 2, size.height - 2);
-    final path = Path()..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(2)));
-    // Draw dashes manually
-    final metric = path.computeMetrics().first;
-    final total = metric.length;
-    double dist = 0;
-    while (dist < total) {
-      final seg = metric.extractPath(dist, dist + 3);
-      canvas.drawPath(seg, borderP);
-      dist += 6;
-    }
-    // Heart inside — drawn with two arcs + a path
-    final hx = size.width / 2;
-    final hy = size.height / 2 + 1;
-    final hr = size.width * 0.22;
-    final heartPath = Path()
-      ..moveTo(hx, hy + hr * 1.2)
-      ..cubicTo(hx - hr * 2.2, hy - hr * 0.5, hx - hr * 2.2, hy - hr * 2.2, hx, hy - hr * 0.8)
-      ..cubicTo(hx + hr * 2.2, hy - hr * 2.2, hx + hr * 2.2, hy - hr * 0.5, hx, hy + hr * 1.2)
-      ..close();
-    canvas.drawPath(heartPath, Paint()..color = color.withValues(alpha: 0.75));
-  }
-
-  @override
-  bool shouldRepaint(_StampPainter old) => old.color != color;
 }
 
 // ── Sticky Note ───────────────────────────────────────────────────────────
@@ -1357,51 +1060,46 @@ class _StickyNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Transform.rotate(
-      angle: 0.04,
-      child: Container(
-        width: 100,
-        height: 100,
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF5C2),
-          borderRadius: BorderRadius.circular(3),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.20),
-              blurRadius: 8,
-              offset: const Offset(2, 4),
-            ),
-          ],
-        ),
-        child: Stack(
+      angle: 0.03,
+      child: SizedBox(
+        width: 95,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Fold corner
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: CustomPaint(
-                size: const Size(16, 16),
-                painter: _FoldPainter(),
+            // Small flower above note
+            const Text('✿', style: TextStyle(fontSize: 20, color: Color(0xFFC4A870))),
+            const SizedBox(height: 3),
+            Container(
+              width: 95,
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8D6),
+                borderRadius: BorderRadius.circular(3),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 7,
+                    offset: const Offset(1, 3),
+                  ),
+                ],
               ),
-            ),
-            // Text content
-            const Padding(
-              padding: EdgeInsets.fromLTRB(10, 10, 14, 10),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+              child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'little\nmemories,\nbig\nmeaning',
                     style: TextStyle(
                       fontSize: 11,
-                      color: Color(0xFF6B5A3A),
-                      height: 1.45,
+                      color: Color(0xFF7A6040),
+                      height: 1.5,
                       fontStyle: FontStyle.italic,
-                      letterSpacing: 0.1,
                     ),
                   ),
-                  SizedBox(height: 5),
-                  Text('♡', style: TextStyle(fontSize: 14, color: Color(0xFFD4849A))),
+                  SizedBox(height: 4),
+                  Text('♡',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFFD4849A))),
                 ],
               ),
             ),
@@ -1410,25 +1108,6 @@ class _StickyNote extends StatelessWidget {
       ),
     );
   }
-}
-
-class _FoldPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(size.width, 0)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(path, Paint()..color = const Color(0xFFE8D88A));
-    canvas.drawPath(path, Paint()
-      ..color = const Color(0xFFC8B860).withValues(alpha: 0.5)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.5);
-  }
-
-  @override
-  bool shouldRepaint(_FoldPainter old) => false;
 }
 
 // ── Settings Sheet ────────────────────────────────────────────────────────
