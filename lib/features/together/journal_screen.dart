@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -23,9 +25,54 @@ const List<Color> _kBookColors = [
 Color _bookColor(String id) =>
     _kBookColors[id.hashCode.abs() % _kBookColors.length];
 
-double _bookWidth(String id) {
-  final w = (id.hashCode.abs() % 17) + 36.0; // 36–52
-  return w;
+double _bookWidth(String id) => (id.hashCode.abs() % 17) + 36.0; // 36–52
+
+// ─── Page splitting ───────────────────────────────────────────────────────
+
+List<String> _splitIntoPages(String content, {int charsPerPage = 800}) {
+  if (content.isEmpty) return [''];
+  final pages = <String>[];
+  for (int i = 0; i < content.length; i += charsPerPage) {
+    pages.add(content.substring(i, min(i + charsPerPage, content.length)));
+  }
+  return pages;
+}
+
+// ─── Rich text rendering (==highlight== and __underline__) ────────────────
+
+TextSpan _renderRichText(String text, TextStyle base) {
+  final spans = <InlineSpan>[];
+  final pattern = RegExp(r'==(.+?)==|__(.+?)__');
+  int lastEnd = 0;
+  for (final m in pattern.allMatches(text)) {
+    if (m.start > lastEnd) {
+      spans.add(TextSpan(text: text.substring(lastEnd, m.start), style: base));
+    }
+    if (m.group(1) != null) {
+      // highlight
+      spans.add(TextSpan(
+        text: m.group(1),
+        style: base.copyWith(
+          backgroundColor: const Color(0xFFFFE066),
+          color: const Color(0xFF3A2A00),
+        ),
+      ));
+    } else if (m.group(2) != null) {
+      // underline
+      spans.add(TextSpan(
+        text: m.group(2),
+        style: base.copyWith(
+          decoration: TextDecoration.underline,
+          decorationColor: base.color,
+        ),
+      ));
+    }
+    lastEnd = m.end;
+  }
+  if (lastEnd < text.length) {
+    spans.add(TextSpan(text: text.substring(lastEnd), style: base));
+  }
+  return TextSpan(children: spans);
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────
@@ -57,21 +104,30 @@ class JournalScreen extends ConsumerWidget {
           child: Text('Error: $e',
               style: const TextStyle(color: AppColors.textPrimary)),
         ),
-        data: (entries) => _BookshelfBody(entries: entries),
+        data: (entries) => _BookshelfBody(
+          entries: entries,
+          onLecternTap: () => _openTodayEntry(context, ref, entries),
+        ),
       ),
-      floatingActionButton: _LecternButton(
-        onTap: () => _showCreateSheet(context, ref),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: _LecternWidget(
+        onTap: () => _openTodayEntry(context, ref,
+            ref.read(journalProvider).valueOrNull ?? []),
       ),
     );
   }
 
-  void _showCreateSheet(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _CreateJournalSheet(),
-    );
+  void _openTodayEntry(
+      BuildContext context, WidgetRef ref, List<JournalDay> entries) {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final existing = entries.where((e) => e.id == today).firstOrNull;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => _BookView(
+        day: existing ??
+            JournalDay(id: today, title: '', sharedEntry: ''),
+        isNew: existing == null,
+      ),
+    ));
   }
 }
 
@@ -79,7 +135,9 @@ class JournalScreen extends ConsumerWidget {
 
 class _BookshelfBody extends StatelessWidget {
   final List<JournalDay> entries;
-  const _BookshelfBody({required this.entries});
+  final VoidCallback onLecternTap;
+
+  const _BookshelfBody({required this.entries, required this.onLecternTap});
 
   @override
   Widget build(BuildContext context) {
@@ -96,7 +154,7 @@ class _BookshelfBody extends StatelessWidget {
             _Shelf(books: shelf1),
             const SizedBox(height: 32),
             _Shelf(books: shelf2),
-            const SizedBox(height: 100),
+            const SizedBox(height: 140),
           ],
         ),
       ),
@@ -142,10 +200,11 @@ class _Shelf extends StatelessWidget {
       }
       items.add(_BookSpine(
         day: books[i],
-        onTap: () => _showDetailSheet(context, books[i]),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => _BookView(day: books[i], isNew: false),
+        )),
       ));
     }
-    // Always show at least the lectern placeholder if empty
     if (books.isEmpty) {
       items.add(
         Padding(
@@ -162,15 +221,6 @@ class _Shelf extends StatelessWidget {
       );
     }
     return items;
-  }
-
-  void _showDetailSheet(BuildContext context, JournalDay day) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _BookDetailSheet(day: day),
-    );
   }
 }
 
@@ -277,7 +327,6 @@ class _DecoItem extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          // Flame
           Container(
             width: 8,
             height: 12,
@@ -288,7 +337,6 @@ class _DecoItem extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
             ),
           ),
-          // Candle body
           Container(
             width: 10,
             height: 40,
@@ -304,7 +352,6 @@ class _DecoItem extends StatelessWidget {
               ],
             ),
           ),
-          // Candle holder
           Container(
             width: 18,
             height: 8,
@@ -337,7 +384,6 @@ class _WallPainter extends CustomPainter {
 class _ShelfPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    // Shelf plank
     final woodPaint = Paint()
       ..shader = const LinearGradient(
         colors: [Color(0xFFA0733A), Color(0xFF8B6340), Color(0xFF7A5530)],
@@ -346,7 +392,6 @@ class _ShelfPainter extends CustomPainter {
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), woodPaint);
 
-    // Top shadow
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, 8),
       Paint()
@@ -360,7 +405,6 @@ class _ShelfPainter extends CustomPainter {
         ).createShader(Rect.fromLTWH(0, 0, size.width, 8)),
     );
 
-    // Bottom shadow
     canvas.drawRect(
       Rect.fromLTWH(0, size.height - 6, size.width, 6),
       Paint()
@@ -374,7 +418,6 @@ class _ShelfPainter extends CustomPainter {
         ).createShader(Rect.fromLTWH(0, size.height - 6, size.width, 6)),
     );
 
-    // Wood grain
     final grainPaint = Paint()
       ..color = Colors.black.withValues(alpha: 0.08)
       ..strokeWidth = 0.5;
@@ -387,190 +430,169 @@ class _ShelfPainter extends CustomPainter {
   bool shouldRepaint(_ShelfPainter old) => false;
 }
 
-// ─── Lectern FAB ──────────────────────────────────────────────────────────
+// ─── Lectern Painter ──────────────────────────────────────────────────────
 
-class _LecternButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _LecternButton({required this.onTap});
-
+class _LecternPainter extends CustomPainter {
   @override
-  Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [accent, AppColors.coral],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: accent.withValues(alpha: 0.45),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: const Icon(Icons.menu_book_rounded, color: Colors.white, size: 28),
-      ),
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    // Shadow/glow beneath lectern
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(w / 2, h * 0.96), width: w * 0.7, height: 10),
+      shadowPaint,
     );
-  }
-}
 
-// ─── Create journal bottom sheet ──────────────────────────────────────────
+    // Dark brown base (trapezoid — wider at bottom)
+    final basePaint = Paint()..color = const Color(0xFF3B1F0A);
+    final basePath = Path()
+      ..moveTo(w * 0.25, h * 0.62)
+      ..lineTo(w * 0.75, h * 0.62)
+      ..lineTo(w * 0.82, h * 0.90)
+      ..lineTo(w * 0.18, h * 0.90)
+      ..close();
+    canvas.drawPath(basePath, basePaint);
 
-class _CreateJournalSheet extends ConsumerStatefulWidget {
-  const _CreateJournalSheet();
+    // Base highlight (top edge lighter)
+    final baseHighlight = Paint()
+      ..color = const Color(0xFF6B3A15)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(
+        Offset(w * 0.25, h * 0.62), Offset(w * 0.75, h * 0.62), baseHighlight);
 
-  @override
-  ConsumerState<_CreateJournalSheet> createState() =>
-      _CreateJournalSheetState();
-}
+    // Medium brown column/stand
+    final standPaint = Paint()
+      ..shader = LinearGradient(
+        colors: const [Color(0xFF7A4A1A), Color(0xFF5C3510)],
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+      ).createShader(Rect.fromLTWH(w * 0.38, h * 0.35, w * 0.24, h * 0.30));
+    final standRect =
+        RRect.fromRectAndRadius(Rect.fromLTWH(w * 0.38, h * 0.35, w * 0.24, h * 0.30),
+            const Radius.circular(2));
+    canvas.drawRRect(standRect, standPaint);
 
-class _CreateJournalSheetState extends ConsumerState<_CreateJournalSheet> {
-  final _titleCtrl = TextEditingController();
-  final _entryCtrl = TextEditingController();
-  bool _loading = false;
+    // Open book on top of stand
+    // Book body — slightly angled, open V shape
+    final leftPage = Path()
+      ..moveTo(w * 0.10, h * 0.12)
+      ..lineTo(w * 0.50, h * 0.22)
+      ..lineTo(w * 0.50, h * 0.38)
+      ..lineTo(w * 0.08, h * 0.36)
+      ..close();
+    final rightPage = Path()
+      ..moveTo(w * 0.90, h * 0.12)
+      ..lineTo(w * 0.50, h * 0.22)
+      ..lineTo(w * 0.50, h * 0.38)
+      ..lineTo(w * 0.92, h * 0.36)
+      ..close();
 
-  @override
-  void dispose() {
-    _titleCtrl.dispose();
-    _entryCtrl.dispose();
-    super.dispose();
-  }
+    // Book cover (darker outer)
+    final coverPaint = Paint()..color = const Color(0xFF8B5E2A);
+    final leftCover = Path()
+      ..moveTo(w * 0.07, h * 0.11)
+      ..lineTo(w * 0.50, h * 0.21)
+      ..lineTo(w * 0.50, h * 0.40)
+      ..lineTo(w * 0.05, h * 0.38)
+      ..close();
+    final rightCover = Path()
+      ..moveTo(w * 0.93, h * 0.11)
+      ..lineTo(w * 0.50, h * 0.21)
+      ..lineTo(w * 0.50, h * 0.40)
+      ..lineTo(w * 0.95, h * 0.38)
+      ..close();
+    canvas.drawPath(leftCover, coverPaint);
+    canvas.drawPath(rightCover, coverPaint);
 
-  Future<void> _publish() async {
-    final title = _titleCtrl.text.trim();
-    final entry = _entryCtrl.text.trim();
-    if (title.isEmpty || entry.isEmpty) return;
+    // White pages
+    final pagePaint = Paint()..color = const Color(0xFFFDF6E3);
+    canvas.drawPath(leftPage, pagePaint);
+    canvas.drawPath(rightPage, pagePaint);
 
-    final coupleId = ref.read(coupleIdProvider);
-    final me = ref.read(currentUserProvider).valueOrNull;
-    final partner = ref.read(partnerUserProvider).valueOrNull;
-    if (coupleId == null || me == null) return;
+    // Page lines (subtle)
+    final linePaint = Paint()
+      ..color = const Color(0xFFBBA97A).withValues(alpha: 0.5)
+      ..strokeWidth = 0.7;
+    for (int i = 1; i <= 3; i++) {
+      final t = i / 4.0;
+      // Left page lines
+      final lx1 = w * 0.10 + (w * 0.40) * t * 0.0 + w * 0.04;
+      final ly = h * 0.12 + (h * 0.24) * t;
+      final lx2 = w * 0.50 - w * 0.04;
+      canvas.drawLine(Offset(lx1, ly), Offset(lx2, ly), linePaint);
+      // Right page lines
+      final rx1 = w * 0.50 + w * 0.04;
+      final rx2 = w * 0.90 - (w * 0.02);
+      canvas.drawLine(Offset(rx1, ly), Offset(rx2, ly), linePaint);
+    }
 
-    setState(() => _loading = true);
-    try {
-      final dayId = DateTime.now().toIso8601String().substring(0, 10);
-      await ref.read(firestoreServiceProvider).submitJournalEntry(
-            coupleId,
-            dayId,
-            entry,
-            partner?.uid ?? '',
-            title: title,
-          );
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() => _loading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+    // Spine crease in center
+    final spinePaint = Paint()
+      ..color = const Color(0xFF6B4220)
+      ..strokeWidth = 2.0;
+    canvas.drawLine(
+        Offset(w * 0.50, h * 0.21), Offset(w * 0.50, h * 0.40), spinePaint);
+
+    // Lectern top flat surface connecting book to stand
+    final topPaint = Paint()..color = const Color(0xFF6B3A15);
+    final topPath = Path()
+      ..moveTo(w * 0.05, h * 0.36)
+      ..lineTo(w * 0.95, h * 0.36)
+      ..lineTo(w * 0.75, h * 0.45)
+      ..lineTo(w * 0.25, h * 0.45)
+      ..close();
+    canvas.drawPath(topPath, topPaint);
+
+    // Pixel-style accent dots on base (Minecraft block texture hint)
+    final dotPaint = Paint()..color = const Color(0xFF2A1005).withValues(alpha: 0.6);
+    for (int row = 0; row < 2; row++) {
+      for (int col = 0; col < 4; col++) {
+        canvas.drawRect(
+          Rect.fromLTWH(
+            w * 0.28 + col * w * 0.12,
+            h * 0.68 + row * h * 0.08,
+            w * 0.06,
+            h * 0.04,
+          ),
+          dotPaint,
         );
       }
     }
   }
 
   @override
+  bool shouldRepaint(_LecternPainter old) => false;
+}
+
+// ─── Lectern widget ───────────────────────────────────────────────────────
+
+class _LecternWidget extends StatelessWidget {
+  final VoidCallback onTap;
+  const _LecternWidget({required this.onTap});
+
+  @override
   Widget build(BuildContext context) {
-    final insets = MediaQuery.of(context).viewInsets;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + insets.bottom),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1208),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        border: Border(
-          top: BorderSide(color: Color(0xFF8B6340), width: 1.5),
-          left: BorderSide(color: Color(0xFF8B6340), width: 1.5),
-          right: BorderSide(color: Color(0xFF8B6340), width: 1.5),
-        ),
-      ),
+    return GestureDetector(
+      onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFF8B6340),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+          CustomPaint(
+            painter: _LecternPainter(),
+            size: const Size(80, 100),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 4),
           Text(
-            'New Journal Entry',
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 22,
-              color: const Color(0xFFF5DEB3),
-              fontWeight: FontWeight.bold,
+            'Write',
+            style: GoogleFonts.lato(
+              color: const Color(0xFFF5DEB3).withValues(alpha: 0.7),
+              fontSize: 11,
             ),
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _titleCtrl,
-            style: const TextStyle(color: Color(0xFFF5DEB3)),
-            decoration: InputDecoration(
-              hintText: 'Title',
-              hintStyle: TextStyle(
-                  color: const Color(0xFFF5DEB3).withValues(alpha: 0.4)),
-              filled: true,
-              fillColor: const Color(0xFF2A1A0A),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFF8B6340)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(
-                    color: const Color(0xFF8B6340).withValues(alpha: 0.5)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    const BorderSide(color: Color(0xFF8B6340), width: 1.5),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _entryCtrl,
-            maxLines: 5,
-            style: const TextStyle(color: Color(0xFFF5DEB3)),
-            decoration: InputDecoration(
-              hintText: 'Write your entry...',
-              hintStyle: TextStyle(
-                  color: const Color(0xFFF5DEB3).withValues(alpha: 0.4)),
-              filled: true,
-              fillColor: const Color(0xFF2A1A0A),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFF8B6340)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(
-                    color: const Color(0xFF8B6340).withValues(alpha: 0.5)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    const BorderSide(color: Color(0xFF8B6340), width: 1.5),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          GradientButton(
-            label: 'Publish',
-            onTap: _publish,
-            loading: _loading,
           ),
         ],
       ),
@@ -578,258 +600,473 @@ class _CreateJournalSheetState extends ConsumerState<_CreateJournalSheet> {
   }
 }
 
-// ─── Book detail sheet ────────────────────────────────────────────────────
+// ─── Aged paper page painter ──────────────────────────────────────────────
 
-class _BookDetailSheet extends ConsumerStatefulWidget {
-  final JournalDay day;
-  const _BookDetailSheet({required this.day});
+class _PagePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Paper background
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, 0, size.width, size.height), const Radius.circular(4)),
+      Paint()..color = const Color(0xFFF5E6C8),
+    );
+
+    // Horizontal line guides
+    final linePaint = Paint()
+      ..color = const Color(0xFFBFA882).withValues(alpha: 0.45)
+      ..strokeWidth = 0.8;
+    const lineSpacing = 28.0;
+    const topPad = 48.0;
+    for (double y = topPad; y < size.height - 20; y += lineSpacing) {
+      canvas.drawLine(
+          Offset(16, y), Offset(size.width - 16, y), linePaint);
+    }
+
+    // Left margin line (red, like ruled paper)
+    final marginPaint = Paint()
+      ..color = const Color(0xFFE8A09A).withValues(alpha: 0.4)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(
+        const Offset(44, 0), Offset(44, size.height), marginPaint);
+
+    // Page curl shadow on bottom-right
+    final curlPaint = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.bottomRight,
+        radius: 0.3,
+        colors: [
+          Colors.black.withValues(alpha: 0.18),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, 0, size.width, size.height), const Radius.circular(4)),
+      curlPaint,
+    );
+  }
 
   @override
-  ConsumerState<_BookDetailSheet> createState() => _BookDetailSheetState();
+  bool shouldRepaint(_PagePainter old) => false;
 }
 
-class _BookDetailSheetState extends ConsumerState<_BookDetailSheet> {
-  final _editCtrl = TextEditingController();
+// ─── Book open view ───────────────────────────────────────────────────────
+
+class _BookView extends ConsumerStatefulWidget {
+  final JournalDay day;
+  final bool isNew;
+
+  const _BookView({required this.day, required this.isNew});
+
+  @override
+  ConsumerState<_BookView> createState() => _BookViewState();
+}
+
+class _BookViewState extends ConsumerState<_BookView> {
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _contentCtrl;
+  late PageController _pageCtrl;
+
   bool _editing = false;
-  bool _loading = false;
+  bool _saving = false;
+  int _currentPage = 0;
+  List<String> _pages = [''];
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleCtrl = TextEditingController(text: widget.day.title ?? '');
+    _contentCtrl = TextEditingController(text: widget.day.content);
+    _pages = _splitIntoPages(widget.day.content);
+    _pageCtrl = PageController();
+
+    // New entries start in edit mode
+    if (widget.isNew) _editing = true;
+
+    _contentCtrl.addListener(_onContentChanged);
+  }
 
   @override
   void dispose() {
-    _editCtrl.dispose();
+    _debounce?.cancel();
+    _titleCtrl.dispose();
+    _contentCtrl.dispose();
+    _pageCtrl.dispose();
     super.dispose();
   }
 
-  String _formatDate(String id) {
-    final dateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}');
-    if (dateRegex.hasMatch(id)) return id.substring(0, 10);
-    return id;
+  void _onContentChanged() {
+    // Re-split pages on content change
+    setState(() {
+      _pages = _splitIntoPages(_contentCtrl.text);
+    });
+    // Debounced auto-save
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(seconds: 3), () {
+      if (mounted && _editing) _save(silent: true);
+    });
   }
 
-  Future<void> _save() async {
-    final entry = _editCtrl.text.trim();
-    if (entry.isEmpty) return;
-
+  Future<void> _save({bool silent = false}) async {
     final coupleId = ref.read(coupleIdProvider);
-    final me = ref.read(currentUserProvider).valueOrNull;
-    final partner = ref.read(partnerUserProvider).valueOrNull;
-    if (coupleId == null || me == null) return;
+    if (coupleId == null) return;
 
-    setState(() => _loading = true);
+    if (!silent) setState(() => _saving = true);
     try {
-      await ref.read(firestoreServiceProvider).submitJournalEntry(
+      await ref.read(firestoreServiceProvider).saveJournalEntry(
             coupleId,
             widget.day.id,
-            entry,
-            partner?.uid ?? '',
-            title: widget.day.title,
+            _contentCtrl.text,
+            title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
           );
-      setState(() {
-        _editing = false;
-        _loading = false;
-      });
+      if (mounted && !silent) {
+        setState(() {
+          _editing = false;
+          _saving = false;
+        });
+      }
     } catch (e) {
-      setState(() => _loading = false);
-      if (mounted) {
+      if (mounted && !silent) {
+        setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text('Error saving: $e')),
         );
       }
     }
   }
 
+  void _applyMarkup(String open, String close) {
+    final sel = _contentCtrl.selection;
+    if (!sel.isValid || sel.isCollapsed) return;
+    final text = _contentCtrl.text;
+    final selected = text.substring(sel.start, sel.end);
+    final newText =
+        text.replaceRange(sel.start, sel.end, '$open$selected$close');
+    _contentCtrl.value = _contentCtrl.value.copyWith(
+      text: newText,
+      selection: TextSelection.collapsed(
+          offset: sel.start + open.length + selected.length + close.length),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final me = ref.watch(currentUserProvider).valueOrNull;
-    final partner = ref.watch(partnerUserProvider).valueOrNull;
-    final day = widget.day;
+    final color = _bookColor(widget.day.id);
+    final dateStr = widget.day.id.length >= 10
+        ? widget.day.id.substring(0, 10)
+        : widget.day.id;
+    final totalPages = _pages.isEmpty ? 1 : _pages.length;
 
-    final myUid = me?.uid ?? '';
-    final isA = day.uidA == myUid;
-    final myEntry = isA ? day.entryA : day.entryB;
-    final partnerEntry = isA ? day.entryB : day.entryA;
-    final myName = me?.displayName ?? 'You';
-    final partnerName = partner?.displayName ?? 'Partner';
-    final color = _bookColor(day.id);
-    final insets = MediaQuery.of(context).viewInsets;
+    final baseStyle = GoogleFonts.lora(
+      fontSize: 16,
+      color: const Color(0xFF2C1A0A),
+      height: 1.75,
+    );
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8),
-      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + insets.bottom),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1008),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        border: Border(
-          top: BorderSide(color: color, width: 2),
-          left: BorderSide(color: color.withValues(alpha: 0.5)),
-          right: BorderSide(color: color.withValues(alpha: 0.5)),
-        ),
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A1208),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1A1208),
+        iconTheme: const IconThemeData(color: Color(0xFFF5DEB3)),
+        title: _editing
+            ? TextField(
+                controller: _titleCtrl,
+                style: GoogleFonts.playfairDisplay(
+                  color: const Color(0xFFF5DEB3),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  hintText: 'Entry title...',
+                  hintStyle: TextStyle(color: Color(0x55F5DEB3)),
+                ),
+              )
+            : Text(
+                widget.day.title?.isNotEmpty == true
+                    ? widget.day.title!
+                    : dateStr,
+                style: GoogleFonts.playfairDisplay(
+                  color: const Color(0xFFF5DEB3),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+        actions: [
+          if (_editing) ...[
+            if (_saving)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Color(0xFFF5DEB3)),
+                ),
+              )
+            else
+              TextButton(
+                onPressed: () => _save(),
+                child: Text('Save',
+                    style: GoogleFonts.lato(
+                        color: color, fontWeight: FontWeight.bold)),
+              ),
+          ],
+        ],
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              day.title ?? 'Untitled',
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 24,
-                color: const Color(0xFFF5DEB3),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _formatDate(day.id),
+      body: Column(
+        children: [
+          // Page counter
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              'Page ${_currentPage + 1} of $totalPages',
               style: GoogleFonts.lato(
-                fontSize: 13,
-                color: const Color(0xFFF5DEB3).withValues(alpha: 0.5),
+                color: const Color(0xFFF5DEB3).withValues(alpha: 0.45),
+                fontSize: 11,
               ),
             ),
-            const SizedBox(height: 24),
-            _EntryBlock(
-              name: myName,
-              entry: myEntry,
-              isMe: true,
-              color: color,
-            ),
-            const SizedBox(height: 16),
-            _EntryBlock(
-              name: partnerName,
-              entry: partnerEntry,
-              isMe: false,
-              color: color,
-            ),
-            const SizedBox(height: 20),
-            if (_editing) ...[
-              TextField(
-                controller: _editCtrl,
-                maxLines: 5,
-                style: const TextStyle(color: Color(0xFFF5DEB3)),
-                decoration: InputDecoration(
-                  hintText: 'Update your entry...',
-                  hintStyle: TextStyle(
-                      color: const Color(0xFFF5DEB3).withValues(alpha: 0.4)),
-                  filled: true,
-                  fillColor: const Color(0xFF2A1A0A),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: color),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: color.withValues(alpha: 0.5)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: color, width: 1.5),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Row(
+          ),
+          // Main page area
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
                 children: [
-                  Expanded(
-                    child: GradientButton(
-                      label: 'Save',
-                      onTap: _save,
-                      loading: _loading,
-                    ),
+                  // Left arrow
+                  _PageArrow(
+                    icon: Icons.chevron_left,
+                    enabled: _currentPage > 0,
+                    onTap: () {
+                      _pageCtrl.previousPage(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut);
+                    },
                   ),
-                  const SizedBox(width: 12),
-                  TextButton(
-                    onPressed: () => setState(() => _editing = false),
-                    child: Text(
-                      'Cancel',
-                      style: GoogleFonts.lato(color: AppColors.textSecondary),
-                    ),
+                  // Page widget
+                  Expanded(
+                    child: _editing
+                        ? _EditablePage(
+                            controller: _contentCtrl,
+                            baseStyle: baseStyle,
+                          )
+                        : PageView.builder(
+                            controller: _pageCtrl,
+                            itemCount: totalPages,
+                            onPageChanged: (i) =>
+                                setState(() => _currentPage = i),
+                            itemBuilder: (_, i) => _ReadPage(
+                              text: _pages[i],
+                              baseStyle: baseStyle,
+                            ),
+                          ),
+                  ),
+                  // Right arrow
+                  _PageArrow(
+                    icon: Icons.chevron_right,
+                    enabled: _currentPage < totalPages - 1,
+                    onTap: () {
+                      _pageCtrl.nextPage(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut);
+                    },
                   ),
                 ],
               ),
-            ] else ...[
-              TextButton.icon(
-                onPressed: () {
-                  _editCtrl.text = myEntry ?? '';
-                  setState(() => _editing = true);
-                },
-                icon: Icon(Icons.edit_outlined, color: color, size: 18),
-                label: Text(
-                  myEntry == null ? 'Write your entry' : 'Edit your entry',
-                  style: GoogleFonts.lato(color: color, fontSize: 14),
+            ),
+          ),
+          // Toolbar
+          _BookToolbar(
+            editing: _editing,
+            onEdit: () {
+              setState(() => _editing = true);
+            },
+            onHighlight: () => _applyMarkup('==', '=='),
+            onUnderline: () => _applyMarkup('__', '__'),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Read-only page ───────────────────────────────────────────────────────
+
+class _ReadPage extends StatelessWidget {
+  final String text;
+  final TextStyle baseStyle;
+  const _ReadPage({required this.text, required this.baseStyle});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _PagePainter(),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(52, 16, 16, 16),
+        child: text.isEmpty
+            ? Text(
+                'Empty page...',
+                style: baseStyle.copyWith(
+                  color: const Color(0xFF9B7B5A).withValues(alpha: 0.5),
+                  fontStyle: FontStyle.italic,
                 ),
+              )
+            : RichText(
+                text: _renderRichText(text, baseStyle),
               ),
-            ],
-            const SizedBox(height: 8),
-          ],
+      ),
+    );
+  }
+}
+
+// ─── Editable page ────────────────────────────────────────────────────────
+
+class _EditablePage extends StatelessWidget {
+  final TextEditingController controller;
+  final TextStyle baseStyle;
+  const _EditablePage(
+      {required this.controller, required this.baseStyle});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _PagePainter(),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(52, 16, 16, 16),
+        child: TextField(
+          controller: controller,
+          maxLines: null,
+          expands: true,
+          style: baseStyle,
+          cursorColor: const Color(0xFF8B5E2A),
+          decoration: const InputDecoration(
+            border: InputBorder.none,
+            hintText: 'Write your story here...',
+            hintStyle: TextStyle(
+              color: Color(0xFF9B7B5A),
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          textAlignVertical: TextAlignVertical.top,
         ),
       ),
     );
   }
 }
 
-// ─── Entry block ──────────────────────────────────────────────────────────
+// ─── Page arrow button ────────────────────────────────────────────────────
 
-class _EntryBlock extends StatelessWidget {
-  final String name;
-  final String? entry;
-  final bool isMe;
-  final Color color;
+class _PageArrow extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+  const _PageArrow(
+      {required this.icon, required this.enabled, required this.onTap});
 
-  const _EntryBlock({
-    required this.name,
-    required this.entry,
-    required this.isMe,
-    required this.color,
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: SizedBox(
+        width: 32,
+        child: Icon(
+          icon,
+          color: enabled
+              ? const Color(0xFFF5DEB3).withValues(alpha: 0.8)
+              : const Color(0xFFF5DEB3).withValues(alpha: 0.15),
+          size: 28,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Book toolbar ─────────────────────────────────────────────────────────
+
+class _BookToolbar extends StatelessWidget {
+  final bool editing;
+  final VoidCallback onEdit;
+  final VoidCallback onHighlight;
+  final VoidCallback onUnderline;
+
+  const _BookToolbar({
+    required this.editing,
+    required this.onEdit,
+    required this.onHighlight,
+    required this.onUnderline,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: isMe
-            ? color.withValues(alpha: 0.1)
-            : Colors.white.withValues(alpha: 0.04),
+        color: const Color(0xFF2A1A0A),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isMe
-              ? color.withValues(alpha: 0.4)
-              : Colors.white.withValues(alpha: 0.08),
-        ),
+            color: const Color(0xFF8B6340).withValues(alpha: 0.4)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          Text(
-            name,
-            style: GoogleFonts.lato(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: isMe ? color : AppColors.textSecondary,
-              letterSpacing: 0.8,
+          if (!editing)
+            _ToolbarBtn(
+              icon: Icons.edit_outlined,
+              label: 'Edit',
+              onTap: onEdit,
             ),
+          _ToolbarBtn(
+            icon: Icons.highlight,
+            label: 'Highlight',
+            onTap: editing ? onHighlight : null,
+            color: const Color(0xFFFFE066),
           ),
-          const SizedBox(height: 8),
+          _ToolbarBtn(
+            icon: Icons.format_underline,
+            label: 'Underline',
+            onTap: editing ? onUnderline : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolbarBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final Color? color;
+
+  const _ToolbarBtn(
+      {required this.icon,
+      required this.label,
+      this.onTap,
+      this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final active = onTap != null;
+    final col = color ??
+        (active
+            ? const Color(0xFFF5DEB3)
+            : const Color(0xFFF5DEB3).withValues(alpha: 0.3));
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: col, size: 20),
+          const SizedBox(height: 2),
           Text(
-            entry ??
-                (isMe
-                    ? "You haven't written yet."
-                    : 'Waiting for their entry...'),
+            label,
             style: GoogleFonts.lato(
-              fontSize: 14,
-              color: entry != null ? const Color(0xFFF5DEB3) : AppColors.textMuted,
-              height: 1.6,
-              fontStyle: entry == null ? FontStyle.italic : FontStyle.normal,
+              fontSize: 10,
+              color: col,
             ),
           ),
         ],

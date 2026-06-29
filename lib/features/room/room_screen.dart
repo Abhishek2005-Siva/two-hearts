@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -138,66 +140,24 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     });
   }
 
-  void _sendThinkingOfYou() {
+  void _sendThinkingOfYou() async {
     final coupleId = ref.read(coupleIdProvider);
     final partner = ref.read(partnerUserProvider).valueOrNull;
     if (coupleId == null) return;
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: AppColors.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('♡', style: TextStyle(fontSize: 52, color: AppColors.rose)),
-              const SizedBox(height: 12),
-              Text('Thinking Of You', style: Theme.of(ctx).textTheme.titleLarge),
-              const SizedBox(height: 6),
-              Text('Send a little love to their screen',
-                  style: Theme.of(ctx).textTheme.bodyMedium,
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 20),
-              TextField(
-                controller: ctrl,
-                maxLength: 80,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                  hintText: 'Add a note (optional)',
-                  counterText: '',
-                ),
-              ),
-              const SizedBox(height: 20),
-              GradientButton(
-                label: 'Send ♡',
-                onTap: () async {
-                  final msg = ctrl.text.trim();
-                  Navigator.pop(ctx);
-                  await ref.read(firestoreServiceProvider).sendThinkingOfYou(
-                    coupleId,
-                    message: msg.isEmpty ? null : msg,
-                    toUid: partner?.uid,
-                  );
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: const Text('♡ Sent to your person'),
-                      backgroundColor: AppColors.bgCard,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      margin: const EdgeInsets.all(16),
-                    ));
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+    HapticFeedback.mediumImpact();
+    await ref.read(firestoreServiceProvider).sendThinkingOfYou(
+      coupleId,
+      toUid: partner?.uid,
     );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('♡ Sent to your person'),
+        backgroundColor: AppColors.bgCard,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        margin: const EdgeInsets.all(16),
+      ));
+    }
   }
 
   void _showMoodPicker() {
@@ -1100,11 +1060,44 @@ class _StickyNote extends StatelessWidget {
 
 // ── Settings Sheet ────────────────────────────────────────────────────────
 
-class _SettingsSheet extends ConsumerWidget {
+class _SettingsSheet extends ConsumerStatefulWidget {
   const _SettingsSheet();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SettingsSheet> createState() => _SettingsSheetState();
+}
+
+class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
+  bool _notificationsEnabled = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotificationPref();
+  }
+
+  Future<void> _loadNotificationPref() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+      });
+    }
+  }
+
+  Future<void> _toggleNotifications(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notifications_enabled', value);
+    if (value) {
+      await FirebaseMessaging.instance.subscribeToTopic('all');
+    } else {
+      await FirebaseMessaging.instance.unsubscribeFromTopic('all');
+    }
+    if (mounted) setState(() => _notificationsEnabled = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final couple = ref.watch(coupleProvider).valueOrNull;
     return Container(
       padding: EdgeInsets.fromLTRB(
@@ -1124,6 +1117,34 @@ class _SettingsSheet extends ConsumerWidget {
               decoration: BoxDecoration(
                   color: AppColors.divider,
                   borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('Preferences',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.divider, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.notifications_outlined,
+                    color: AppColors.textMuted, size: 20),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text('Notifications',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                ),
+                Switch(
+                  value: _notificationsEnabled,
+                  onChanged: _toggleNotifications,
+                  activeThumbColor: AppColors.rose,
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),

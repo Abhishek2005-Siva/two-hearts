@@ -371,6 +371,20 @@ class FirestoreService {
     }
   }
 
+  Future<void> saveJournalEntry(String coupleId, String dayId, String content,
+      {String? title}) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('journal')
+          .doc(dayId)
+          .set({
+        'sharedEntry': content,
+        'title': title ?? '',
+        'lastEditedBy': _uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
   Stream<List<JournalDay>> watchJournal(String coupleId) => _db
       .collection('couples')
       .doc(coupleId)
@@ -719,6 +733,12 @@ class FirestoreService {
   Future<void> saveFCMToken(String token) => _db
       .collection('users').doc(_uid)
       .update({'fcmToken': token});
+
+  Future<String?> getEmailByUsername(String username) async {
+    final q = await _db.collection('users').where('username', isEqualTo: username).limit(1).get();
+    if (q.docs.isEmpty) return null;
+    return q.docs.first.data()['email'] as String?;
+  }
 
   // ── Avatar ────────────────────────────────────────────────────────────────
 

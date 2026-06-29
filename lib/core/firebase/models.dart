@@ -11,6 +11,7 @@ class UserModel {
   final String? coupleId;
   final DateTime? birthday;
   final String? gender;
+  final String? username;
   final AvatarConfig? avatarConfig;
 
   const UserModel({
@@ -21,6 +22,7 @@ class UserModel {
     this.coupleId,
     this.birthday,
     this.gender,
+    this.username,
     this.avatarConfig,
   });
 
@@ -35,6 +37,7 @@ class UserModel {
       coupleId: d['coupleId'],
       birthday: (d['birthday'] as Timestamp?)?.toDate(),
       gender: d['gender'],
+      username: d['username'],
       avatarConfig: avatarMap != null ? AvatarConfig.fromMap(avatarMap) : null,
     );
   }
@@ -46,6 +49,7 @@ class UserModel {
         'coupleId': coupleId,
         'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
         if (gender != null) 'gender': gender,
+        if (username != null) 'username': username,
         if (avatarConfig != null) 'avatarConfig': avatarConfig!.toMap(),
       };
 
@@ -330,11 +334,15 @@ class LetterModel {
 class JournalDay {
   final String id;
   final String? title;
+  // Legacy fields kept for backwards-compatible reads
   final String? entryA;
   final String? entryB;
   final String? uidA;
   final String? uidB;
   final bool bothSubmitted;
+  // New shared entry (either partner can write/edit)
+  final String? sharedEntry;
+  final String? lastEditedBy;
 
   const JournalDay({
     required this.id,
@@ -344,18 +352,27 @@ class JournalDay {
     this.uidA,
     this.uidB,
     this.bothSubmitted = false,
+    this.sharedEntry,
+    this.lastEditedBy,
   });
+
+  /// The single content to display: prefer sharedEntry, fall back to entryA.
+  String get content => sharedEntry ?? entryA ?? '';
 
   factory JournalDay.fromDoc(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
     return JournalDay(
       id: doc.id,
-      title: d['title'],
-      entryA: d['entryA'],
-      entryB: d['entryB'],
-      uidA: d['uidA'],
-      uidB: d['uidB'],
-      bothSubmitted: d['bothSubmitted'] ?? false,
+      title: d['title'] is String && (d['title'] as String).isNotEmpty
+          ? d['title'] as String
+          : null,
+      entryA: d['entryA'] as String?,
+      entryB: d['entryB'] as String?,
+      uidA: d['uidA'] as String?,
+      uidB: d['uidB'] as String?,
+      bothSubmitted: d['bothSubmitted'] as bool? ?? false,
+      sharedEntry: d['sharedEntry'] as String?,
+      lastEditedBy: d['lastEditedBy'] as String?,
     );
   }
 
@@ -366,6 +383,8 @@ class JournalDay {
         'uidA': uidA,
         'uidB': uidB,
         'bothSubmitted': bothSubmitted,
+        if (sharedEntry != null) 'sharedEntry': sharedEntry,
+        if (lastEditedBy != null) 'lastEditedBy': lastEditedBy,
       };
 }
 

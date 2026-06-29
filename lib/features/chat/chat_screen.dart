@@ -453,6 +453,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               accent: accent,
               onSend: _send,
               onSnap: _videoSnapMode ? _sendVideoSnap : _sendSnap,
+              onSnapPhoto: _sendSnap,
+              onSnapVideo: _sendVideoSnap,
               onToggleWhisper: () =>
                   setState(() => _whisperMode = !_whisperMode),
               onToggleVideoSnap: () =>
@@ -767,6 +769,8 @@ class _ChatInput extends StatelessWidget {
   final Color accent;
   final VoidCallback onSend;
   final VoidCallback onSnap;
+  final VoidCallback onSnapPhoto;
+  final VoidCallback onSnapVideo;
   final VoidCallback onToggleWhisper;
   final VoidCallback onToggleVideoSnap;
 
@@ -778,9 +782,92 @@ class _ChatInput extends StatelessWidget {
     required this.accent,
     required this.onSend,
     required this.onSnap,
+    required this.onSnapPhoto,
+    required this.onSnapVideo,
     required this.onToggleWhisper,
     required this.onToggleVideoSnap,
   });
+
+  void _showCameraSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      onSnapPhoto();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgCard,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Column(
+                        children: [
+                          Text('📷', style: TextStyle(fontSize: 28)),
+                          SizedBox(height: 6),
+                          Text('Photo', style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      onSnapVideo();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgCard,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Column(
+                        children: [
+                          Text('🎥', style: TextStyle(fontSize: 28)),
+                          SizedBox(height: 6),
+                          Text('Video', style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -802,44 +889,16 @@ class _ChatInput extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GestureDetector(
-                  onTap: onSnap,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                        color: AppColors.bgCard,
-                        borderRadius: BorderRadius.circular(12)),
-                    child: Text(
-                      videoSnapMode ? '🎥' : '📷',
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                GestureDetector(
-                  onTap: onToggleVideoSnap,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: videoSnapMode
-                          ? AppColors.rose.withValues(alpha: 0.2)
-                          : AppColors.bgCard,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      videoSnapMode ? 'Video' : 'Photo',
-                      style: TextStyle(
-                        color: videoSnapMode ? AppColors.rose : AppColors.textMuted,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            GestureDetector(
+              onTap: () => _showCameraSheet(context),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    color: AppColors.bgCard,
+                    borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.camera_alt_outlined,
+                    color: AppColors.textSecondary, size: 22),
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(

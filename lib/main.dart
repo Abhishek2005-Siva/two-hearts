@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/providers/providers.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -18,7 +19,10 @@ Future<void> _fcmBackgroundHandler(RemoteMessage message) async {
 }
 
 Future<void> _initNotifications() async {
-  // Android channel
+  final prefs = await SharedPreferences.getInstance();
+  final notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+
+  // Android channel — always create so the channel exists even if disabled
   const channel = AndroidNotificationChannel(
     'two_hearts_channel',
     'Two Hearts',
@@ -37,6 +41,8 @@ Future<void> _initNotifications() async {
       iOS: DarwinInitializationSettings(),
     ),
   );
+
+  if (!notificationsEnabled) return;
 
   // Request permission (iOS + Android 13+)
   await FirebaseMessaging.instance.requestPermission(

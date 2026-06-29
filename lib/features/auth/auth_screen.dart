@@ -20,6 +20,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _name = TextEditingController();
+  final _username = TextEditingController();
   bool _obscure = true;
   String? _error;
   DateTime? _dob;
@@ -40,8 +41,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       if (_isLogin) {
+        final input = _email.text.trim();
+        String email = input;
+        if (!input.contains('@')) {
+          // Treat as username — look up email
+          final found = await FirestoreService().getEmailByUsername(input);
+          if (found == null) {
+            setState(() => _error = 'Username not found.');
+            return;
+          }
+          email = found;
+        }
         await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: _email.text.trim(),
+          email: email,
           password: _password.text.trim(),
         );
       } else {
@@ -55,6 +67,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             uid: cred.user!.uid,
             displayName: _name.text.trim(),
             email: _email.text.trim(),
+            username: _username.text.trim().isEmpty ? null : _username.text.trim(),
             birthday: _dob,
             gender: _gender,
           ));
@@ -167,6 +180,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             icon: Icons.person_outline_rounded,
                           ).animate().fadeIn(delay: 250.ms).slideX(begin: -0.05),
                           const SizedBox(height: 14),
+                          _Field(
+                            controller: _username,
+                            hint: 'Username (optional)',
+                            icon: Icons.alternate_email_rounded,
+                          ).animate().fadeIn(delay: 260.ms).slideX(begin: -0.05),
+                          const SizedBox(height: 14),
                           // DOB picker row
                           GestureDetector(
                             onTap: _pickDob,
@@ -222,7 +241,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         ],
                         _Field(
                           controller: _email,
-                          hint: 'Email address',
+                          hint: _isLogin ? 'Email or username' : 'Email address',
                           icon: Icons.mail_outline_rounded,
                           keyboard: TextInputType.emailAddress,
                         ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.05),
