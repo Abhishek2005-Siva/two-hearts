@@ -23,196 +23,193 @@ class MemoryWallScreen extends ConsumerStatefulWidget {
 
 class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   bool _uploading = false;
+  // null = show all memories; non-null = filter to a specific collection
+  String? _activeCollectionId;
 
   Future<void> _showAddMemorySheet() async {
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.bgCard,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Text('📷', style: TextStyle(fontSize: 24)),
-              title: const Text('Photos',
-                  style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
-              onTap: () {
-                Navigator.pop(context);
-                _pickPhotos();
-              },
-            ),
-            ListTile(
-              leading: const Text('🎥', style: TextStyle(fontSize: 24)),
-              title: const Text('Videos',
-                  style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
-              onTap: () {
-                Navigator.pop(context);
-                _pickVideo();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickPhotos() async {
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
     final picker = ImagePicker();
-    final images = await picker.pickMultiImage(imageQuality: 80);
-    if (images.isEmpty) return;
+    // Open native gallery directly — pickMultipleMedia allows selecting both
+    // photos and videos in a single unified picker session.
+    final media = await picker.pickMultipleMedia();
+    if (media.isEmpty || !mounted) return;
     setState(() => _uploading = true);
     try {
-      for (final xfile in images) {
+      for (final xfile in media) {
         final id = const Uuid().v4();
-        final bytes = await xfile.readAsBytes();
-        final url = await CloudinaryService.uploadImage(bytes, folder: 'two_hearts/$coupleId');
-        await ref.read(firestoreServiceProvider).addMemory(
-          coupleId,
-          MemoryModel(
-            id: id,
-            uploaderUid: authUser.uid,
-            imageUrl: url,
-            createdAt: DateTime.now(),
-          ),
-        );
+        final path = xfile.path.toLowerCase();
+        final isVideo = path.endsWith('.mp4') ||
+            path.endsWith('.mov') ||
+            path.endsWith('.avi') ||
+            path.endsWith('.mkv');
+        if (isVideo) {
+          final url = await CloudinaryService.uploadVideo(
+            File(xfile.path),
+            folder: 'two_hearts/$coupleId',
+          );
+          await ref.read(firestoreServiceProvider).addMemory(
+            coupleId,
+            MemoryModel(
+              id: id,
+              uploaderUid: authUser.uid,
+              imageUrl: url,
+              createdAt: DateTime.now(),
+              isVideo: true,
+            ),
+          );
+        } else {
+          final bytes = await xfile.readAsBytes();
+          final url = await CloudinaryService.uploadImage(bytes, folder: 'two_hearts/$coupleId');
+          await ref.read(firestoreServiceProvider).addMemory(
+            coupleId,
+            MemoryModel(
+              id: id,
+              uploaderUid: authUser.uid,
+              imageUrl: url,
+              createdAt: DateTime.now(),
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
   }
 
-  Future<void> _pickVideo() async {
-    final coupleId = ref.read(coupleIdProvider);
-    final authUser = FirebaseAuth.instance.currentUser;
-    if (coupleId == null || authUser == null) return;
-    final picker = ImagePicker();
-    final xfile = await picker.pickVideo(source: ImageSource.gallery);
-    if (xfile == null) return;
-    setState(() => _uploading = true);
-    try {
-      final id = const Uuid().v4();
-      final url = await CloudinaryService.uploadVideo(
-        File(xfile.path),
-        folder: 'two_hearts/$coupleId',
-      );
-      await ref.read(firestoreServiceProvider).addMemory(
-        coupleId,
-        MemoryModel(
-          id: id,
-          uploaderUid: authUser.uid,
-          imageUrl: url,
-          createdAt: DateTime.now(),
-          isVideo: true,
+  void _onLongPress(MemoryModel memory, String myUid, String coupleId) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-      );
-    } finally {
-      if (mounted) setState(() => _uploading = false);
-    }
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            // Add to collection option
+            ListTile(
+              leading: const Icon(Icons.folder_outlined, color: AppColors.textPrimary),
+              title: const Text('Add to collection',
+                  style: TextStyle(color: AppColors.textPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                _showAddToCollectionSheet(memory, coupleId);
+              },
+            ),
+            const Divider(color: AppColors.divider, height: 1),
+            // Deletion options
+            if (memory.deletionRequestedBy == null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded,
+                    color: Colors.redAccent),
+                title: const Text('Request deletion',
+                    style: TextStyle(color: Colors.redAccent)),
+                onTap: () {
+                  Navigator.pop(context);
+                  showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      backgroundColor: AppColors.bgCard,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
+                      title: const Text('Request Deletion',
+                          style: TextStyle(color: AppColors.textPrimary)),
+                      content: const Text(
+                        'Ask your partner to approve deleting this memory. It will only be removed when they agree.',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancel',
+                              style: TextStyle(color: AppColors.textMuted)),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            await ref
+                                .read(firestoreServiceProvider)
+                                .requestMemoryDeletion(coupleId, memory.id);
+                          },
+                          child: const Text('Request',
+                              style: TextStyle(color: AppColors.rose)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              )
+            else if (memory.deletionRequestedBy == myUid)
+              ListTile(
+                leading: const Icon(Icons.undo_rounded,
+                    color: AppColors.textSecondary),
+                title: const Text('Cancel deletion request',
+                    style: TextStyle(color: AppColors.textSecondary)),
+                onTap: () {
+                  Navigator.pop(context);
+                  ref
+                      .read(firestoreServiceProvider)
+                      .cancelMemoryDeletion(coupleId, memory.id);
+                },
+              )
+            else
+              ListTile(
+                leading:
+                    const Icon(Icons.check_circle_outline, color: AppColors.rose),
+                title: const Text('Partner wants to delete — tap to approve',
+                    style: TextStyle(color: AppColors.rose)),
+                onTap: () {
+                  Navigator.pop(context);
+                  ref
+                      .read(firestoreServiceProvider)
+                      .approveMemoryDeletion(coupleId, memory.id);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
-  void _onLongPress(MemoryModel memory, String myUid, String coupleId) {
-    if (memory.deletionRequestedBy == null) {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: AppColors.bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Request Deletion', style: TextStyle(color: AppColors.textPrimary)),
-          content: const Text(
-            'Ask your partner to approve deleting this memory. It will only be removed when they agree.',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await ref.read(firestoreServiceProvider)
-                    .requestMemoryDeletion(coupleId, memory.id);
-              },
-              child: const Text('Request', style: TextStyle(color: AppColors.rose)),
-            ),
-          ],
-        ),
-      );
-    } else if (memory.deletionRequestedBy == myUid) {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: AppColors.bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Cancel Request?', style: TextStyle(color: AppColors.textPrimary)),
-          content: const Text(
-            'This will withdraw your deletion request.',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Keep', style: TextStyle(color: AppColors.textMuted)),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await ref.read(firestoreServiceProvider)
-                    .cancelMemoryDeletion(coupleId, memory.id);
-              },
-              child: const Text('Cancel Request', style: TextStyle(color: AppColors.rose)),
-            ),
-          ],
-        ),
-      );
-    } else {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: AppColors.bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Partner Wants to Delete', style: TextStyle(color: AppColors.textPrimary)),
-          content: const Text(
-            'Your partner has requested to delete this memory. Do you agree?',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await ref.read(firestoreServiceProvider)
-                    .cancelMemoryDeletion(coupleId, memory.id);
-              },
-              child: const Text('Reject', style: TextStyle(color: AppColors.textMuted)),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await ref.read(firestoreServiceProvider)
-                    .approveMemoryDeletion(coupleId, memory.id);
-              },
-              child: const Text('Delete It', style: TextStyle(color: AppColors.rose)),
-            ),
-          ],
-        ),
-      );
-    }
+  void _showAddToCollectionSheet(MemoryModel memory, String coupleId) {
+    final collections =
+        ref.read(photoCollectionsProvider).valueOrNull ?? [];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _AddToCollectionSheet(
+        memory: memory,
+        coupleId: coupleId,
+        collections: collections,
+        onAssign: (collectionId) async {
+          await ref
+              .read(firestoreServiceProvider)
+              .assignToCollection(coupleId, memory.id, collectionId);
+        },
+        onCreateNew: (name) async {
+          final col = await ref
+              .read(firestoreServiceProvider)
+              .createCollection(coupleId, name);
+          await ref
+              .read(firestoreServiceProvider)
+              .assignToCollection(coupleId, memory.id, col.id);
+        },
+      ),
+    );
   }
 
   @override
@@ -258,10 +255,15 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                 ),
               ),
               const SizedBox(height: 4),
+              _CollectionsRow(
+                activeCollectionId: _activeCollectionId,
+                onSelect: (id) => setState(() => _activeCollectionId = id),
+              ),
               Expanded(
                 child: _MemoriesTab(
                   onLongPress: _onLongPress,
                   onUpload: _showAddMemorySheet,
+                  activeCollectionId: _activeCollectionId,
                 ),
               ),
             ],
@@ -272,13 +274,404 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   }
 }
 
+// ── Collections Row ───────────────────────────────────────────────────────
+
+class _CollectionsRow extends ConsumerWidget {
+  final String? activeCollectionId;
+  final void Function(String?) onSelect;
+
+  const _CollectionsRow({
+    required this.activeCollectionId,
+    required this.onSelect,
+  });
+
+  // Deterministic color from collection name hash
+  Color _collectionColor(String name) {
+    const palette = [
+      Color(0xFFE57373), Color(0xFF81C784), Color(0xFF64B5F6),
+      Color(0xFFFFB74D), Color(0xFFBA68C8), Color(0xFF4DB6AC),
+      Color(0xFFF06292), Color(0xFFAED581),
+    ];
+    return palette[name.hashCode.abs() % palette.length];
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final collectionsAsync = ref.watch(photoCollectionsProvider);
+    final memoriesAsync = ref.watch(memoriesProvider);
+    final coupleId = ref.watch(coupleIdProvider);
+    final accent = ref.watch(accentColorProvider);
+    final collections = collectionsAsync.valueOrNull ?? [];
+    final memories = memoriesAsync.valueOrNull ?? [];
+
+    // Count memories per collection
+    Map<String, int> counts = {};
+    for (final m in memories) {
+      if (m.collectionId != null) {
+        counts[m.collectionId!] = (counts[m.collectionId!] ?? 0) + 1;
+      }
+    }
+
+    if (collections.isEmpty && activeCollectionId == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+          child: Row(
+            children: [
+              Text('Collections',
+                  style: TextStyle(
+                      color: accent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5)),
+              const Spacer(),
+              if (activeCollectionId != null)
+                GestureDetector(
+                  onTap: () => onSelect(null),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.bgCard,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.divider),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.arrow_back_ios_rounded,
+                            size: 11, color: AppColors.textSecondary),
+                        SizedBox(width: 4),
+                        Text('All',
+                            style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 88,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            children: [
+              ...collections.map((col) {
+                final isActive = activeCollectionId == col.id;
+                final color = _collectionColor(col.name);
+                final count = counts[col.id] ?? 0;
+                return GestureDetector(
+                  onTap: () => onSelect(isActive ? null : col.id),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 90,
+                    margin: const EdgeInsets.only(right: 10, bottom: 4),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? color.withValues(alpha: 0.25)
+                          : AppColors.bgCard,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isActive ? color : AppColors.divider,
+                        width: isActive ? 1.5 : 0.5,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.folder_rounded,
+                            color: color, size: 22),
+                        const Spacer(),
+                        Text(
+                          col.name,
+                          style: TextStyle(
+                            color: isActive
+                                ? color
+                                : AppColors.textPrimary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text('$count',
+                            style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 10)),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              // + New collection card
+              GestureDetector(
+                onTap: coupleId == null
+                    ? null
+                    : () => _showNewCollectionDialog(
+                        context, ref, coupleId, accent),
+                child: Container(
+                  width: 80,
+                  margin: const EdgeInsets.only(right: 10, bottom: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.bgCard,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: AppColors.divider, width: 0.5),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_rounded,
+                          color: accent, size: 22),
+                      const SizedBox(height: 4),
+                      Text('New',
+                          style: TextStyle(
+                              color: accent, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  void _showNewCollectionDialog(
+      BuildContext context, WidgetRef ref, String coupleId, Color accent) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('New Collection',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: AppColors.textPrimary),
+          decoration: const InputDecoration(
+            hintText: 'Collection name…',
+            hintStyle: TextStyle(color: AppColors.textMuted),
+            enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.divider)),
+            focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.rose)),
+          ),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textMuted))),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(ctrl.text.trim()),
+            child: Text('Create',
+                style: TextStyle(
+                    color: accent, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    ).then((name) {
+      ctrl.dispose();
+      if (name != null && (name as String).isNotEmpty) {
+        ref
+            .read(firestoreServiceProvider)
+            .createCollection(coupleId, name)
+            .ignore();
+      }
+    });
+  }
+}
+
+// ── Add to Collection Sheet ───────────────────────────────────────────────
+
+class _AddToCollectionSheet extends ConsumerWidget {
+  final MemoryModel memory;
+  final String coupleId;
+  final List<PhotoCollection> collections;
+  final Future<void> Function(String collectionId) onAssign;
+  final Future<void> Function(String name) onCreateNew;
+
+  const _AddToCollectionSheet({
+    required this.memory,
+    required this.coupleId,
+    required this.collections,
+    required this.onAssign,
+    required this.onCreateNew,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accent = ref.watch(accentColorProvider);
+    return Container(
+      constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6),
+      padding: EdgeInsets.fromLTRB(
+          24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const Text('Add to Collection',
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 16),
+          if (collections.isEmpty)
+            const Text('No collections yet.',
+                style: TextStyle(
+                    color: AppColors.textMuted, fontSize: 13))
+          else
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: collections.length,
+                separatorBuilder: (_, sep) =>
+                    const Divider(color: AppColors.divider, height: 1),
+                itemBuilder: (ctx, i) {
+                  final col = collections[i];
+                  final isCurrent = memory.collectionId == col.id;
+                  return ListTile(
+                    leading: Icon(Icons.folder_rounded,
+                        color: accent),
+                    title: Text(col.name,
+                        style: const TextStyle(
+                            color: AppColors.textPrimary)),
+                    trailing: isCurrent
+                        ? Icon(Icons.check_circle_rounded,
+                            color: accent, size: 18)
+                        : null,
+                    onTap: () {
+                      Navigator.pop(context);
+                      onAssign(col.id);
+                    },
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () {
+              Navigator.pop(context);
+              _showNewCollectionAndAssign(context, ref, accent);
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                border: Border.all(
+                    color: accent.withValues(alpha: 0.5)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add_rounded, color: accent, size: 18),
+                  const SizedBox(width: 8),
+                  Text('New collection',
+                      style: TextStyle(
+                          color: accent,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNewCollectionAndAssign(
+      BuildContext context, WidgetRef ref, Color accent) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: const Text('New Collection',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: AppColors.textPrimary),
+          decoration: const InputDecoration(
+            hintText: 'Collection name…',
+            hintStyle: TextStyle(color: AppColors.textMuted),
+            enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.divider)),
+            focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.rose)),
+          ),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textMuted))),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(ctrl.text.trim()),
+            child: Text('Create',
+                style: TextStyle(
+                    color: accent, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    ).then((name) {
+      ctrl.dispose();
+      if (name != null && (name as String).isNotEmpty) {
+        onCreateNew(name);
+      }
+    });
+  }
+}
+
 // ── Memories Tab — masonry grid ───────────────────────────────────────────
 
 class _MemoriesTab extends ConsumerWidget {
   final void Function(MemoryModel, String, String) onLongPress;
   final VoidCallback onUpload;
+  final String? activeCollectionId;
 
-  const _MemoriesTab({required this.onLongPress, required this.onUpload});
+  const _MemoriesTab({
+    required this.onLongPress,
+    required this.onUpload,
+    this.activeCollectionId,
+  });
+
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -293,8 +686,15 @@ class _MemoriesTab extends ConsumerWidget {
       error: (e, _) => Center(
           child: Text('Error: $e',
               style: const TextStyle(color: AppColors.textSecondary))),
-      data: (memories) {
-        if (memories.isEmpty) {
+      data: (allMemories) {
+        // Filter by active collection if one is selected
+        final memories = activeCollectionId == null
+            ? allMemories
+            : allMemories
+                .where((m) => m.collectionId == activeCollectionId)
+                .toList();
+
+        if (allMemories.isEmpty) {
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -312,6 +712,13 @@ class _MemoriesTab extends ConsumerWidget {
                 ),
               ],
             ),
+          );
+        }
+
+        if (memories.isEmpty) {
+          return const Center(
+            child: Text('No memories in this collection yet.',
+                style: TextStyle(color: AppColors.textSecondary)),
           );
         }
 

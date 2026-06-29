@@ -151,20 +151,53 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.camera, imageQuality: 75);
-    if (picked == null || !mounted) return;
+    // Open native camera directly — on Android the camera app allows switching
+    // to video mode. If the user captures a photo, pickImage returns it.
+    // If they record a video instead, pickImage returns null — fall back to pickVideo.
+    final pickedImage = await picker.pickImage(source: ImageSource.camera, imageQuality: 75);
+    if (!mounted) return;
+    if (pickedImage != null) {
+      setState(() => _sending = true);
+      HapticFeedback.mediumImpact();
+      try {
+        final bytes = await pickedImage.readAsBytes();
+        final url = await CloudinaryService.uploadImage(bytes, folder: 'snaps');
+        await ref.read(firestoreServiceProvider).sendMessage(
+          coupleId,
+          MessageModel(
+            id: const Uuid().v4(),
+            senderId: authUser.uid,
+            content: url,
+            type: MessageType.image,
+            sentAt: DateTime.now(),
+            isSnap: true,
+          ),
+        );
+      } finally {
+        if (mounted) setState(() => _sending = false);
+      }
+      return;
+    }
+    // Fallback: user may have switched to video in native camera
+    final pickedVideo = await picker.pickVideo(
+      source: ImageSource.camera,
+      maxDuration: const Duration(seconds: 30),
+    );
+    if (pickedVideo == null || !mounted) return;
     setState(() => _sending = true);
     HapticFeedback.mediumImpact();
     try {
-      final bytes = await picked.readAsBytes();
-      final url = await CloudinaryService.uploadImage(bytes, folder: 'snaps');
+      final url = await CloudinaryService.uploadVideo(
+        File(pickedVideo.path),
+        folder: 'snaps',
+      );
       await ref.read(firestoreServiceProvider).sendMessage(
         coupleId,
         MessageModel(
           id: const Uuid().v4(),
           senderId: authUser.uid,
           content: url,
-          type: MessageType.image,
+          type: MessageType.video,
           sentAt: DateTime.now(),
           isSnap: true,
         ),
@@ -940,87 +973,6 @@ class _ChatInputState extends State<_ChatInput> {
     return '$m:$s';
   }
 
-  void _showCameraSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
-        decoration: const BoxDecoration(
-          color: AppColors.bgMid,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36, height: 4,
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                  color: AppColors.divider,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                      widget.onSnapPhoto();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      decoration: BoxDecoration(
-                        color: AppColors.bgCard,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Column(
-                        children: [
-                          Text('📷', style: TextStyle(fontSize: 28)),
-                          SizedBox(height: 6),
-                          Text('Photo', style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                      widget.onSnapVideo();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      decoration: BoxDecoration(
-                        color: AppColors.bgCard,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Column(
-                        children: [
-                          Text('🎥', style: TextStyle(fontSize: 28)),
-                          SizedBox(height: 6),
-                          Text('Video', style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final hasText = widget.controller.text.isNotEmpty;
@@ -1114,7 +1066,7 @@ class _ChatInputState extends State<_ChatInput> {
     return Row(
       children: [
         GestureDetector(
-          onTap: () => _showCameraSheet(context),
+          onTap: widget.onSnap,
           child: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(

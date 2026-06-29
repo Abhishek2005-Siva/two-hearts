@@ -1,11 +1,15 @@
+import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
+import '../../core/models/content_block.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../shared/widgets/rich_content_editor.dart';
 
 enum _UnlockMode { tomorrow, nextWeek, openWhen, myBirthday, partnerBirthday, anniversary, custom }
 
@@ -32,7 +36,7 @@ class LetterComposeScreen extends ConsumerStatefulWidget {
 
 class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
   final _title = TextEditingController();
-  final _body = TextEditingController();
+  List<ContentBlock> _blocks = [ContentBlock.newText()];
   _UnlockMode _mode = _UnlockMode.tomorrow;
   DateTime? _customDate;
   TimeOfDay _customTime = const TimeOfDay(hour: 8, minute: 0);
@@ -42,7 +46,6 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
   @override
   void dispose() {
     _title.dispose();
-    _body.dispose();
     super.dispose();
   }
 
@@ -185,8 +188,10 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
 
   Future<void> _send() async {
     final titleText = _title.text.trim();
-    final bodyText = _body.text.trim();
-    if (titleText.isEmpty || bodyText.isEmpty) {
+    final hasContent = _blocks.any((b) =>
+        (b.type == BlockType.text && (b.text ?? '').trim().isNotEmpty) ||
+        b.type != BlockType.text);
+    if (titleText.isEmpty || !hasContent) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Please add a subject and write something ♡'),
         behavior: SnackBarBehavior.floating,
@@ -224,7 +229,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
           authorId: authUser.uid,
           receiverId: partner?.uid,
           title: titleText,
-          body: bodyText,
+          body: jsonEncode(_blocks.map((b) => b.toMap()).toList()),
           unlockType: _modeToLetterType(_mode),
           unlockAt: unlockAt,
           createdAt: DateTime.now(),
@@ -598,17 +603,10 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: AppColors.divider, width: 0.5),
                         ),
-                        child: TextField(
-                          controller: _body,
-                          maxLines: null,
-                          style: const TextStyle(color: AppColors.textPrimary,
-                              fontSize: 16, height: 1.8),
-                          decoration: const InputDecoration(
-                            hintText: 'Dear love,\n\nI wanted to tell you…',
-                            hintStyle: TextStyle(color: AppColors.textMuted, height: 1.8),
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.all(20),
-                          ),
+                        padding: const EdgeInsets.all(12),
+                        child: RichContentEditor(
+                          initialBlocks: _blocks,
+                          onChanged: (blocks) => setState(() => _blocks = blocks),
                         ),
                       ),
                     ],

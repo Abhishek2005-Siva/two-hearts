@@ -1,11 +1,14 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/models/content_block.dart';
 import '../../core/providers/providers.dart';
 import '../../core/firebase/models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../shared/widgets/rich_content_editor.dart';
+import '../../shared/widgets/rich_content_viewer.dart';
 
 // ─── Bookshelf color palette ──────────────────────────────────────────────
 
@@ -26,54 +29,6 @@ Color _bookColor(String id) =>
     _kBookColors[id.hashCode.abs() % _kBookColors.length];
 
 double _bookWidth(String id) => (id.hashCode.abs() % 17) + 36.0; // 36–52
-
-// ─── Page splitting ───────────────────────────────────────────────────────
-
-List<String> _splitIntoPages(String content, {int charsPerPage = 800}) {
-  if (content.isEmpty) return [''];
-  final pages = <String>[];
-  for (int i = 0; i < content.length; i += charsPerPage) {
-    pages.add(content.substring(i, min(i + charsPerPage, content.length)));
-  }
-  return pages;
-}
-
-// ─── Rich text rendering (==highlight== and __underline__) ────────────────
-
-TextSpan _renderRichText(String text, TextStyle base) {
-  final spans = <InlineSpan>[];
-  final pattern = RegExp(r'==(.+?)==|__(.+?)__');
-  int lastEnd = 0;
-  for (final m in pattern.allMatches(text)) {
-    if (m.start > lastEnd) {
-      spans.add(TextSpan(text: text.substring(lastEnd, m.start), style: base));
-    }
-    if (m.group(1) != null) {
-      // highlight
-      spans.add(TextSpan(
-        text: m.group(1),
-        style: base.copyWith(
-          backgroundColor: const Color(0xFFFFE066),
-          color: const Color(0xFF3A2A00),
-        ),
-      ));
-    } else if (m.group(2) != null) {
-      // underline
-      spans.add(TextSpan(
-        text: m.group(2),
-        style: base.copyWith(
-          decoration: TextDecoration.underline,
-          decorationColor: base.color,
-        ),
-      ));
-    }
-    lastEnd = m.end;
-  }
-  if (lastEnd < text.length) {
-    spans.add(TextSpan(text: text.substring(lastEnd), style: base));
-  }
-  return TextSpan(children: spans);
-}
 
 // ─── Main Screen ──────────────────────────────────────────────────────────
 
@@ -665,44 +620,43 @@ class _BookView extends ConsumerStatefulWidget {
 
 class _BookViewState extends ConsumerState<_BookView> {
   late final TextEditingController _titleCtrl;
-  late final TextEditingController _contentCtrl;
-  late PageController _pageCtrl;
 
   bool _editing = false;
   bool _saving = false;
-  int _currentPage = 0;
-  List<String> _pages = [''];
   Timer? _debounce;
+
+  List<ContentBlock> _blocks = [];
+
+  static List<ContentBlock> _parseBlocks(String? raw) {
+    if (raw == null || raw.isEmpty) return [ContentBlock.newText()];
+    if (raw.trimLeft().startsWith('[')) {
+      try {
+        final list = jsonDecode(raw) as List;
+        return list.map((m) => ContentBlock.fromMap(m as Map<String, dynamic>)).toList();
+      } catch (_) {}
+    }
+    return [ContentBlock(id: '0', type: BlockType.text, text: raw, textSize: TextSize.body)];
+  }
 
   @override
   void initState() {
     super.initState();
     _titleCtrl = TextEditingController(text: widget.day.title ?? '');
-    _contentCtrl = TextEditingController(text: widget.day.content);
-    _pages = _splitIntoPages(widget.day.content);
-    _pageCtrl = PageController();
+    _blocks = _parseBlocks(widget.day.sharedEntry);
 
     // New entries start in edit mode
     if (widget.isNew) _editing = true;
-
-    _contentCtrl.addListener(_onContentChanged);
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
     _titleCtrl.dispose();
-    _contentCtrl.dispose();
-    _pageCtrl.dispose();
     super.dispose();
   }
 
-  void _onContentChanged() {
-    // Re-split pages on content change
-    setState(() {
-      _pages = _splitIntoPages(_contentCtrl.text);
-    });
-    // Debounced auto-save
+  void _onBlocksChanged(List<ContentBlock> blocks) {
+    setState(() => _blocks = blocks);
     _debounce?.cancel();
     _debounce = Timer(const Duration(seconds: 3), () {
       if (mounted && _editing) _save(silent: true);
@@ -713,12 +667,13 @@ class _BookViewState extends ConsumerState<_BookView> {
     final coupleId = ref.read(coupleIdProvider);
     if (coupleId == null) return;
 
+    final encoded = jsonEncode(_blocks.map((b) => b.toMap()).toList());
     if (!silent) setState(() => _saving = true);
     try {
       await ref.read(firestoreServiceProvider).saveJournalEntry(
             coupleId,
             widget.day.id,
-            _contentCtrl.text,
+            encoded,
             title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
           );
       if (mounted && !silent) {
@@ -737,33 +692,12 @@ class _BookViewState extends ConsumerState<_BookView> {
     }
   }
 
-  void _applyMarkup(String open, String close) {
-    final sel = _contentCtrl.selection;
-    if (!sel.isValid || sel.isCollapsed) return;
-    final text = _contentCtrl.text;
-    final selected = text.substring(sel.start, sel.end);
-    final newText =
-        text.replaceRange(sel.start, sel.end, '$open$selected$close');
-    _contentCtrl.value = _contentCtrl.value.copyWith(
-      text: newText,
-      selection: TextSelection.collapsed(
-          offset: sel.start + open.length + selected.length + close.length),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final color = _bookColor(widget.day.id);
     final dateStr = widget.day.id.length >= 10
         ? widget.day.id.substring(0, 10)
         : widget.day.id;
-    final totalPages = _pages.isEmpty ? 1 : _pages.length;
-
-    final baseStyle = GoogleFonts.lora(
-      fontSize: 16,
-      color: const Color(0xFF2C1A0A),
-      height: 1.75,
-    );
 
     return Scaffold(
       backgroundColor: const Color(0xFF1A1208),
@@ -818,62 +752,21 @@ class _BookViewState extends ConsumerState<_BookView> {
       ),
       body: Column(
         children: [
-          // Page counter
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              'Page ${_currentPage + 1} of $totalPages',
-              style: GoogleFonts.lato(
-                color: const Color(0xFFF5DEB3).withValues(alpha: 0.45),
-                fontSize: 11,
-              ),
-            ),
-          ),
           // Main page area
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  // Left arrow
-                  _PageArrow(
-                    icon: Icons.chevron_left,
-                    enabled: _currentPage > 0,
-                    onTap: () {
-                      _pageCtrl.previousPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut);
-                    },
-                  ),
-                  // Page widget
-                  Expanded(
-                    child: _editing
-                        ? _EditablePage(
-                            controller: _contentCtrl,
-                            baseStyle: baseStyle,
-                          )
-                        : PageView.builder(
-                            controller: _pageCtrl,
-                            itemCount: totalPages,
-                            onPageChanged: (i) =>
-                                setState(() => _currentPage = i),
-                            itemBuilder: (_, i) => _ReadPage(
-                              text: _pages[i],
-                              baseStyle: baseStyle,
-                            ),
-                          ),
-                  ),
-                  // Right arrow
-                  _PageArrow(
-                    icon: Icons.chevron_right,
-                    enabled: _currentPage < totalPages - 1,
-                    onTap: () {
-                      _pageCtrl.nextPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut);
-                    },
-                  ),
-                ],
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: CustomPaint(
+                painter: _PagePainter(),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(52, 16, 16, 16),
+                  child: _editing
+                      ? RichContentEditor(
+                          initialBlocks: _blocks,
+                          onChanged: _onBlocksChanged,
+                        )
+                      : RichContentViewer(blocks: _blocks),
+                ),
               ),
             ),
           ),
@@ -883,102 +776,9 @@ class _BookViewState extends ConsumerState<_BookView> {
             onEdit: () {
               setState(() => _editing = true);
             },
-            onHighlight: () => _applyMarkup('==', '=='),
-            onUnderline: () => _applyMarkup('__', '__'),
           ),
           const SizedBox(height: 12),
         ],
-      ),
-    );
-  }
-}
-
-// ─── Read-only page ───────────────────────────────────────────────────────
-
-class _ReadPage extends StatelessWidget {
-  final String text;
-  final TextStyle baseStyle;
-  const _ReadPage({required this.text, required this.baseStyle});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _PagePainter(),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(52, 16, 16, 16),
-        child: text.isEmpty
-            ? Text(
-                'Empty page...',
-                style: baseStyle.copyWith(
-                  color: const Color(0xFF9B7B5A).withValues(alpha: 0.5),
-                  fontStyle: FontStyle.italic,
-                ),
-              )
-            : RichText(
-                text: _renderRichText(text, baseStyle),
-              ),
-      ),
-    );
-  }
-}
-
-// ─── Editable page ────────────────────────────────────────────────────────
-
-class _EditablePage extends StatelessWidget {
-  final TextEditingController controller;
-  final TextStyle baseStyle;
-  const _EditablePage(
-      {required this.controller, required this.baseStyle});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _PagePainter(),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(52, 16, 16, 16),
-        child: TextField(
-          controller: controller,
-          maxLines: null,
-          expands: true,
-          style: baseStyle,
-          cursorColor: const Color(0xFF8B5E2A),
-          decoration: const InputDecoration(
-            border: InputBorder.none,
-            hintText: 'Write your story here...',
-            hintStyle: TextStyle(
-              color: Color(0xFF9B7B5A),
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          textAlignVertical: TextAlignVertical.top,
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Page arrow button ────────────────────────────────────────────────────
-
-class _PageArrow extends StatelessWidget {
-  final IconData icon;
-  final bool enabled;
-  final VoidCallback onTap;
-  const _PageArrow(
-      {required this.icon, required this.enabled, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: SizedBox(
-        width: 32,
-        child: Icon(
-          icon,
-          color: enabled
-              ? const Color(0xFFF5DEB3).withValues(alpha: 0.8)
-              : const Color(0xFFF5DEB3).withValues(alpha: 0.15),
-          size: 28,
-        ),
       ),
     );
   }
@@ -989,14 +789,10 @@ class _PageArrow extends StatelessWidget {
 class _BookToolbar extends StatelessWidget {
   final bool editing;
   final VoidCallback onEdit;
-  final VoidCallback onHighlight;
-  final VoidCallback onUnderline;
 
   const _BookToolbar({
     required this.editing,
     required this.onEdit,
-    required this.onHighlight,
-    required this.onUnderline,
   });
 
   @override
@@ -1019,17 +815,6 @@ class _BookToolbar extends StatelessWidget {
               label: 'Edit',
               onTap: onEdit,
             ),
-          _ToolbarBtn(
-            icon: Icons.highlight,
-            label: 'Highlight',
-            onTap: editing ? onHighlight : null,
-            color: const Color(0xFFFFE066),
-          ),
-          _ToolbarBtn(
-            icon: Icons.format_underline,
-            label: 'Underline',
-            onTap: editing ? onUnderline : null,
-          ),
         ],
       ),
     );
@@ -1040,21 +825,18 @@ class _ToolbarBtn extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
-  final Color? color;
 
   const _ToolbarBtn(
       {required this.icon,
       required this.label,
-      this.onTap,
-      this.color});
+      this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final active = onTap != null;
-    final col = color ??
-        (active
-            ? const Color(0xFFF5DEB3)
-            : const Color(0xFFF5DEB3).withValues(alpha: 0.3));
+    final col = active
+        ? const Color(0xFFF5DEB3)
+        : const Color(0xFFF5DEB3).withValues(alpha: 0.3);
     return GestureDetector(
       onTap: onTap,
       child: Column(

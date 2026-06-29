@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/firebase/models.dart';
+import '../../core/models/content_block.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../shared/widgets/rich_content_viewer.dart';
 
 class TogetherScreen extends ConsumerWidget {
   const TogetherScreen({super.key});
@@ -77,14 +81,6 @@ class TogetherScreen extends ConsumerWidget {
                       accent: accent,
                       onTap: () => context.push('/together/bucket'),
                     ).animate().fadeIn(delay: 160.ms).slideX(begin: -0.05),
-                    const SizedBox(height: 14),
-                    _TogetherTile(
-                      emoji: '📸',
-                      title: 'Photo Booth',
-                      subtitle: 'Event albums — your moments, organised',
-                      accent: accent,
-                      onTap: () => context.push('/photo_booth'),
-                    ).animate().fadeIn(delay: 240.ms).slideX(begin: -0.05),
                     const SizedBox(height: 14),
                     _TogetherTile(
                       emoji: '🎮',
@@ -326,9 +322,7 @@ class _LetterTile extends StatelessWidget {
                   fontSize: 22,
                   fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
-              Text(letter.body,
-                  style: const TextStyle(
-                      fontSize: 16, height: 1.75, color: AppColors.textPrimary)),
+              _LetterBody(body: letter.body),
               const SizedBox(height: 24),
               GradientButton(
                 label: 'Close ♡',
@@ -339,6 +333,37 @@ class _LetterTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Shared bottom sheet wrapper ───────────────────────────────────────────
+
+// ── Letter body renderer ──────────────────────────────────────────────────
+
+class _LetterBody extends StatelessWidget {
+  final String body;
+  const _LetterBody({required this.body});
+
+  List<ContentBlock> _parseBlocks(String raw) {
+    if (raw.trimLeft().startsWith('[')) {
+      try {
+        final list = jsonDecode(raw) as List;
+        return list.map((m) => ContentBlock.fromMap(m as Map<String, dynamic>)).toList();
+      } catch (_) {}
+    }
+    return [ContentBlock(id: '0', type: BlockType.text, text: raw, textSize: TextSize.body)];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final blocks = _parseBlocks(body);
+    if (blocks.length == 1 && blocks.first.type == BlockType.text) {
+      return Text(
+        blocks.first.text ?? '',
+        style: const TextStyle(fontSize: 16, height: 1.75, color: AppColors.textPrimary),
+      );
+    }
+    return RichContentViewer(blocks: blocks);
   }
 }
 
