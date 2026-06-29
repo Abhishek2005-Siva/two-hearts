@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
 import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -896,7 +896,8 @@ class _ChatInput extends StatefulWidget {
 }
 
 class _ChatInputState extends State<_ChatInput> {
-  final _recorder = AudioRecorder();
+  final _recorder = FlutterSoundRecorder();
+  bool _recorderReady = false;
   bool _isRecording = false;
   bool _isCancelling = false;
   bool _isUploading = false;
@@ -906,21 +907,23 @@ class _ChatInputState extends State<_ChatInput> {
   double _dragOffsetX = 0;
 
   @override
+  void initState() {
+    super.initState();
+    _recorder.openRecorder().then((_) => _recorderReady = true);
+  }
+
+  @override
   void dispose() {
     _recordTimer?.cancel();
-    _recorder.dispose();
+    _recorder.closeRecorder();
     super.dispose();
   }
 
   Future<void> _startRecording() async {
-    final hasPermission = await _recorder.hasPermission();
-    if (!hasPermission) return;
+    if (!_recorderReady) return;
     final dir = await getTemporaryDirectory();
-    _recordPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc),
-      path: _recordPath!,
-    );
+    _recordPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.aac';
+    await _recorder.startRecorder(toFile: _recordPath, codec: Codec.aacADTS);
     HapticFeedback.mediumImpact();
     setState(() {
       _isRecording = true;
@@ -935,7 +938,8 @@ class _ChatInputState extends State<_ChatInput> {
 
   Future<void> _stopAndSend() async {
     _recordTimer?.cancel();
-    final path = await _recorder.stop();
+    await _recorder.stopRecorder();
+    final path = _recordPath;
     final durationSecs = _recordDuration.inSeconds;
     setState(() {
       _isRecording = false;
@@ -957,7 +961,7 @@ class _ChatInputState extends State<_ChatInput> {
 
   Future<void> _cancelRecording() async {
     _recordTimer?.cancel();
-    await _recorder.cancel();
+    await _recorder.stopRecorder();
     HapticFeedback.lightImpact();
     setState(() {
       _isRecording = false;

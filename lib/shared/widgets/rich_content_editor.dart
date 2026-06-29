@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:record/record.dart';
+import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 
@@ -840,7 +840,7 @@ class _VoiceRecorderSheet extends StatefulWidget {
 }
 
 class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
-  final _recorder = AudioRecorder();
+  final _recorder = FlutterSoundRecorder();
 
   int _elapsed = 0;
   Timer? _timer;
@@ -849,32 +849,21 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
   @override
   void initState() {
     super.initState();
-    _startRecording();
+    _recorder.openRecorder().then((_) => _startRecording());
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _recorder.dispose();
+    _recorder.closeRecorder();
     super.dispose();
   }
 
   Future<void> _startRecording() async {
     final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final path = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.aac';
     _filePath = path;
-
-    final hasPermission = await _recorder.hasPermission();
-    if (!hasPermission) {
-      if (mounted) Navigator.pop(context);
-      return;
-    }
-
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc),
-      path: path,
-    );
-
+    await _recorder.startRecorder(toFile: path, codec: Codec.aacADTS);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _elapsed++);
     });
@@ -882,8 +871,7 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
 
   Future<void> _stopRecording() async {
     _timer?.cancel();
-    await _recorder.stop();
-
+    await _recorder.stopRecorder();
     if (_filePath != null && mounted) {
       widget.onComplete(_filePath!, _elapsed);
       Navigator.pop(context);
@@ -892,7 +880,7 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
 
   void _cancel() async {
     _timer?.cancel();
-    await _recorder.stop();
+    await _recorder.stopRecorder();
     if (mounted) Navigator.pop(context);
   }
 
