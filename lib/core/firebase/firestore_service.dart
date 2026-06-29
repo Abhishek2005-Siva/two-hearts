@@ -94,6 +94,14 @@ class FirestoreService {
   Future<void> updateCoupleTheme(String coupleId, int colorValue) =>
       _db.collection('couples').doc(coupleId).update({'themeColor': colorValue});
 
+  Future<void> setChatBackground(String coupleId, String backgroundName,
+          {String? customUrl}) =>
+      _db.collection('couples').doc(coupleId).update({
+        'chatBackground': backgroundName,
+        if (customUrl != null) 'chatBackgroundUrl': customUrl,
+        if (customUrl == null) 'chatBackgroundUrl': FieldValue.delete(),
+      });
+
   // ── Presence ──────────────────────────────────────────────────────────────
 
   Future<void> setPresence(String coupleId) => _db

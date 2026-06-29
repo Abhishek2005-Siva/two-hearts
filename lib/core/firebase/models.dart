@@ -90,6 +90,8 @@ class CoupleModel {
   final DateTime? anniversary;
   final DateTime createdAt;
   final String? inviteCode;
+  final String? chatBackground;
+  final String? chatBackgroundUrl;
 
   const CoupleModel({
     required this.id,
@@ -98,6 +100,8 @@ class CoupleModel {
     this.anniversary,
     required this.createdAt,
     this.inviteCode,
+    this.chatBackground,
+    this.chatBackgroundUrl,
   });
 
   factory CoupleModel.fromDoc(DocumentSnapshot doc) {
@@ -109,6 +113,8 @@ class CoupleModel {
       anniversary: (d['anniversary'] as Timestamp?)?.toDate(),
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       inviteCode: d['inviteCode'],
+      chatBackground: d['chatBackground'] as String?,
+      chatBackgroundUrl: d['chatBackgroundUrl'] as String?,
     );
   }
 
@@ -118,6 +124,8 @@ class CoupleModel {
         'anniversary': anniversary != null ? Timestamp.fromDate(anniversary!) : null,
         'createdAt': Timestamp.fromDate(createdAt),
         'inviteCode': inviteCode,
+        if (chatBackground != null) 'chatBackground': chatBackground,
+        if (chatBackgroundUrl != null) 'chatBackgroundUrl': chatBackgroundUrl,
       };
 
   String partnerUid(String myUid) =>

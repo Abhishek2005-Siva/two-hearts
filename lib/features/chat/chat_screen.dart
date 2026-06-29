@@ -14,7 +14,6 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -55,37 +54,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _whisperMode = false;
   bool _videoSnapMode = false;
   final _scheduledDeletes = <String>{};
-  ChatBackground _background = ChatBackground.dark;
-  String? _customBgPath;
   MessageModel? _replyingTo;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onTextChanged);
-    _loadBackground();
     WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
-  }
-
-  Future<void> _loadBackground() async {
-    final prefs = await SharedPreferences.getInstance();
-    final idx = prefs.getInt('chat_bg_index') ?? 0;
-    final customPath = prefs.getString('chat_bg_custom_path');
-    if (!mounted) return;
-    setState(() {
-      _background = ChatBackground.values[idx.clamp(0, ChatBackground.values.length - 1)];
-      _customBgPath = customPath;
-    });
-  }
-
-  Future<void> _saveBackground() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('chat_bg_index', _background.index);
-    if (_customBgPath != null) {
-      await prefs.setString('chat_bg_custom_path', _customBgPath!);
-    } else {
-      await prefs.remove('chat_bg_custom_path');
-    }
   }
 
   void _onTextChanged() {
@@ -242,16 +217,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
-  BoxDecoration _backgroundDecoration() {
-    if (_customBgPath != null) {
-      return BoxDecoration(
-        image: DecorationImage(
-          image: FileImage(File(_customBgPath!)),
-          fit: BoxFit.cover,
-        ),
-      );
+  BoxDecoration _backgroundDecoration(ChatBackground background, String? customBgUrl) {
+    if (customBgUrl != null) {
+      // Custom network image — rendered via CachedNetworkImage in a Stack instead;
+      // return transparent here and let build() handle the network layer.
+      return const BoxDecoration();
     }
-    final asset = _chatBgAssets[_background];
+    final asset = _chatBgAssets[background];
     if (asset != null) {
       return BoxDecoration(
         image: DecorationImage(
@@ -271,29 +243,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _pickGalleryBackground() async {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null || !mounted) return;
-    setState(() {
-      _customBgPath = picked.path;
-      _background = ChatBackground.dark; // reset preset selection
-    });
-    _saveBackground();
+    final bytes = await picked.readAsBytes();
+    final url = await CloudinaryService.uploadImage(bytes, folder: 'chat_bg');
+    if (!mounted) return;
+    await ref.read(firestoreServiceProvider).setChatBackground(
+      coupleId,
+      ChatBackground.dark.name,
+      customUrl: url,
+    );
   }
 
-  void _showBackgroundPicker(BuildContext context) {
+  void _showBackgroundPicker(BuildContext context, ChatBackground current, String? customBgUrl) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _BackgroundPickerSheet(
-        current: _background,
-        customBgPath: _customBgPath,
+        current: current,
+        customBgUrl: customBgUrl,
         onSelect: (bg) {
-          setState(() {
-            _background = bg;
-            _customBgPath = null;
-          });
-          _saveBackground();
+          final coupleId = ref.read(coupleIdProvider);
+          if (coupleId != null) {
+            ref.read(firestoreServiceProvider)
+                .setChatBackground(coupleId, bg.name)
+                .ignore();
+          }
           Navigator.pop(context);
         },
         onGalleryPick: () {
@@ -330,6 +308,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final partnerOnline = ref.watch(partnerOnlineProvider).valueOrNull ?? false;
     final uid = authUser.uid;
     final coupleId = ref.watch(coupleIdProvider);
+    final couple = ref.watch(coupleProvider).valueOrNull;
+    final backgroundName = couple?.chatBackground ?? ChatBackground.dark.name;
+    final customBgUrl = couple?.chatBackgroundUrl;
+    final background = ChatBackground.values.firstWhere(
+      (b) => b.name == backgroundName,
+      orElse: () => ChatBackground.dark,
+    );
 
     ref.listen(messagesProvider, (_, next) {
       if (next.valueOrNull != null) _markRead();
@@ -343,8 +328,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
 
     return Scaffold(
-      body: Container(
-        decoration: _backgroundDecoration(),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (customBgUrl != null)
+            CachedNetworkImage(
+              imageUrl: customBgUrl,
+              fit: BoxFit.cover,
+              placeholder: (_, _) => Container(color: Colors.black),
+              errorWidget: (_, _, _) => Container(color: Colors.black),
+            ),
+          Container(
+        decoration: _backgroundDecoration(background, customBgUrl),
         child: Column(
           children: [
             _ChatAppBar(
@@ -352,7 +347,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               accent: accent,
               isTyping: isTyping,
               partnerOnline: partnerOnline,
-              onBackgroundTap: () => _showBackgroundPicker(context),
+              onBackgroundTap: () => _showBackgroundPicker(context, background, customBgUrl),
             ),
             Expanded(
               child: messagesAsync.when(
@@ -430,7 +425,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             msg: msg,
                             isMe: msg.senderId == uid,
                             accent: accent,
-                            hasWallpaper: _background != ChatBackground.dark,
+                            hasWallpaper: background != ChatBackground.dark || customBgUrl != null,
                             onReact: (emoji) {
                               HapticFeedback.selectionClick();
                               if (coupleId == null) return;
@@ -533,6 +528,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }
@@ -646,13 +643,13 @@ class _ChatAppBar extends StatelessWidget {
 
 class _BackgroundPickerSheet extends StatelessWidget {
   final ChatBackground current;
-  final String? customBgPath;
+  final String? customBgUrl;
   final void Function(ChatBackground) onSelect;
   final VoidCallback onGalleryPick;
 
   const _BackgroundPickerSheet({
     required this.current,
-    required this.customBgPath,
+    required this.customBgUrl,
     required this.onSelect,
     required this.onGalleryPick,
   });
@@ -710,7 +707,7 @@ class _BackgroundPickerSheet extends StatelessWidget {
               itemBuilder: (_, i) {
                 // Last tile = Gallery picker
                 if (i == _imageOptions.length + 1) {
-                  final isSelected = customBgPath != null;
+                  final isSelected = customBgUrl != null;
                   return GestureDetector(
                     onTap: onGalleryPick,
                     child: Stack(
@@ -718,8 +715,8 @@ class _BackgroundPickerSheet extends StatelessWidget {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: customBgPath != null
-                              ? Image.file(File(customBgPath!), fit: BoxFit.cover)
+                          child: customBgUrl != null
+                              ? CachedNetworkImage(imageUrl: customBgUrl!, fit: BoxFit.cover)
                               : Container(
                                   color: AppColors.bgCardLight,
                                   child: const Column(
@@ -766,7 +763,7 @@ class _BackgroundPickerSheet extends StatelessWidget {
                 }
 
                 final bg = i == 0 ? ChatBackground.dark : _imageOptions[i - 1];
-                final isSelected = customBgPath == null && current == bg;
+                final isSelected = customBgUrl == null && current == bg;
                 final asset = _chatBgAssets[bg];
                 return GestureDetector(
                   onTap: () => onSelect(bg),

@@ -7,8 +7,8 @@ import '../../core/models/content_block.dart';
 import '../../core/providers/providers.dart';
 import '../../core/firebase/models.dart';
 import '../../core/theme/app_theme.dart';
-import '../../shared/widgets/rich_content_editor.dart';
-import '../../shared/widgets/rich_content_viewer.dart';
+import '../../shared/widgets/rich_content_editor.dart' show RichContentEditor;
+import '../../shared/widgets/rich_content_viewer.dart' show RichContentViewer;
 
 // ─── Bookshelf color palette ──────────────────────────────────────────────
 
@@ -756,16 +756,24 @@ class _BookViewState extends ConsumerState<_BookView> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: CustomPaint(
-                painter: _PagePainter(),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(52, 16, 16, 16),
-                  child: _editing
-                      ? RichContentEditor(
-                          initialBlocks: _blocks,
-                          onChanged: _onBlocksChanged,
-                        )
-                      : RichContentViewer(blocks: _blocks),
+              child: LayoutBuilder(
+                builder: (context, constraints) => CustomPaint(
+                  painter: _PagePainter(),
+                  child: SizedBox(
+                    width: constraints.maxWidth,
+                    height: constraints.maxHeight,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(52, 16, 16, 16),
+                      child: _editing
+                          ? _PaperThemedEditor(
+                              initialBlocks: _blocks,
+                              onChanged: _onBlocksChanged,
+                            )
+                          : _PaperThemedViewer(
+                              blocks: _blocks,
+                            ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -852,6 +860,66 @@ class _ToolbarBtn extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Paper-themed wrappers (dark ink on aged paper) ───────────────────────
+
+/// Wraps [RichContentEditor] with a dark-ink theme so text is legible on the
+/// cream/aged-paper page background.
+class _PaperThemedEditor extends StatelessWidget {
+  final List<ContentBlock> initialBlocks;
+  final ValueChanged<List<ContentBlock>> onChanged;
+
+  const _PaperThemedEditor({
+    required this.initialBlocks,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(
+        textTheme: Theme.of(context).textTheme.apply(
+              bodyColor: const Color(0xFF2A1A0A),
+              displayColor: const Color(0xFF2A1A0A),
+            ),
+        inputDecorationTheme: const InputDecorationTheme(
+          border: InputBorder.none,
+        ),
+      ),
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(color: Color(0xFF2A1A0A)),
+        child: RichContentEditor(
+          initialBlocks: initialBlocks,
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+/// Wraps [RichContentViewer] with a dark-ink theme so text is legible on the
+/// cream/aged-paper page background.
+class _PaperThemedViewer extends StatelessWidget {
+  final List<ContentBlock> blocks;
+
+  const _PaperThemedViewer({required this.blocks});
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(
+        textTheme: Theme.of(context).textTheme.apply(
+              bodyColor: const Color(0xFF2A1A0A),
+              displayColor: const Color(0xFF2A1A0A),
+            ),
+      ),
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(color: Color(0xFF2A1A0A)),
+        child: RichContentViewer(blocks: blocks),
       ),
     );
   }
