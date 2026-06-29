@@ -46,3 +46,4 @@ app.*.map.json
 
 # Firebase — never commit credentials
 android/app/google-services.json
+assets/config/service_account.json

@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'fcm_service.dart';
 import 'models.dart';
 import '../../features/avatar/avatar_model.dart';
 
@@ -133,12 +134,48 @@ class FirestoreService {
       watchMessages(coupleId).map(
           (msgs) => msgs.where((m) => m.type == MessageType.image).toList());
 
-  Future<void> sendMessage(String coupleId, MessageModel msg) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('messages')
-      .doc(msg.id)
-      .set(msg.toMap());
+  // ── FCM helpers ───────────────────────────────────────────────────────────
+
+  Future<String?> _partnerToken(String coupleId) async {
+    final couple = await _db.collection('couples').doc(coupleId).get();
+    if (!couple.exists) return null;
+    final members = List<String>.from(couple.data()?['members'] ?? []);
+    final partnerUid = members.firstWhere((id) => id != _uid, orElse: () => '');
+    if (partnerUid.isEmpty) return null;
+    final userDoc = await _db.collection('users').doc(partnerUid).get();
+    return userDoc.data()?['fcmToken'] as String?;
+  }
+
+  Future<String> _myFirstName() async {
+    final doc = await _db.collection('users').doc(_uid).get();
+    final full = (doc.data()?['displayName'] as String?) ?? 'Your partner';
+    return full.split(' ').first;
+  }
+
+  // ── Messages ──────────────────────────────────────────────────────────────
+
+  Future<void> sendMessage(String coupleId, MessageModel msg) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('messages')
+        .doc(msg.id)
+        .set(msg.toMap());
+    if (msg.isSnap) return; // snaps are ephemeral, skip notification
+    final token = await _partnerToken(coupleId);
+    final name = await _myFirstName();
+    final body = switch (msg.type) {
+      MessageType.image => '$name sent a photo 📷',
+      MessageType.video => '$name sent a video 🎥',
+      _ => msg.content.isNotEmpty ? msg.content : '$name sent a message',
+    };
+    await FcmService.send(
+      recipientToken: token,
+      title: name,
+      body: body,
+      data: {'type': 'message', 'coupleId': coupleId, 'route': '/chat'},
+    );
+  }
 
   Future<void> markMessageRead(String coupleId, String msgId) => _db
       .collection('couples')
@@ -179,12 +216,24 @@ class FirestoreService {
 
   // ── Mood ──────────────────────────────────────────────────────────────────
 
-  Future<void> setMood(String coupleId, MoodType mood) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('moods')
-      .doc(_uid)
-      .set(MoodEntry(uid: _uid, mood: mood, updatedAt: DateTime.now()).toMap());
+  Future<void> setMood(String coupleId, MoodType mood) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('moods')
+        .doc(_uid)
+        .set(MoodEntry(uid: _uid, mood: mood, updatedAt: DateTime.now()).toMap());
+    final token = await _partnerToken(coupleId);
+    final name = await _myFirstName();
+    final emoji = mood.emoji;
+    final moodName = mood.name;
+    await FcmService.send(
+      recipientToken: token,
+      title: '$name is feeling $moodName $emoji',
+      body: 'Check in on them ♡',
+      data: {'type': 'mood', 'coupleId': coupleId, 'route': '/room'},
+    );
+  }
 
   Stream<List<MoodEntry>> watchMoods(String coupleId) => _db
       .collection('couples')
@@ -196,18 +245,25 @@ class FirestoreService {
   // ── Thinking Of You ───────────────────────────────────────────────────────
 
   Future<void> sendThinkingOfYou(String coupleId,
-          {String? message, String? toUid}) =>
-      _db
-          .collection('couples')
-          .doc(coupleId)
-          .collection('signals')
-          .add({
-            'type': 'thinkingOfYou',
-            'fromUid': _uid,
-            if (toUid != null) 'toUid': toUid,
-            if (message != null) 'message': message,
-            'sentAt': FieldValue.serverTimestamp(),
-          });
+      {String? message, String? toUid}) async {
+    await _db.collection('couples').doc(coupleId).collection('signals').add({
+      'type': 'thinkingOfYou',
+      'fromUid': _uid,
+      if (toUid != null) 'toUid': toUid,
+      if (message != null) 'message': message,
+      'sentAt': FieldValue.serverTimestamp(),
+    });
+    final token = toUid != null
+        ? ((await _db.collection('users').doc(toUid).get()).data()?['fcmToken'] as String?)
+        : await _partnerToken(coupleId);
+    final name = await _myFirstName();
+    await FcmService.send(
+      recipientToken: token,
+      title: '♡ $name is thinking of you',
+      body: message ?? 'A little love from your person ♡',
+      data: {'type': 'signal', 'coupleId': coupleId, 'route': '/room'},
+    );
+  }
 
   Stream<QuerySnapshot> watchSignals(String coupleId) => _db
       .collection('couples')
@@ -224,13 +280,28 @@ class FirestoreService {
       .doc(signalId)
       .delete();
 
-  Future<void> sendSignal(String coupleId, String type, {String? message}) => _db
-      .collection('couples').doc(coupleId).collection('signals').add({
-        'type': type,
-        'fromUid': _uid,
-        if (message != null) 'message': message,
-        'sentAt': FieldValue.serverTimestamp(),
-      });
+  Future<void> sendSignal(String coupleId, String type, {String? message}) async {
+    await _db.collection('couples').doc(coupleId).collection('signals').add({
+      'type': type,
+      'fromUid': _uid,
+      if (message != null) 'message': message,
+      'sentAt': FieldValue.serverTimestamp(),
+    });
+    final token = await _partnerToken(coupleId);
+    final name = await _myFirstName();
+    final (title, body) = switch (type) {
+      'goodMorning' => ('☀️ Good morning from $name', 'They wished you a beautiful morning ♡'),
+      'goodNight'   => ('🌙 Good night from $name', 'Sweet dreams — they\'re thinking of you ♡'),
+      'gratitude'   => ('🙏 $name is grateful for you', 'They wanted you to know ♡'),
+      _             => ('♡ $name is thinking of you', message ?? 'A little love from your person ♡'),
+    };
+    await FcmService.send(
+      recipientToken: token,
+      title: title,
+      body: body,
+      data: {'type': 'signal', 'signalType': type, 'coupleId': coupleId, 'route': '/room'},
+    );
+  }
 
   // ── Letters ───────────────────────────────────────────────────────────────
 
