@@ -10,6 +10,8 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:uuid/uuid.dart';
+import 'package:video_player/video_player.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -48,6 +50,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _sending = false;
   bool _isTyping = false;
   bool _whisperMode = false;
+  bool _videoSnapMode = false;
   final _scheduledDeletes = <String>{};
   ChatBackground _background = ChatBackground.dark;
   String? _customBgPath;
@@ -56,7 +59,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void initState() {
     super.initState();
     _controller.addListener(_onTextChanged);
+    _loadBackground();
     WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
+  }
+
+  Future<void> _loadBackground() async {
+    final prefs = await SharedPreferences.getInstance();
+    final idx = prefs.getInt('chat_bg_index') ?? 0;
+    final customPath = prefs.getString('chat_bg_custom_path');
+    if (!mounted) return;
+    setState(() {
+      _background = ChatBackground.values[idx.clamp(0, ChatBackground.values.length - 1)];
+      _customBgPath = customPath;
+    });
+  }
+
+  Future<void> _saveBackground() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('chat_bg_index', _background.index);
+    if (_customBgPath != null) {
+      await prefs.setString('chat_bg_custom_path', _customBgPath!);
+    } else {
+      await prefs.remove('chat_bg_custom_path');
+    }
   }
 
   void _onTextChanged() {
@@ -140,6 +165,39 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  Future<void> _sendVideoSnap() async {
+    final coupleId = ref.read(coupleIdProvider);
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (coupleId == null || authUser == null) return;
+    final picker = ImagePicker();
+    final picked = await picker.pickVideo(
+      source: ImageSource.camera,
+      maxDuration: const Duration(seconds: 30),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _sending = true);
+    HapticFeedback.mediumImpact();
+    try {
+      final url = await CloudinaryService.uploadVideo(
+        File(picked.path),
+        folder: 'snaps',
+      );
+      await ref.read(firestoreServiceProvider).sendMessage(
+        coupleId,
+        MessageModel(
+          id: const Uuid().v4(),
+          senderId: authUser.uid,
+          content: url,
+          type: MessageType.video,
+          sentAt: DateTime.now(),
+          isSnap: true,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   void _scheduleWhisperDelete(String msgId, String coupleId) {
     if (_scheduledDeletes.contains(msgId)) return;
     _scheduledDeletes.add(msgId);
@@ -184,6 +242,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _customBgPath = picked.path;
       _background = ChatBackground.dark; // reset preset selection
     });
+    _saveBackground();
   }
 
   void _showBackgroundPicker(BuildContext context) {
@@ -198,6 +257,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             _background = bg;
             _customBgPath = null;
           });
+          _saveBackground();
           Navigator.pop(context);
         },
         onGalleryPick: () {
@@ -389,11 +449,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               controller: _controller,
               sending: _sending,
               whisperMode: _whisperMode,
+              videoSnapMode: _videoSnapMode,
               accent: accent,
               onSend: _send,
-              onSnap: _sendSnap,
+              onSnap: _videoSnapMode ? _sendVideoSnap : _sendSnap,
               onToggleWhisper: () =>
                   setState(() => _whisperMode = !_whisperMode),
+              onToggleVideoSnap: () =>
+                  setState(() => _videoSnapMode = !_videoSnapMode),
             ),
           ],
         ),
@@ -700,19 +763,23 @@ class _ChatInput extends StatelessWidget {
   final TextEditingController controller;
   final bool sending;
   final bool whisperMode;
+  final bool videoSnapMode;
   final Color accent;
   final VoidCallback onSend;
   final VoidCallback onSnap;
   final VoidCallback onToggleWhisper;
+  final VoidCallback onToggleVideoSnap;
 
   const _ChatInput({
     required this.controller,
     required this.sending,
     required this.whisperMode,
+    required this.videoSnapMode,
     required this.accent,
     required this.onSend,
     required this.onSnap,
     required this.onToggleWhisper,
+    required this.onToggleVideoSnap,
   });
 
   @override
@@ -735,15 +802,44 @@ class _ChatInput extends StatelessWidget {
         ),
         child: Row(
           children: [
-            GestureDetector(
-              onTap: onSnap,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                    color: AppColors.bgCard,
-                    borderRadius: BorderRadius.circular(12)),
-                child: const Text('📷', style: TextStyle(fontSize: 18)),
-              ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: onSnap,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                        color: AppColors.bgCard,
+                        borderRadius: BorderRadius.circular(12)),
+                    child: Text(
+                      videoSnapMode ? '🎥' : '📷',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                GestureDetector(
+                  onTap: onToggleVideoSnap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: videoSnapMode
+                          ? AppColors.rose.withValues(alpha: 0.2)
+                          : AppColors.bgCard,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      videoSnapMode ? 'Video' : 'Photo',
+                      style: TextStyle(
+                        color: videoSnapMode ? AppColors.rose : AppColors.textMuted,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -1032,6 +1128,8 @@ class _MessageBubble extends StatelessWidget {
     // Expired snaps show nothing — just a subtle label
     if (isExpired) return const SizedBox.shrink();
 
+    final isVideo = msg.type == MessageType.video;
+
     return GestureDetector(
       onLongPress: () => _snapDeleteSheet(context),
       child: Align(
@@ -1042,38 +1140,58 @@ class _MessageBubble extends StatelessWidget {
             crossAxisAlignment:
                 isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              GestureDetector(
-                onTap: () => _openFullscreen(context, msg.content),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: SizedBox(
-                    width: 160,
-                    height: 200,
-                    child: CachedNetworkImage(
-                      imageUrl: msg.content,
-                      fit: BoxFit.cover,
-                      placeholder: (_, _) => Container(
-                        color: AppColors.bgCard,
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                              color: AppColors.rose, strokeWidth: 2),
+              if (isVideo)
+                GestureDetector(
+                  onTap: () => _openVideoPlayer(context, msg.content),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      width: 160,
+                      height: 200,
+                      color: Colors.black87,
+                      child: const Center(
+                        child: Icon(
+                          Icons.play_circle_outline_rounded,
+                          color: Colors.white,
+                          size: 52,
                         ),
                       ),
-                      errorWidget: (_, _, _) => Container(
-                        color: AppColors.bgCard,
-                        child: const Center(
-                          child: Icon(Icons.broken_image_outlined,
-                              color: AppColors.textMuted, size: 32),
+                    ),
+                  ),
+                )
+              else
+                GestureDetector(
+                  onTap: () => _openFullscreen(context, msg.content),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: SizedBox(
+                      width: 160,
+                      height: 200,
+                      child: CachedNetworkImage(
+                        imageUrl: msg.content,
+                        fit: BoxFit.cover,
+                        placeholder: (_, _) => Container(
+                          color: AppColors.bgCard,
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                                color: AppColors.rose, strokeWidth: 2),
+                          ),
+                        ),
+                        errorWidget: (_, _, _) => Container(
+                          color: AppColors.bgCard,
+                          child: const Center(
+                            child: Icon(Icons.broken_image_outlined,
+                                color: AppColors.textMuted, size: 32),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
               Padding(
                 padding: const EdgeInsets.only(top: 3, left: 2, right: 2),
                 child: Text(
-                  'Snap · ${timeago.format(msg.sentAt, allowFromNow: true)}',
+                  '${isVideo ? 'Video Snap' : 'Snap'} · ${timeago.format(msg.sentAt, allowFromNow: true)}',
                   style: const TextStyle(
                       color: AppColors.textMuted, fontSize: 10),
                 ),
@@ -1148,6 +1266,19 @@ class _MessageBubble extends StatelessWidget {
       PageRouteBuilder(
         opaque: true,
         pageBuilder: (_, _, _) => _FullscreenImageView(url: url),
+        transitionsBuilder: (_, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 180),
+      ),
+    );
+  }
+
+  static void _openVideoPlayer(BuildContext context, String url) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: true,
+        pageBuilder: (_, _, _) => _FullscreenVideoView(url: url),
         transitionsBuilder: (_, anim, _, child) =>
             FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 180),
@@ -1231,6 +1362,101 @@ class _FullscreenImageView extends StatelessWidget {
             ),
           ),
           // Close button — top-right
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            right: 12,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close_rounded,
+                    color: Colors.white, size: 22),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Fullscreen Video Player ───────────────────────────────────────────────
+
+class _FullscreenVideoView extends StatefulWidget {
+  final String url;
+  const _FullscreenVideoView({required this.url});
+
+  @override
+  State<_FullscreenVideoView> createState() => _FullscreenVideoViewState();
+}
+
+class _FullscreenVideoViewState extends State<_FullscreenVideoView> {
+  late final VideoPlayerController _controller;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _initialized = true);
+          _controller.play();
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Center(
+            child: _initialized
+                ? AspectRatio(
+                    aspectRatio: _controller.value.aspectRatio,
+                    child: VideoPlayer(_controller),
+                  )
+                : const CircularProgressIndicator(color: AppColors.rose),
+          ),
+          if (_initialized)
+            Positioned(
+              bottom: MediaQuery.of(context).padding.bottom + 16,
+              left: 16,
+              right: 16,
+              child: GestureDetector(
+                onTap: () => setState(() {
+                  _controller.value.isPlaying
+                      ? _controller.pause()
+                      : _controller.play();
+                }),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    _controller.value.isPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: MediaQuery.of(context).padding.top + 8,
             right: 12,

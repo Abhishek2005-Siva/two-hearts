@@ -304,10 +304,12 @@ class FirestoreService {
       .collection('couples')
       .doc(coupleId)
       .collection('journal')
-      .orderBy(FieldPath.documentId, descending: true)
-      .limit(60)
       .snapshots()
-      .map((s) => s.docs.map(JournalDay.fromDoc).toList());
+      .map((s) {
+        final list = s.docs.map(JournalDay.fromDoc).toList();
+        list.sort((a, b) => b.id.compareTo(a.id));
+        return list;
+      });
 
   // ── Memories ──────────────────────────────────────────────────────────────
 

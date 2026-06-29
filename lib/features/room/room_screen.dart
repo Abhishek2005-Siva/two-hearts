@@ -312,6 +312,116 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     );
   }
 
+  /// Builds the full-screen Stack overlay with character name labels and tap areas.
+  Widget _buildCharacterOverlay(
+    BuildContext context,
+    dynamic me,
+    dynamic partner,
+    MoodType? myMood,
+    Color accent,
+    Size size,
+  ) {
+    // Determine which side each user is on based on gender.
+    // Male character is on the LEFT, female character is on the RIGHT.
+    final isMeMale = me?.gender == 'male';
+    final myName = (me?.displayName as String? ?? 'You').split(' ').first;
+    final partnerName = (partner?.displayName as String? ?? '?').split(' ').first;
+
+    // Positions for each side
+    const maleLeft = 0.10;
+    const maleTop = 0.50;
+    const femaleRight = 0.08;
+    const femaleTop = 0.53;
+
+    // My position
+    final myLeft = isMeMale ? size.width * maleLeft : null;
+    final myRight = isMeMale ? null : size.width * femaleRight;
+    final myTop = isMeMale ? size.height * maleTop : size.height * femaleTop;
+
+    // Partner position
+    final partnerLeft = isMeMale ? null : size.width * maleLeft;
+    final partnerRight = isMeMale ? size.width * femaleRight : null;
+    final partnerTop = isMeMale ? size.height * femaleTop : size.height * maleTop;
+
+    // Tap area size covering the character body
+    const tapW = 90.0;
+    const tapH = 160.0;
+
+    return Stack(
+      children: [
+        // Invisible tap area for my character body
+        Positioned(
+          left: myLeft != null ? myLeft - 10 : null,
+          right: myRight != null ? myRight - 10 : null,
+          top: myTop - 80,
+          child: GestureDetector(
+            onTap: _showMoodPicker,
+            child: Container(
+              width: tapW,
+              height: tapH,
+              color: Colors.transparent,
+            ),
+          ),
+        ),
+
+        // Invisible tap area for partner character body (also opens my mood picker)
+        Positioned(
+          left: partnerLeft != null ? partnerLeft - 10 : null,
+          right: partnerRight != null ? partnerRight - 10 : null,
+          top: partnerTop - 80,
+          child: GestureDetector(
+            onTap: _showMoodPicker,
+            child: Container(
+              width: tapW,
+              height: tapH,
+              color: Colors.transparent,
+            ),
+          ),
+        ),
+
+        // My mood bubble (above my name)
+        if (myMood != null)
+          Positioned(
+            left: myLeft,
+            right: myRight,
+            top: myTop - 38,
+            child: _NameMoodBubble(mood: myMood),
+          ),
+
+        // Partner mood bubble (above partner name)
+        if (_partnerMoodVisible && _partnerMoodToShow != null)
+          Positioned(
+            left: partnerLeft,
+            right: partnerRight,
+            top: partnerTop - 38,
+            child: _NameMoodBubble(mood: _partnerMoodToShow!),
+          ),
+
+        // My name label
+        Positioned(
+          left: myLeft,
+          right: myRight,
+          top: myTop,
+          child: GestureDetector(
+            onTap: _showMoodPicker,
+            child: _CharNameLabel(name: myName, color: accent),
+          ),
+        ),
+
+        // Partner name label
+        Positioned(
+          left: partnerLeft,
+          right: partnerRight,
+          top: partnerTop,
+          child: GestureDetector(
+            onTap: _showMoodPicker,
+            child: _CharNameLabel(name: partnerName, color: AppColors.lavender),
+          ),
+        ),
+      ],
+    );
+  }
+
   void _showSettings(BuildContext context) {
     final container = ProviderScope.containerOf(context);
     showModalBottomSheet(
@@ -342,8 +452,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     final moods = ref.watch(moodsProvider).valueOrNull ?? [];
     final myUid = FirebaseAuth.instance.currentUser?.uid;
 
-    final myMood =
-        moods.where((m) => m.uid == myUid).firstOrNull?.mood;
+    final myMood = moods.where((m) => m.uid == myUid).firstOrNull?.mood;
     final partnerMoodEntry =
         moods.where((m) => m.uid != myUid).firstOrNull;
     final partnerMood = partnerMoodEntry?.mood;
@@ -427,73 +536,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      // Characters row
-                      Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.spaceEvenly,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            // My character
-                            GestureDetector(
-                              onTap: _showMoodPicker,
-                              child: _CharCol(
-                                user: me,
-                                color: accent,
-                                isMe: true,
-                                mood: myMood,
-                                showTapHint: true,
-                              ),
-                            ),
-
-                            // Center logo
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const TwoHeartsLogo(size: 26),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'together',
-                                  style: TextStyle(
-                                      fontSize: 9,
-                                      color: nightness > 0.5
-                                          ? accent
-                                          : accent
-                                              .withValues(alpha: 0.8),
-                                      letterSpacing: 1.2),
-                                ),
-                              ],
-                            ),
-
-                            // Partner character with mood popup
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                _CharCol(
-                                  user: partner,
-                                  color: AppColors.lavender,
-                                  isMe: false,
-                                  mood: partnerMood,
-                                ),
-                                if (_partnerMoodVisible &&
-                                    _partnerMoodToShow != null)
-                                  Positioned(
-                                    top: -14,
-                                    left: 0,
-                                    right: 0,
-                                    child: Center(
-                                      child: _MoodPopup(
-                                          mood: _partnerMoodToShow!),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.08),
-
                       const SizedBox(height: 18),
 
                       // "Thinking of You" pill
@@ -519,7 +561,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
             ),
           ),
 
-          // 3. Floating heart animation (unchanged)
+          // 3. Character name labels + tap areas overlaid on full screen
+          _buildCharacterOverlay(context, me, partner, myMood, accent, size),
+
+          // 4. Floating heart animation (unchanged)
           if (_heartVisible)
             AnimatedBuilder(
               animation: _heartCtrl,
@@ -673,111 +718,54 @@ class _RoomScenePainter extends CustomPainter {
   }
 }
 
-// ── Mood Popup ────────────────────────────────────────────────────────────
+// ── Character Name Label ─────────────────────────────────────────────────
 
-class _MoodPopup extends StatelessWidget {
+class _CharNameLabel extends StatelessWidget {
+  final String name;
+  final Color color;
+  const _CharNameLabel({required this.name, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      name,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        shadows: [
+          Shadow(color: Colors.black87, blurRadius: 8, offset: Offset(0, 2)),
+          Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 1)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Name Mood Bubble ──────────────────────────────────────────────────────
+
+class _NameMoodBubble extends StatelessWidget {
   final MoodType mood;
-  const _MoodPopup({required this.mood});
+  const _NameMoodBubble({required this.mood});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: AppColors.bgCard,
+        color: AppColors.bgCard.withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.divider, width: 0.5),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 4))
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(mood.emoji, style: const TextStyle(fontSize: 16)),
-          const SizedBox(width: 4),
-          Text(mood.label,
-              style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600)),
-        ],
-      ),
-    ).animate().fadeIn().slideY(begin: -0.3);
-  }
-}
-
-// ── Char Col ──────────────────────────────────────────────────────────────
-
-class _CharCol extends StatelessWidget {
-  final dynamic user;
-  final Color color;
-  final bool isMe;
-  final MoodType? mood;
-  final bool showTapHint;
-
-  const _CharCol({
-    this.user,
-    required this.color,
-    required this.isMe,
-    this.mood,
-    this.showTapHint = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final name = user?.displayName as String? ?? (isMe ? 'You' : '?');
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Mood bubble (floats above the name)
-        if (mood != null)
-          Container(
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.bgCard.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.divider, width: 0.5),
-            ),
-            child: Text(mood!.emoji, style: const TextStyle(fontSize: 18)),
-          )
-        else
-          const SizedBox(height: 30),
-
-        // Name label
-        ShaderMask(
-          shaderCallback: (bounds) => LinearGradient(
-            colors: [color, Colors.white],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ).createShader(bounds),
-          child: Text(
-            name.split(' ').first,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.5,
-              shadows: [Shadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 2))],
-            ),
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
           ),
-        ),
-        if (showTapHint)
-          Text('tap to set mood',
-              style: TextStyle(
-                  fontSize: 9,
-                  color: color.withValues(alpha: 0.75),
-                  letterSpacing: 0.4,
-                  fontWeight: FontWeight.w500)),
-      ],
-    );
+        ],
+      ),
+      child: Text(mood.emoji, style: const TextStyle(fontSize: 18)),
+    ).animate().fadeIn().slideY(begin: -0.3);
   }
 }
 

@@ -42,22 +42,24 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen>
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
     final picker = ImagePicker();
-    final xfile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-    if (xfile == null) return;
+    final images = await picker.pickMultiImage(imageQuality: 80);
+    if (images.isEmpty) return;
     setState(() => _uploading = true);
     try {
-      final id = const Uuid().v4();
-      final bytes = await xfile.readAsBytes();
-      final url = await CloudinaryService.uploadImage(bytes, folder: 'two_hearts/$coupleId');
-      await ref.read(firestoreServiceProvider).addMemory(
-        coupleId,
-        MemoryModel(
-          id: id,
-          uploaderUid: authUser.uid,
-          imageUrl: url,
-          createdAt: DateTime.now(),
-        ),
-      );
+      for (final xfile in images) {
+        final id = const Uuid().v4();
+        final bytes = await xfile.readAsBytes();
+        final url = await CloudinaryService.uploadImage(bytes, folder: 'two_hearts/$coupleId');
+        await ref.read(firestoreServiceProvider).addMemory(
+          coupleId,
+          MemoryModel(
+            id: id,
+            uploaderUid: authUser.uid,
+            imageUrl: url,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _uploading = false);
     }

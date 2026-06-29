@@ -122,7 +122,7 @@ class CoupleModel {
 
 // ──────────────── Message ────────────────
 
-enum MessageType { text, image, voice, reaction }
+enum MessageType { text, image, voice, reaction, video }
 
 class MessageModel {
   final String id;

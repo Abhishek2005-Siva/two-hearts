@@ -500,7 +500,7 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
   }
 }
 
-// ── Shelf row — books standing side-by-side, no gaps ──────────────────────
+// ── Vertical stack of flat-lying books ────────────────────────────────────
 
 class _ShelfRow extends StatelessWidget {
   final List<BucketItem> items;
@@ -519,304 +519,101 @@ class _ShelfRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: items.map((item) {
-          final props = _BookProps.fromId(item.id);
-          // Book stands upright: thickness = width, heightFraction-derived height
-          final bookW = props.thickness;
-          final bookH = 120.0 + (props.widthFraction - 0.55) / (0.92 - 0.55) * 60.0;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: items.map((item) {
+        final props = _BookProps.fromId(item.id);
+        final bookColor = isDone
+            ? Color.lerp(props.color, Colors.grey, 0.55)!
+            : props.color;
+        final spineColor = isDone
+            ? Colors.grey.shade700
+            : Color.lerp(props.color, Colors.black, 0.35)!;
+        final bookHeight = props.thickness.clamp(36.0, 56.0);
 
-          Widget book = GestureDetector(
-            onTap: () => onTap(item),
-            child: _BookBody(
-              width: bookW,
-              height: bookH,
-              color: isDone
-                  ? Color.lerp(props.color, Colors.grey, 0.55)!
-                  : props.color,
-              accentBand: isDone ? Colors.grey.shade600 : props.accentBand,
-              style: props.style,
-              title: item.title,
-              isDone: isDone,
+        Widget book = GestureDetector(
+          onTap: () => onTap(item),
+          child: Container(
+            width: double.infinity,
+            height: bookHeight,
+            decoration: BoxDecoration(
+              color: bookColor,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 4,
+                  offset: const Offset(0, 3),
+                ),
+              ],
             ),
-          );
-
-          if (throwingId == item.id) {
-            book = book
-                .animate()
-                .slideX(begin: 0, end: 2.5, duration: 480.ms, curve: Curves.easeIn)
-                .rotate(begin: 0, end: -0.12, duration: 480.ms)
-                .fadeOut(begin: 1.0, duration: 480.ms, curve: Curves.easeIn);
-          } else if (animatingId == item.id) {
-            book = book
-                .animate()
-                .slideY(begin: -4, duration: 750.ms, curve: Curves.elasticOut)
-                .fadeIn(duration: 150.ms);
-          }
-
-          return book;
-        }).toList(),
-      ),
-    );
-  }
-}
-
-// ── Book body — renders the spine face with one of 4 visual styles ─────────
-
-class _BookBody extends StatelessWidget {
-  final double width;
-  final double height;
-  final Color color;
-  final Color accentBand;
-  final _BookStyle style;
-  final String title;
-  final bool isDone;
-
-  const _BookBody({
-    required this.width,
-    required this.height,
-    required this.color,
-    required this.accentBand,
-    required this.style,
-    required this.title,
-    required this.isDone,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size(width, height),
-      painter: _BookPainter(
-        color: color,
-        accentBand: accentBand,
-        style: style,
-        title: title,
-        isDone: isDone,
-        spineWidth: width,
-      ),
-    );
-  }
-}
-
-class _BookPainter extends CustomPainter {
-  final Color color;
-  final Color accentBand;
-  final _BookStyle style;
-  final String title;
-  final bool isDone;
-  final double spineWidth;
-
-  const _BookPainter({
-    required this.color,
-    required this.accentBand,
-    required this.style,
-    required this.title,
-    required this.isDone,
-    required this.spineWidth,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final light = Color.lerp(color, Colors.white, 0.18)!;
-    final dark = Color.lerp(color, Colors.black, 0.38)!;
-
-    // ── Base gradient — left (spine face) to right edge ────────────────────
-    final bodyRect = Rect.fromLTWH(0, 0, w, h);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(bodyRect, const Radius.circular(2)),
-      Paint()
-        ..shader = LinearGradient(
-          colors: [light, color, dark],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ).createShader(bodyRect),
-    );
-
-    // ── Page-edge strip at bottom (pages seen from above) ──────────────────
-    final pageH = 6.0;
-    canvas.drawRect(
-      Rect.fromLTWH(0, h - pageH, w, pageH),
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            const Color(0xFFF5EDD8).withValues(alpha: 0.9),
-            const Color(0xFFE8D8C0).withValues(alpha: 0.9),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ).createShader(Rect.fromLTWH(0, h - pageH, w, pageH)),
-    );
-    // Fine vertical lines to simulate page edges
-    final linePaint = Paint()
-      ..color = const Color(0xFFD4C4A8).withValues(alpha: 0.5)
-      ..strokeWidth = 0.5;
-    for (double x = 2; x < w - 2; x += 2.5) {
-      canvas.drawLine(Offset(x, h - pageH), Offset(x, h - 0.5), linePaint);
-    }
-
-    // ── Style-specific decoration ──────────────────────────────────────────
-    switch (style) {
-      case _BookStyle.solid:
-        _paintSolid(canvas, w, h);
-      case _BookStyle.twoTone:
-        _paintTwoTone(canvas, w, h);
-      case _BookStyle.stripe:
-        _paintStripe(canvas, w, h);
-      case _BookStyle.embossed:
-        _paintEmbossed(canvas, w, h);
-    }
-
-    // ── Title text — rotated 90° to read bottom-to-top along spine ─────────
-    _paintTitle(canvas, w, h);
-
-    // ── Done checkmark near top ─────────────────────────────────────────────
-    if (isDone) {
-      final tp = TextPainter(
-        text: TextSpan(
-          text: '✓',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: Colors.amber.shade300,
-            shadows: [
-              Shadow(
-                  color: Colors.amber.shade900.withValues(alpha: 0.6),
-                  blurRadius: 4),
-            ],
+            child: Row(
+              children: [
+                // Spine strip on the left
+                Container(
+                  width: 12,
+                  color: spineColor,
+                ),
+                // Title text
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      item.title,
+                      style: TextStyle(
+                        color: Colors.white
+                            .withValues(alpha: isDone ? 0.5 : 0.92),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
+                        decoration: isDone
+                            ? TextDecoration.lineThrough
+                            : TextDecoration.none,
+                        decorationColor:
+                            Colors.white.withValues(alpha: 0.5),
+                        shadows: const [
+                          Shadow(
+                              color: Colors.black54,
+                              blurRadius: 3,
+                              offset: Offset(0, 1)),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+                // Checkmark on the right
+                if (isDone)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Icon(Icons.check_circle_rounded,
+                        color: Colors.amber.shade300, size: 18),
+                  )
+                else
+                  const Padding(
+                    padding: EdgeInsets.only(right: 12),
+                    child: Icon(Icons.radio_button_unchecked_rounded,
+                        color: Colors.white24, size: 16),
+                  ),
+              ],
+            ),
           ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset((w - tp.width) / 2, 6));
-    }
+        );
 
-    // ── Right-edge shadow (between books) ──────────────────────────────────
-    canvas.drawRect(
-      Rect.fromLTWH(w - 6, 0, 6, h),
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            Colors.black.withValues(alpha: 0.0),
-            Colors.black.withValues(alpha: 0.35),
-          ],
-        ).createShader(Rect.fromLTWH(w - 6, 0, 6, h)),
+        if (throwingId == item.id) {
+          book = book
+              .animate()
+              .slideX(begin: 0, end: 2.5, duration: 480.ms, curve: Curves.easeIn)
+              .fadeOut(begin: 1.0, duration: 480.ms, curve: Curves.easeIn);
+        } else if (animatingId == item.id) {
+          book = book
+              .animate()
+              .slideY(begin: -1.5, duration: 750.ms, curve: Curves.elasticOut)
+              .fadeIn(duration: 150.ms);
+        }
+
+        return book;
+      }).toList(),
     );
   }
-
-  // Solid — thin accent stripe at top
-  void _paintSolid(Canvas canvas, double w, double h) {
-    canvas.drawRect(Rect.fromLTWH(0, 0, w, 3),
-        Paint()..color = Colors.white.withValues(alpha: 0.15));
-    // Accent band across top quarter
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, w, h * 0.18),
-      Paint()..color = accentBand.withValues(alpha: 0.55),
-    );
-  }
-
-  // Two-tone — top 35% accent color, bottom main color
-  void _paintTwoTone(Canvas canvas, double w, double h) {
-    final splitY = h * 0.35;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, w, splitY),
-        const Radius.circular(2),
-      ),
-      Paint()..color = accentBand.withValues(alpha: 0.85),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(0, splitY - 1, w, 2),
-      Paint()..color = Colors.white.withValues(alpha: 0.2),
-    );
-  }
-
-  // Stripe — diagonal accent stripe across the spine face
-  void _paintStripe(Canvas canvas, double w, double h) {
-    final stripeW = w * 0.5;
-    final path = Path()
-      ..moveTo(0, h * 0.25)
-      ..lineTo(stripeW, h * 0.25)
-      ..lineTo(stripeW, h * 0.65)
-      ..lineTo(0, h * 0.65)
-      ..close();
-    canvas.save();
-    canvas.clipRRect(
-        RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, h), const Radius.circular(2)));
-    canvas.drawPath(path, Paint()..color = accentBand.withValues(alpha: 0.4));
-    canvas.restore();
-  }
-
-  // Embossed — small centered plate
-  void _paintEmbossed(Canvas canvas, double w, double h) {
-    final plateH = h * 0.4;
-    final plateW = w * 0.7;
-    final plateRect = RRect.fromRectAndRadius(
-      Rect.fromCenter(
-          center: Offset(w / 2, h * 0.45),
-          width: plateW,
-          height: plateH),
-      const Radius.circular(3),
-    );
-    canvas.drawRRect(
-        plateRect,
-        Paint()
-          ..color = Color.lerp(color, Colors.white, 0.22)!.withValues(alpha: 0.9));
-    canvas.drawRRect(
-        plateRect,
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.18)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5);
-    canvas.drawRect(Rect.fromLTWH(0, 0, w, 2),
-        Paint()..color = Colors.white.withValues(alpha: 0.15));
-  }
-
-  void _paintTitle(Canvas canvas, double w, double h) {
-    final isDoneOpacity = isDone ? 0.45 : 0.92;
-    final fontSize = spineWidth > 52 ? 12.0 : 10.0;
-    // Available length for text = book height minus top/bottom pads
-    final topPad = isDone ? 22.0 : 10.0;
-    final bottomPad = 14.0; // above page-edge strip
-    final maxLen = h - topPad - bottomPad;
-
-    final tp = TextPainter(
-      text: TextSpan(
-        text: title,
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: isDoneOpacity),
-          fontSize: fontSize,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.3,
-          shadows: const [
-            Shadow(color: Colors.black54, blurRadius: 3, offset: Offset(0, 1)),
-          ],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    )..layout(maxWidth: maxLen);
-
-    // Rotate canvas: translate to bottom-left of text area, rotate -90°
-    canvas.save();
-    canvas.translate(w / 2, h - bottomPad);
-    canvas.rotate(-math.pi / 2);
-    tp.paint(canvas, Offset(-math.min(tp.width, maxLen) / 2, -tp.height / 2));
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_BookPainter old) =>
-      old.color != color ||
-      old.style != style ||
-      old.title != title ||
-      old.isDone != isDone;
 }
