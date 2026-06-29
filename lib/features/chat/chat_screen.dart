@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -164,6 +167,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           type: MessageType.image,
           sentAt: DateTime.now(),
           isSnap: true,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _sendVoice(String path, int durationSeconds) async {
+    final coupleId = ref.read(coupleIdProvider);
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (coupleId == null || authUser == null) return;
+    setState(() => _sending = true);
+    HapticFeedback.lightImpact();
+    try {
+      final url = await CloudinaryService.uploadAudio(File(path));
+      await ref.read(firestoreServiceProvider).sendMessage(
+        coupleId,
+        MessageModel(
+          id: const Uuid().v4(),
+          senderId: authUser.uid,
+          content: url,
+          type: MessageType.voice,
+          sentAt: DateTime.now(),
+          voiceDurationSeconds: durationSeconds,
         ),
       );
     } finally {
@@ -499,6 +526,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   setState(() => _whisperMode = !_whisperMode),
               onToggleVideoSnap: () =>
                   setState(() => _videoSnapMode = !_videoSnapMode),
+              onSendVoice: _sendVoice,
             ),
           ],
         ),
@@ -801,7 +829,7 @@ class _BackgroundPickerSheet extends StatelessWidget {
 
 // ── Input ─────────────────────────────────────────────────────────────────
 
-class _ChatInput extends StatelessWidget {
+class _ChatInput extends StatefulWidget {
   final TextEditingController controller;
   final bool sending;
   final bool whisperMode;
@@ -813,6 +841,7 @@ class _ChatInput extends StatelessWidget {
   final VoidCallback onSnapVideo;
   final VoidCallback onToggleWhisper;
   final VoidCallback onToggleVideoSnap;
+  final Future<void> Function(String path, int durationSeconds) onSendVoice;
 
   const _ChatInput({
     required this.controller,
@@ -826,7 +855,90 @@ class _ChatInput extends StatelessWidget {
     required this.onSnapVideo,
     required this.onToggleWhisper,
     required this.onToggleVideoSnap,
+    required this.onSendVoice,
   });
+
+  @override
+  State<_ChatInput> createState() => _ChatInputState();
+}
+
+class _ChatInputState extends State<_ChatInput> {
+  final _recorder = AudioRecorder();
+  bool _isRecording = false;
+  bool _isCancelling = false;
+  bool _isUploading = false;
+  String? _recordPath;
+  Timer? _recordTimer;
+  Duration _recordDuration = Duration.zero;
+  double _dragOffsetX = 0;
+
+  @override
+  void dispose() {
+    _recordTimer?.cancel();
+    _recorder.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startRecording() async {
+    final hasPermission = await _recorder.hasPermission();
+    if (!hasPermission) return;
+    final dir = await getTemporaryDirectory();
+    _recordPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _recorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: _recordPath!,
+    );
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _isRecording = true;
+      _isCancelling = false;
+      _recordDuration = Duration.zero;
+      _dragOffsetX = 0;
+    });
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _recordDuration += const Duration(seconds: 1));
+    });
+  }
+
+  Future<void> _stopAndSend() async {
+    _recordTimer?.cancel();
+    final path = await _recorder.stop();
+    final durationSecs = _recordDuration.inSeconds;
+    setState(() {
+      _isRecording = false;
+      _isCancelling = false;
+      _isUploading = true;
+      _recordDuration = Duration.zero;
+      _dragOffsetX = 0;
+    });
+    if (path == null) {
+      setState(() => _isUploading = false);
+      return;
+    }
+    try {
+      await widget.onSendVoice(path, durationSecs);
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    _recordTimer?.cancel();
+    await _recorder.cancel();
+    HapticFeedback.lightImpact();
+    setState(() {
+      _isRecording = false;
+      _isCancelling = false;
+      _recordDuration = Duration.zero;
+      _dragOffsetX = 0;
+    });
+  }
+
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
 
   void _showCameraSheet(BuildContext context) {
     showModalBottomSheet(
@@ -854,7 +966,7 @@ class _ChatInput extends StatelessWidget {
                   child: GestureDetector(
                     onTap: () {
                       Navigator.pop(context);
-                      onSnapPhoto();
+                      widget.onSnapPhoto();
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 18),
@@ -880,7 +992,7 @@ class _ChatInput extends StatelessWidget {
                   child: GestureDetector(
                     onTap: () {
                       Navigator.pop(context);
-                      onSnapVideo();
+                      widget.onSnapVideo();
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 18),
@@ -911,114 +1023,258 @@ class _ChatInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasText = widget.controller.text.isNotEmpty;
+
     return SafeArea(
       top: false,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
         decoration: BoxDecoration(
-          color: AppColors.bgMid,
+          color: _isRecording
+              ? AppColors.bgMid
+              : AppColors.bgMid,
           border: Border(
             top: BorderSide(
-              color: whisperMode
-                  ? AppColors.lavender.withValues(alpha: 0.5)
-                  : AppColors.divider,
-              width: whisperMode ? 1.0 : 0.5,
+              color: _isRecording
+                  ? Colors.red.withValues(alpha: 0.4)
+                  : widget.whisperMode
+                      ? AppColors.lavender.withValues(alpha: 0.5)
+                      : AppColors.divider,
+              width: _isRecording || widget.whisperMode ? 1.0 : 0.5,
             ),
           ),
         ),
-        child: Row(
-          children: [
-            GestureDetector(
-              onTap: () => _showCameraSheet(context),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                    color: AppColors.bgCard,
-                    borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.camera_alt_outlined,
-                    color: AppColors.textSecondary, size: 22),
-              ),
+        child: _isRecording ? _buildRecordingRow() : _buildNormalRow(context, hasText),
+      ),
+    );
+  }
+
+  Widget _buildRecordingRow() {
+    final isCancelZone = _dragOffsetX < -60;
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        if (details.delta.dx < 0) {
+          setState(() => _dragOffsetX =
+              (_dragOffsetX + details.delta.dx).clamp(-120.0, 0.0));
+        }
+      },
+      onHorizontalDragEnd: (_) {
+        if (_dragOffsetX < -80) {
+          _cancelRecording();
+        } else {
+          setState(() => _dragOffsetX = 0);
+        }
+      },
+      child: Row(
+        children: [
+          // Pulsing red dot
+          _PulsingDot(),
+          const SizedBox(width: 10),
+          Text(
+            _formatDuration(_recordDuration),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.bgCard,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: whisperMode
-                        ? AppColors.lavender.withValues(alpha: 0.4)
-                        : AppColors.divider,
-                    width: 0.5,
-                  ),
-                ),
-                child: TextField(
-                  controller: controller,
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontStyle:
-                        whisperMode ? FontStyle.italic : FontStyle.normal,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: whisperMode
-                        ? 'Whisper something… 🌙'
-                        : 'Say something ♡',
-                    hintStyle:
-                        const TextStyle(color: AppColors.textMuted),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                  ),
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => onSend(),
-                  maxLines: 4,
-                  minLines: 1,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: AnimatedOpacity(
+              opacity: isCancelZone ? 1.0 : 0.6,
+              duration: const Duration(milliseconds: 150),
+              child: Text(
+                isCancelZone ? 'Release to cancel' : '  Slide to cancel ←',
+                style: TextStyle(
+                  color: isCancelZone ? Colors.redAccent : AppColors.textMuted,
+                  fontSize: 12,
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: onToggleWhisper,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: whisperMode
-                      ? AppColors.lavender.withValues(alpha: 0.2)
-                      : AppColors.bgCard,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: whisperMode
-                        ? AppColors.lavender.withValues(alpha: 0.5)
-                        : Colors.transparent,
-                  ),
-                ),
-                child:
-                    const Text('🌙', style: TextStyle(fontSize: 18)),
+          ),
+          // Release to send button
+          GestureDetector(
+            onTap: _stopAndSend,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.85),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.stop_rounded, color: Colors.white, size: 20),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNormalRow(BuildContext context, bool hasText) {
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: () => _showCameraSheet(context),
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.camera_alt_outlined,
+                color: AppColors.textSecondary, size: 22),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: widget.whisperMode
+                    ? AppColors.lavender.withValues(alpha: 0.4)
+                    : AppColors.divider,
+                width: 0.5,
               ),
             ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: sending ? null : onSend,
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  gradient:
-                      LinearGradient(colors: [accent, AppColors.coral]),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: sending
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.send_rounded,
-                        color: Colors.white, size: 18),
+            child: TextField(
+              controller: widget.controller,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontStyle: widget.whisperMode
+                    ? FontStyle.italic
+                    : FontStyle.normal,
+              ),
+              decoration: InputDecoration(
+                hintText: widget.whisperMode
+                    ? 'Whisper something… 🌙'
+                    : 'Say something ♡',
+                hintStyle: const TextStyle(color: AppColors.textMuted),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 10),
+              ),
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => widget.onSend(),
+              maxLines: 4,
+              minLines: 1,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: widget.onToggleWhisper,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: widget.whisperMode
+                  ? AppColors.lavender.withValues(alpha: 0.2)
+                  : AppColors.bgCard,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: widget.whisperMode
+                    ? AppColors.lavender.withValues(alpha: 0.5)
+                    : Colors.transparent,
               ),
             ),
-          ],
+            child: const Text('🌙', style: TextStyle(fontSize: 18)),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Mic button (when no text) or Send button (when has text or sending)
+        if (_isUploading)
+          const SizedBox(
+            width: 38,
+            height: 38,
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.rose),
+              ),
+            ),
+          )
+        else if (!hasText)
+          GestureDetector(
+            onLongPressStart: (_) => _startRecording(),
+            onLongPressEnd: (_) {
+              if (_isRecording && !_isCancelling) _stopAndSend();
+            },
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.mic_none_rounded,
+                  color: AppColors.textSecondary, size: 20),
+            ),
+          )
+        else
+          GestureDetector(
+            onTap: widget.sending ? null : widget.onSend,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                    colors: [widget.accent, AppColors.coral]),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: widget.sending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.send_rounded,
+                      color: Colors.white, size: 18),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ── Pulsing dot indicator ─────────────────────────────────────────────────
+
+class _PulsingDot extends StatefulWidget {
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.4, end: 1.0).animate(_ctrl);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _anim,
+      child: Container(
+        width: 10,
+        height: 10,
+        decoration: const BoxDecoration(
+          color: Colors.red,
+          shape: BoxShape.circle,
         ),
       ),
     );
@@ -1120,6 +1376,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
   Widget build(BuildContext context) {
     if (msg.isSnap) return _snap(context);
     if (msg.isWhisper) return _whisper(context);
+    if (msg.type == MessageType.voice) return _voice(context);
     return _text(context);
   }
 
@@ -1461,6 +1718,24 @@ class _MessageBubbleState extends State<_MessageBubble> {
     );
   }
 
+  Widget _voice(BuildContext context) {
+    return _swipeWrapper(
+      context,
+      GestureDetector(
+        onLongPress: () => _reactSheet(context),
+        child: Align(
+          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 4),
+            constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75),
+            child: _VoiceBubble(msg: msg, isMe: isMe, accent: accent),
+          ),
+        ),
+      ).animate().fadeIn(duration: 200.ms),
+    );
+  }
+
   void _reactSheet(BuildContext context) {
     HapticFeedback.mediumImpact();
     showModalBottomSheet(
@@ -1471,6 +1746,153 @@ class _MessageBubbleState extends State<_MessageBubble> {
         Navigator.pop(context);
         widget.onReact(e);
       }),
+    );
+  }
+}
+
+// ── Voice Bubble ─────────────────────────────────────────────────────────
+
+class _VoiceBubble extends StatefulWidget {
+  final MessageModel msg;
+  final bool isMe;
+  final Color accent;
+
+  const _VoiceBubble({
+    required this.msg,
+    required this.isMe,
+    required this.accent,
+  });
+
+  @override
+  State<_VoiceBubble> createState() => _VoiceBubbleState();
+}
+
+class _VoiceBubbleState extends State<_VoiceBubble> {
+  final _audioPlayer = AudioPlayer();
+  bool _isPlaying = false;
+  Duration _position = Duration.zero;
+  Duration _total = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    final knownSecs = widget.msg.voiceDurationSeconds;
+    if (knownSecs != null && knownSecs > 0) {
+      _total = Duration(seconds: knownSecs);
+    }
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
+    });
+    _audioPlayer.onPositionChanged.listen((pos) {
+      if (mounted) setState(() => _position = pos);
+    });
+    _audioPlayer.onDurationChanged.listen((dur) {
+      if (mounted) setState(() => _total = dur);
+    });
+    _audioPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() { _isPlaying = false; _position = Duration.zero; });
+    });
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _togglePlay() async {
+    if (_isPlaying) {
+      await _audioPlayer.pause();
+    } else {
+      await _audioPlayer.play(UrlSource(widget.msg.content));
+    }
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _total.inMilliseconds > 0
+        ? (_position.inMilliseconds / _total.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+    final totalLabel = _total > Duration.zero ? _fmt(_total) : '--:--';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: widget.isMe
+            ? LinearGradient(colors: [widget.accent, AppColors.coral])
+            : null,
+        color: widget.isMe ? null : AppColors.bgCardLight,
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(18),
+          topRight: const Radius.circular(18),
+          bottomLeft: Radius.circular(widget.isMe ? 18 : 4),
+          bottomRight: Radius.circular(widget.isMe ? 4 : 18),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: _togglePlay,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 3,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                    activeTrackColor: Colors.white,
+                    inactiveTrackColor: Colors.white.withValues(alpha: 0.35),
+                    thumbColor: Colors.white,
+                    overlayColor: Colors.white.withValues(alpha: 0.2),
+                  ),
+                  child: Slider(
+                    value: progress,
+                    onChanged: (v) async {
+                      final target = Duration(
+                          milliseconds: (v * _total.inMilliseconds).round());
+                      await _audioPlayer.seek(target);
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Text(
+                    '${_fmt(_position)} / $totalLabel',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

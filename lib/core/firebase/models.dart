@@ -141,6 +141,7 @@ class MessageModel {
   final bool isWhisper;
   final String? replyToId;
   final String? replyToContent;
+  final int? voiceDurationSeconds;
 
   const MessageModel({
     required this.id,
@@ -155,6 +156,7 @@ class MessageModel {
     this.isWhisper = false,
     this.replyToId,
     this.replyToContent,
+    this.voiceDurationSeconds,
   });
 
   factory MessageModel.fromDoc(DocumentSnapshot doc) {
@@ -172,6 +174,7 @@ class MessageModel {
       isWhisper: d['isWhisper'] ?? false,
       replyToId: d['replyToId'],
       replyToContent: d['replyToContent'],
+      voiceDurationSeconds: d['voiceDurationSeconds'] as int?,
     );
   }
 
@@ -187,6 +190,7 @@ class MessageModel {
         if (isWhisper) 'isWhisper': true,
         if (replyToId != null) 'replyToId': replyToId,
         if (replyToContent != null) 'replyToContent': replyToContent,
+        if (voiceDurationSeconds != null) 'voiceDurationSeconds': voiceDurationSeconds,
       };
 }
 
