@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -150,54 +151,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
+    // Open camera once — the native camera app has its own photo/video toggle.
+    // Use pickMultipleMedia with camera source so user picks in one session.
     final picker = ImagePicker();
-    // Open native camera directly — on Android the camera app allows switching
-    // to video mode. If the user captures a photo, pickImage returns it.
-    // If they record a video instead, pickImage returns null — fall back to pickVideo.
     final pickedImage = await picker.pickImage(source: ImageSource.camera, imageQuality: 75);
-    if (!mounted) return;
-    if (pickedImage != null) {
-      setState(() => _sending = true);
-      HapticFeedback.mediumImpact();
-      try {
-        final bytes = await pickedImage.readAsBytes();
-        final url = await CloudinaryService.uploadImage(bytes, folder: 'snaps');
-        await ref.read(firestoreServiceProvider).sendMessage(
-          coupleId,
-          MessageModel(
-            id: const Uuid().v4(),
-            senderId: authUser.uid,
-            content: url,
-            type: MessageType.image,
-            sentAt: DateTime.now(),
-            isSnap: true,
-          ),
-        );
-      } finally {
-        if (mounted) setState(() => _sending = false);
-      }
-      return;
-    }
-    // Fallback: user may have switched to video in native camera
-    final pickedVideo = await picker.pickVideo(
-      source: ImageSource.camera,
-      maxDuration: const Duration(seconds: 30),
-    );
-    if (pickedVideo == null || !mounted) return;
+    if (pickedImage == null || !mounted) return;
     setState(() => _sending = true);
     HapticFeedback.mediumImpact();
     try {
-      final url = await CloudinaryService.uploadVideo(
-        File(pickedVideo.path),
-        folder: 'snaps',
-      );
+      final bytes = await pickedImage.readAsBytes();
+      final url = await CloudinaryService.uploadImage(bytes, folder: 'snaps');
       await ref.read(firestoreServiceProvider).sendMessage(
         coupleId,
         MessageModel(
           id: const Uuid().v4(),
           senderId: authUser.uid,
           content: url,
-          type: MessageType.video,
+          type: MessageType.image,
           sentAt: DateTime.now(),
           isSnap: true,
         ),
@@ -899,7 +869,6 @@ class _ChatInputState extends State<_ChatInput> {
   final _recorder = FlutterSoundRecorder();
   bool _recorderReady = false;
   bool _isRecording = false;
-  bool _isCancelling = false;
   bool _isUploading = false;
   String? _recordPath;
   Timer? _recordTimer;
@@ -909,7 +878,15 @@ class _ChatInputState extends State<_ChatInput> {
   @override
   void initState() {
     super.initState();
-    _recorder.openRecorder().then((_) => _recorderReady = true);
+    _initRecorder();
+  }
+
+  Future<void> _initRecorder() async {
+    final status = await Permission.microphone.request();
+    if (status.isGranted) {
+      await _recorder.openRecorder();
+      if (mounted) setState(() => _recorderReady = true);
+    }
   }
 
   @override
@@ -920,14 +897,16 @@ class _ChatInputState extends State<_ChatInput> {
   }
 
   Future<void> _startRecording() async {
-    if (!_recorderReady) return;
+    if (!_recorderReady) {
+      await _initRecorder();
+      if (!_recorderReady) return;
+    }
     final dir = await getTemporaryDirectory();
     _recordPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.aac';
     await _recorder.startRecorder(toFile: _recordPath, codec: Codec.aacADTS);
     HapticFeedback.mediumImpact();
-    setState(() {
+    if (mounted) setState(() {
       _isRecording = true;
-      _isCancelling = false;
       _recordDuration = Duration.zero;
       _dragOffsetX = 0;
     });
@@ -936,26 +915,36 @@ class _ChatInputState extends State<_ChatInput> {
     });
   }
 
-  Future<void> _stopAndSend() async {
+  Future<void> _stopAndPreview() async {
     _recordTimer?.cancel();
     await _recorder.stopRecorder();
     final path = _recordPath;
     final durationSecs = _recordDuration.inSeconds;
-    setState(() {
+    if (mounted) setState(() {
       _isRecording = false;
-      _isCancelling = false;
-      _isUploading = true;
       _recordDuration = Duration.zero;
       _dragOffsetX = 0;
     });
-    if (path == null) {
-      setState(() => _isUploading = false);
-      return;
-    }
-    try {
-      await widget.onSendVoice(path, durationSecs);
-    } finally {
-      if (mounted) setState(() => _isUploading = false);
+    if (path == null || durationSecs < 1) return;
+    if (!mounted) return;
+    // Show preview sheet — user can listen before deciding to send
+    final shouldSend = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: AppColors.bgCard,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _VoicePreviewSheet(
+        filePath: path,
+        duration: Duration(seconds: durationSecs),
+      ),
+    );
+    if (shouldSend == true && mounted) {
+      setState(() => _isUploading = true);
+      try {
+        await widget.onSendVoice(path, durationSecs);
+      } finally {
+        if (mounted) setState(() => _isUploading = false);
+      }
     }
   }
 
@@ -963,9 +952,8 @@ class _ChatInputState extends State<_ChatInput> {
     _recordTimer?.cancel();
     await _recorder.stopRecorder();
     HapticFeedback.lightImpact();
-    setState(() {
+    if (mounted) setState(() {
       _isRecording = false;
-      _isCancelling = false;
       _recordDuration = Duration.zero;
       _dragOffsetX = 0;
     });
@@ -1051,7 +1039,7 @@ class _ChatInputState extends State<_ChatInput> {
           ),
           // Release to send button
           GestureDetector(
-            onTap: _stopAndSend,
+            onTap: _stopAndPreview,
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -1156,7 +1144,7 @@ class _ChatInputState extends State<_ChatInput> {
           GestureDetector(
             onLongPressStart: (_) => _startRecording(),
             onLongPressEnd: (_) {
-              if (_isRecording && !_isCancelling) _stopAndSend();
+              if (_isRecording) _stopAndPreview();
             },
             child: Container(
               padding: const EdgeInsets.all(10),
@@ -1189,6 +1177,127 @@ class _ChatInputState extends State<_ChatInput> {
             ),
           ),
       ],
+    );
+  }
+}
+
+// ── Voice preview sheet (shown after releasing mic) ───────────────────────
+
+class _VoicePreviewSheet extends StatefulWidget {
+  final String filePath;
+  final Duration duration;
+  const _VoicePreviewSheet({required this.filePath, required this.duration});
+  @override
+  State<_VoicePreviewSheet> createState() => _VoicePreviewSheetState();
+}
+
+class _VoicePreviewSheetState extends State<_VoicePreviewSheet> {
+  final _player = AudioPlayer();
+  bool _playing = false;
+  Duration _pos = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _player.onPlayerStateChanged.listen((s) {
+      if (mounted) setState(() => _playing = s == PlayerState.playing);
+    });
+    _player.onPositionChanged.listen((d) {
+      if (mounted) setState(() => _pos = d);
+    });
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() { _playing = false; _pos = Duration.zero; });
+    });
+  }
+
+  @override
+  void dispose() { _player.dispose(); super.dispose(); }
+
+  String _fmt(Duration d) =>
+      '${d.inMinutes.toString().padLeft(2, '0')}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 36, height: 4,
+            decoration: BoxDecoration(color: Colors.white24,
+              borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          const Text('Voice Note', style: TextStyle(
+            color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 20),
+          Row(children: [
+            GestureDetector(
+              onTap: () async {
+                if (_playing) {
+                  await _player.pause();
+                } else {
+                  await _player.play(DeviceFileSource(widget.filePath));
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  color: AppColors.rose, shape: BoxShape.circle),
+                child: Icon(_playing ? Icons.pause : Icons.play_arrow,
+                  color: Colors.white, size: 24),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 3, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6)),
+                  child: Slider(
+                    value: _pos.inSeconds.toDouble(),
+                    max: widget.duration.inSeconds > 0 ? widget.duration.inSeconds.toDouble() : 1,
+                    activeColor: AppColors.rose,
+                    inactiveColor: Colors.white24,
+                    onChanged: (v) => _player.seek(Duration(seconds: v.toInt())),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(_fmt(widget.duration),
+                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                ),
+              ],
+            )),
+          ]),
+          const SizedBox(height: 24),
+          Row(children: [
+            Expanded(child: OutlinedButton(
+              onPressed: () => Navigator.pop(context, false),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.white24),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text('Discard', style: TextStyle(color: AppColors.textMuted)),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.rose,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.send_rounded, size: 16, color: Colors.white),
+                SizedBox(width: 6),
+                Text('Send', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              ]),
+            )),
+          ]),
+        ],
+      ),
     );
   }
 }
