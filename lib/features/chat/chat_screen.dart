@@ -8,7 +8,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:timeago/timeago.dart' as timeago;
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -54,6 +53,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scheduledDeletes = <String>{};
   ChatBackground _background = ChatBackground.dark;
   String? _customBgPath;
+  MessageModel? _replyingTo;
 
   @override
   void initState() {
@@ -118,7 +118,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _isTyping = false;
     ref.read(firestoreServiceProvider).setTyping(coupleId, false).ignore();
     final isWhisper = _whisperMode;
-    setState(() => _sending = true);
+    final replyTo = _replyingTo;
+    setState(() {
+      _sending = true;
+      _replyingTo = null;
+    });
     HapticFeedback.lightImpact();
     try {
       await ref.read(firestoreServiceProvider).sendMessage(
@@ -130,6 +134,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           type: MessageType.text,
           sentAt: DateTime.now(),
           isWhisper: isWhisper,
+          replyToId: replyTo?.id,
+          replyToContent: replyTo?.content,
         ),
       );
     } finally {
@@ -409,6 +415,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                   .deleteMessage(coupleId, msg.id)
                                   .ignore();
                             },
+                            onReply: () {
+                              setState(() => _replyingTo = msg);
+                            },
+                            onDoubleTap: coupleId == null ? null : () {
+                              final isLiked = msg.reactionEmoji == '❤️';
+                              HapticFeedback.lightImpact();
+                              ref
+                                  .read(firestoreServiceProvider)
+                                  .reactToMessage(coupleId, msg.id, isLiked ? '' : '❤️')
+                                  .ignore();
+                            },
                           ),
                         ],
                       );
@@ -445,6 +462,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               ),
 
+            if (_replyingTo != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: AppColors.bgCard,
+                child: Row(
+                  children: [
+                    const Icon(Icons.reply_rounded, color: AppColors.rose, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Replying to: "${_replyingTo!.content.length > 60 ? '${_replyingTo!.content.substring(0, 60)}…' : _replyingTo!.content}"',
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() => _replyingTo = null),
+                      child: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 16),
+                    ),
+                  ],
+                ),
+              ),
             _ChatInput(
               controller: _controller,
               sending: _sending,
@@ -1030,13 +1070,27 @@ class _DateSep extends StatelessWidget {
 
 // ── Message Bubble ────────────────────────────────────────────────────────
 
-class _MessageBubble extends StatelessWidget {
+// ── Emoji data ────────────────────────────────────────────────────────────
+
+const _kQuickEmojis = ['❤️', '😂', '😮', '😢', '😡', '👍'];
+const _kAllEmojis = {
+  'Smileys': ['😊','😂','🤣','😍','🥰','😘','😁','😎','🤩','🥳','😏','😒','🙄','😔','😢','😭','😤','😡','🤬','😱'],
+  'Gestures': ['👍','👎','👏','🙌','🤝','✌️','🤞','👌','🤙','💪','🫶','❤️‍🔥','🫂'],
+  'Hearts': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💞','💓','💗','💖','💝','💘','💟'],
+  'Nature': ['🌸','🌺','🌻','🌹','🍀','🌿','🌈','⭐','🌙','☀️','🌊','🦋','🐝'],
+  'Food': ['🍕','🍔','🍰','🍩','🍫','🍓','🍑','🍜','🧁','☕','🧃','🍷'],
+  'Activities': ['🎮','🎵','🎬','📸','✈️','🏖️','🎉','🎁','🏃','💃','🕺'],
+};
+
+class _MessageBubble extends StatefulWidget {
   final MessageModel msg;
   final bool isMe;
   final Color accent;
   final bool hasWallpaper;
   final void Function(String) onReact;
   final VoidCallback? onDelete;
+  final VoidCallback onReply;
+  final VoidCallback? onDoubleTap;
 
   const _MessageBubble({
     required this.msg,
@@ -1044,8 +1098,23 @@ class _MessageBubble extends StatelessWidget {
     required this.accent,
     required this.hasWallpaper,
     required this.onReact,
+    required this.onReply,
     this.onDelete,
+    this.onDoubleTap,
   });
+
+  @override
+  State<_MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<_MessageBubble> {
+  double _dragOffset = 0;
+
+  // Convenience getters
+  MessageModel get msg => widget.msg;
+  bool get isMe => widget.isMe;
+  Color get accent => widget.accent;
+  bool get hasWallpaper => widget.hasWallpaper;
 
   @override
   Widget build(BuildContext context) {
@@ -1054,9 +1123,35 @@ class _MessageBubble extends StatelessWidget {
     return _text(context);
   }
 
-  Widget _text(BuildContext context) {
+  Widget _swipeWrapper(BuildContext context, Widget child) {
     return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        final dx = details.delta.dx;
+        // isMe bubbles swipe left (negative), partner bubbles swipe right (positive)
+        if (isMe && dx < 0) {
+          setState(() => _dragOffset = (_dragOffset + dx).clamp(-60.0, 0.0));
+        } else if (!isMe && dx > 0) {
+          setState(() => _dragOffset = (_dragOffset + dx).clamp(0.0, 60.0));
+        }
+      },
+      onHorizontalDragEnd: (_) {
+        if (_dragOffset.abs() >= 50) {
+          HapticFeedback.lightImpact();
+          widget.onReply();
+        }
+        setState(() => _dragOffset = 0);
+      },
+      child: Transform.translate(
+        offset: Offset(_dragOffset, 0),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _text(BuildContext context) {
+    final bubbleContent = GestureDetector(
       onLongPress: () => _reactSheet(context),
+      onDoubleTap: widget.onDoubleTap,
       child: Align(
         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
@@ -1091,13 +1186,44 @@ class _MessageBubble extends StatelessWidget {
                           width: 0.5)
                       : null,
                 ),
-                child: Text(
-                  msg.content,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    height: 1.4,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (msg.replyToContent != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          border: const Border(
+                              left: BorderSide(
+                                  color: AppColors.rose, width: 3)),
+                          color: Colors.black.withValues(alpha: 0.18),
+                          borderRadius: const BorderRadius.only(
+                            topRight: Radius.circular(8),
+                            bottomRight: Radius.circular(8),
+                          ),
+                        ),
+                        child: Text(
+                          msg.replyToContent!.length > 80
+                              ? '${msg.replyToContent!.substring(0, 80)}…'
+                              : msg.replyToContent!,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    Text(
+                      msg.content,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               if (msg.reactionEmoji != null)
@@ -1106,23 +1232,13 @@ class _MessageBubble extends StatelessWidget {
                   child: Text(msg.reactionEmoji!,
                       style: const TextStyle(fontSize: 16)),
                 ),
-              Padding(
-                padding:
-                    const EdgeInsets.only(top: 2, left: 2, right: 2),
-                child: Text(
-                  timeago.format(msg.sentAt, allowFromNow: true),
-                  style: TextStyle(
-                      color: hasWallpaper
-                          ? Colors.white.withValues(alpha: 0.75)
-                          : AppColors.textMuted,
-                      fontSize: 10),
-                ),
-              ),
             ],
           ),
         ),
       ),
     ).animate().fadeIn(duration: 200.ms);
+
+    return _swipeWrapper(context, bubbleContent);
   }
 
   Widget _whisper(BuildContext context) {
@@ -1250,7 +1366,7 @@ class _MessageBubble extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 3, left: 2, right: 2),
                 child: Text(
-                  '${isVideo ? 'Video Snap' : 'Snap'} · ${timeago.format(msg.sentAt, allowFromNow: true)}',
+                  isVideo ? 'Video Snap' : 'Snap',
                   style: const TextStyle(
                       color: AppColors.textMuted, fontSize: 10),
                 ),
@@ -1263,7 +1379,7 @@ class _MessageBubble extends StatelessWidget {
   }
 
   void _snapDeleteSheet(BuildContext context) {
-    if (onDelete == null) return;
+    if (widget.onDelete == null) return;
     HapticFeedback.mediumImpact();
     showModalBottomSheet(
       context: context,
@@ -1287,7 +1403,7 @@ class _MessageBubble extends StatelessWidget {
             GestureDetector(
               onTap: () {
                 Navigator.pop(context);
-                onDelete!();
+                widget.onDelete!();
               },
               child: Container(
                 width: double.infinity,
@@ -1349,42 +1465,99 @@ class _MessageBubble extends StatelessWidget {
     HapticFeedback.mediumImpact();
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        padding:
-            const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
-        decoration: const BoxDecoration(
-          color: AppColors.bgMid,
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
+      builder: (_) => _EmojiPickerSheet(onPick: (e) {
+        Navigator.pop(context);
+        widget.onReact(e);
+      }),
+    );
+  }
+}
+
+// ── Emoji Picker Sheet ────────────────────────────────────────────────────
+
+class _EmojiPickerSheet extends StatelessWidget {
+  final void Function(String) onPick;
+  const _EmojiPickerSheet({required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.55,
+      ),
+      padding: EdgeInsets.fromLTRB(
+        20, 16, 20, MediaQuery.of(context).padding.bottom + 16),
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 14),
               decoration: BoxDecoration(
                   color: AppColors.divider,
                   borderRadius: BorderRadius.circular(2)),
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: ['❤️', '😂', '😮', '😢', '🔥', '👏']
-                  .map((e) => GestureDetector(
-                        onTap: () {
-                          Navigator.pop(context);
-                          onReact(e);
-                        },
-                        child: Text(e,
-                            style:
-                                const TextStyle(fontSize: 32)),
-                      ))
-                  .toList(),
+          ),
+          // Quick-pick row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: _kQuickEmojis
+                .map((e) => GestureDetector(
+                      onTap: () => onPick(e),
+                      child: Text(e, style: const TextStyle(fontSize: 32)),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 14),
+          const Divider(color: AppColors.divider, height: 1),
+          const SizedBox(height: 10),
+          // Scrollable category list
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: _kAllEmojis.entries.map((entry) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(entry.key,
+                          style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5)),
+                    ),
+                    SizedBox(
+                      height: 40,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: entry.value.length,
+                        itemBuilder: (_, i) => GestureDetector(
+                          onTap: () => onPick(entry.value[i]),
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Text(entry.value[i],
+                                style: const TextStyle(fontSize: 26)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                );
+              }).toList(),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

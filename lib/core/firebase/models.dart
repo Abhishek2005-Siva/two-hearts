@@ -139,6 +139,8 @@ class MessageModel {
   final bool isSnap;
   final bool snapViewed;
   final bool isWhisper;
+  final String? replyToId;
+  final String? replyToContent;
 
   const MessageModel({
     required this.id,
@@ -151,6 +153,8 @@ class MessageModel {
     this.isSnap = false,
     this.snapViewed = false,
     this.isWhisper = false,
+    this.replyToId,
+    this.replyToContent,
   });
 
   factory MessageModel.fromDoc(DocumentSnapshot doc) {
@@ -166,6 +170,8 @@ class MessageModel {
       isSnap: d['isSnap'] ?? false,
       snapViewed: d['snapViewed'] ?? false,
       isWhisper: d['isWhisper'] ?? false,
+      replyToId: d['replyToId'],
+      replyToContent: d['replyToContent'],
     );
   }
 
@@ -179,6 +185,8 @@ class MessageModel {
         if (isSnap) 'isSnap': true,
         if (snapViewed) 'snapViewed': true,
         if (isWhisper) 'isWhisper': true,
+        if (replyToId != null) 'replyToId': replyToId,
+        if (replyToContent != null) 'replyToContent': replyToContent,
       };
 }
 
@@ -262,6 +270,8 @@ class MoodEntry {
       updatedAt: (d['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
+
+  bool get isExpired => DateTime.now().difference(updatedAt).inHours >= 1;
 
   Map<String, dynamic> toMap() => {
         'mood': mood.name,
@@ -401,6 +411,7 @@ class MemoryModel {
   final DateTime createdAt;
   final String? deletionRequestedBy;
   final String? collectionId;
+  final bool isVideo;
 
   const MemoryModel({
     required this.id,
@@ -413,6 +424,7 @@ class MemoryModel {
     required this.createdAt,
     this.deletionRequestedBy,
     this.collectionId,
+    this.isVideo = false,
   });
 
   factory MemoryModel.fromDoc(DocumentSnapshot doc) {
@@ -428,6 +440,7 @@ class MemoryModel {
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       deletionRequestedBy: d['deletionRequestedBy'],
       collectionId: d['collectionId'],
+      isVideo: d['isVideo'] ?? false,
     );
   }
 
@@ -440,6 +453,7 @@ class MemoryModel {
         'favorite': favorite,
         'createdAt': Timestamp.fromDate(createdAt),
         'deletionRequestedBy': deletionRequestedBy,
+        'isVideo': isVideo,
         if (collectionId != null) 'collectionId': collectionId,
       };
 }

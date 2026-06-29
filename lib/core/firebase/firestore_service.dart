@@ -198,7 +198,9 @@ class FirestoreService {
       .doc(coupleId)
       .collection('messages')
       .doc(msgId)
-      .update({'reactionEmoji': emoji});
+      .update({
+        'reactionEmoji': emoji.isEmpty ? FieldValue.delete() : emoji,
+      });
 
   Future<void> deleteMessage(String coupleId, String msgId) => _db
       .collection('couples')

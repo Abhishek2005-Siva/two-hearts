@@ -9,10 +9,10 @@ class MainShell extends ConsumerWidget {
   const MainShell({super.key, required this.child});
 
   static const _tabs = [
-    _Tab(icon: Icons.house_rounded, label: 'Room', path: '/room'),
+    _Tab(icon: Icons.house_rounded, label: 'Home', path: '/room'),
     _Tab(icon: Icons.chat_bubble_rounded, label: 'Chat', path: '/chat'),
     _Tab(icon: Icons.photo_library_rounded, label: 'Memories', path: '/memory'),
-    _Tab(icon: Icons.favorite_rounded, label: 'Together', path: '/together'),
+    _Tab(icon: Icons.favorite_rounded, label: 'Fun', path: '/together'),
     _Tab(icon: Icons.settings_rounded, label: 'Settings', path: '/you'),
   ];
 

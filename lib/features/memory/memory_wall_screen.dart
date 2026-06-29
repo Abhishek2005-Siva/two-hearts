@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -7,11 +8,11 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import 'package:video_player/video_player.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
-import 'photo_booth_screen.dart';
 
 class MemoryWallScreen extends ConsumerStatefulWidget {
   const MemoryWallScreen({super.key});
@@ -20,24 +21,55 @@ class MemoryWallScreen extends ConsumerStatefulWidget {
   ConsumerState<MemoryWallScreen> createState() => _MemoryWallScreenState();
 }
 
-class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen>
-    with SingleTickerProviderStateMixin {
+class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   bool _uploading = false;
-  late final TabController _tabController;
 
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+  Future<void> _showAddMemorySheet() async {
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.divider,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Text('📷', style: TextStyle(fontSize: 24)),
+              title: const Text('Photos',
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+              onTap: () {
+                Navigator.pop(context);
+                _pickPhotos();
+              },
+            ),
+            ListTile(
+              leading: const Text('🎥', style: TextStyle(fontSize: 24)),
+              title: const Text('Videos',
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+              onTap: () {
+                Navigator.pop(context);
+                _pickVideo();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickAndUpload() async {
+  Future<void> _pickPhotos() async {
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
@@ -60,6 +92,35 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen>
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    final coupleId = ref.read(coupleIdProvider);
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (coupleId == null || authUser == null) return;
+    final picker = ImagePicker();
+    final xfile = await picker.pickVideo(source: ImageSource.gallery);
+    if (xfile == null) return;
+    setState(() => _uploading = true);
+    try {
+      final id = const Uuid().v4();
+      final url = await CloudinaryService.uploadVideo(
+        File(xfile.path),
+        folder: 'two_hearts/$coupleId',
+      );
+      await ref.read(firestoreServiceProvider).addMemory(
+        coupleId,
+        MemoryModel(
+          id: id,
+          uploaderUid: authUser.uid,
+          imageUrl: url,
+          createdAt: DateTime.now(),
+          isVideo: true,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -156,8 +217,6 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen>
 
   @override
   Widget build(BuildContext context) {
-    final accent = ref.watch(accentColorProvider);
-
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -193,35 +252,16 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen>
                       IconButton(
                         icon: const Icon(Icons.add_photo_alternate_outlined,
                             color: AppColors.textPrimary),
-                        onPressed: _pickAndUpload,
+                        onPressed: _showAddMemorySheet,
                       ),
                   ],
                 ),
               ),
-              // TabBar
-              TabBar(
-                controller: _tabController,
-                indicatorColor: accent,
-                labelColor: accent,
-                unselectedLabelColor: AppColors.textMuted,
-                indicatorSize: TabBarIndicatorSize.label,
-                tabs: const [
-                  Tab(text: 'Memories'),
-                  Tab(text: 'Photo Booth'),
-                ],
-              ),
               const SizedBox(height: 4),
-              // Tab views
               Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _MemoriesTab(
-                      onLongPress: _onLongPress,
-                      onUpload: _pickAndUpload,
-                    ),
-                    const _PhotoBoothTab(),
-                  ],
+                child: _MemoriesTab(
+                  onLongPress: _onLongPress,
+                  onUpload: _showAddMemorySheet,
                 ),
               ),
             ],
@@ -366,7 +406,15 @@ class _MasonryColumn extends StatelessWidget {
             aspectRatio: aspectRatio,
             accent: accent,
             myUid: myUid,
-            onTap: () => context.go('/memory/${memory.id}'),
+            onTap: () {
+              if (memory.isVideo) {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => _FullscreenVideoPlayer(url: memory.imageUrl),
+                ));
+              } else {
+                context.go('/memory/${memory.id}');
+              }
+            },
             onFavorite: () async {
               if (coupleId.isEmpty) return;
               await ref.read(firestoreServiceProvider).toggleFavoriteMemory(
@@ -419,19 +467,25 @@ class _MasonryCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                CachedNetworkImage(
-                  imageUrl: memory.imageUrl,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(
-                      color: AppColors.bgCard,
+                if (memory.isVideo)
+                  Container(color: Colors.black87,
                       child: const Center(
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: AppColors.rose))),
-                  errorWidget: (context, url, error) => Container(
-                      color: AppColors.bgCard,
-                      child: const Icon(Icons.broken_image_outlined,
-                          color: AppColors.textMuted)),
-                ),
+                          child: Icon(Icons.play_circle_outline,
+                              color: Colors.white70, size: 48)))
+                else
+                  CachedNetworkImage(
+                    imageUrl: memory.imageUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
+                        color: AppColors.bgCard,
+                        child: const Center(
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.rose))),
+                    errorWidget: (context, url, error) => Container(
+                        color: AppColors.bgCard,
+                        child: const Icon(Icons.broken_image_outlined,
+                            color: AppColors.textMuted)),
+                  ),
                 // Bottom gradient overlay
                 Positioned(
                   bottom: 0, left: 0, right: 0,
@@ -513,321 +567,58 @@ class _MasonryCard extends StatelessWidget {
   }
 }
 
-// ── Photo Booth Tab ───────────────────────────────────────────────────────
+// ── Fullscreen Video Player ───────────────────────────────────────────────
 
-class _PhotoBoothTab extends ConsumerWidget {
-  const _PhotoBoothTab();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Reuse PhotoBoothScreen's body by embedding its content
-    // PhotoBoothScreen is a full Scaffold; we embed its content directly
-    return const _PhotoBoothTabContent();
-  }
-}
-
-class _PhotoBoothTabContent extends ConsumerWidget {
-  const _PhotoBoothTabContent();
+class _FullscreenVideoPlayer extends StatefulWidget {
+  final String url;
+  const _FullscreenVideoPlayer({required this.url});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final accent = ref.watch(accentColorProvider);
-    final collectionsAsync = ref.watch(photoCollectionsProvider);
-    final memoriesAsync = ref.watch(memoriesProvider);
-
-    final uncollected = (memoriesAsync.valueOrNull ?? [])
-        .where((m) => m.collectionId == null)
-        .length;
-
-    return Column(
-      children: [
-        // New album button row
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton.icon(
-                icon: Icon(Icons.create_new_folder_outlined,
-                    color: accent, size: 18),
-                label: Text('New Album',
-                    style: TextStyle(color: accent, fontSize: 13)),
-                onPressed: () =>
-                    _createCollectionDialog(context, ref, accent),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: collectionsAsync.when(
-            loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.rose)),
-            error: (e, _) => Center(
-                child: Text('Error: $e',
-                    style: const TextStyle(
-                        color: AppColors.textSecondary))),
-            data: (collections) {
-              final tiles = <Widget>[
-                if (uncollected > 0)
-                  _CollectionTileWidget(
-                    name: 'All Photos',
-                    photoCount: uncollected,
-                    coverUrl: (memoriesAsync.valueOrNull ?? [])
-                        .where((m) => m.collectionId == null)
-                        .firstOrNull
-                        ?.imageUrl,
-                    accent: accent,
-                    onTap: () =>
-                        _openUncollected(context, ref, accent),
-                  ).animate().fadeIn(),
-                ...collections.asMap().entries.map((e) =>
-                    _CollectionTileWidget(
-                      name: e.value.name,
-                      photoCount: e.value.photoCount,
-                      coverUrl: e.value.coverUrl,
-                      accent: accent,
-                      onTap: () =>
-                          _openCollection(context, ref, e.value, accent),
-                    ).animate().fadeIn(
-                        delay:
-                            Duration(milliseconds: e.key * 60))),
-              ];
-
-              if (tiles.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('📸',
-                          style: TextStyle(fontSize: 64)),
-                      const SizedBox(height: 16),
-                      Text('No albums yet',
-                          style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Create an album to organise event photos ♡',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 24),
-                      GradientButton(
-                        label: 'Create Album',
-                        width: 200,
-                        onTap: () =>
-                            _createCollectionDialog(context, ref, accent),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              return GridView.count(
-                padding: const EdgeInsets.all(16),
-                crossAxisCount: 2,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                childAspectRatio: 0.85,
-                children: tiles,
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _createCollectionDialog(
-      BuildContext context, WidgetRef ref, Color accent) {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('New Album',
-            style: TextStyle(color: AppColors.textPrimary)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'Album name…',
-            hintStyle: TextStyle(color: AppColors.textMuted),
-          ),
-          onSubmitted: (_) async {
-            final name = ctrl.text.trim();
-            if (name.isEmpty) return;
-            final coupleId = ref.read(coupleIdProvider);
-            if (coupleId == null) return;
-            Navigator.pop(dialogCtx);
-            await ref
-                .read(firestoreServiceProvider)
-                .createCollection(coupleId, name);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textMuted)),
-          ),
-          TextButton(
-            onPressed: () async {
-              final name = ctrl.text.trim();
-              if (name.isEmpty) return;
-              final coupleId = ref.read(coupleIdProvider);
-              if (coupleId == null) return;
-              Navigator.pop(dialogCtx);
-              await ref
-                  .read(firestoreServiceProvider)
-                  .createCollection(coupleId, name);
-            },
-            child: Text('Create', style: TextStyle(color: accent)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _openCollection(BuildContext context, WidgetRef ref,
-      PhotoCollection col, Color accent) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ProviderScope(
-          child: _CollectionScreenWrapper(
-            collection: col,
-            accent: accent,
-            filterCollectionId: col.id,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _openUncollected(BuildContext context, WidgetRef ref, Color accent) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ProviderScope(
-          child: _CollectionScreenWrapper(
-            collection: null,
-            accent: accent,
-            filterCollectionId: null,
-          ),
-        ),
-      ),
-    );
-  }
+  State<_FullscreenVideoPlayer> createState() => _FullscreenVideoPlayerState();
 }
 
-// Thin wrapper so we can reuse PhotoBoothScreen's _CollectionScreen logic
-// by opening the existing PhotoBoothScreen route instead
-class _CollectionScreenWrapper extends StatelessWidget {
-  final PhotoCollection? collection;
-  final Color accent;
-  final String? filterCollectionId;
+class _FullscreenVideoPlayerState extends State<_FullscreenVideoPlayer> {
+  late final VideoPlayerController _ctrl;
+  bool _initialized = false;
 
-  const _CollectionScreenWrapper({
-    required this.collection,
-    required this.accent,
-    required this.filterCollectionId,
-  });
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _initialized = true);
+          _ctrl.play();
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Navigate to the photo booth screen passing the collection
-    // Since _CollectionScreen is private in photo_booth_screen.dart,
-    // we push the PhotoBoothScreen and let users navigate from there.
-    // For a better UX, open PhotoBoothScreen directly.
-    return const PhotoBoothScreen();
-  }
-}
-
-// ── Collection Tile Widget (local copy for tab) ───────────────────────────
-
-class _CollectionTileWidget extends StatelessWidget {
-  final String name;
-  final int photoCount;
-  final String? coverUrl;
-  final Color accent;
-  final VoidCallback onTap;
-
-  const _CollectionTileWidget({
-    required this.name,
-    required this.photoCount,
-    this.coverUrl,
-    required this.accent,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          color: AppColors.bgCard,
-          border: Border.all(color: AppColors.divider, width: 0.5),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 4)),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(18)),
-                child: coverUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: coverUrl!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        placeholder: (_, _) =>
-                            Container(color: AppColors.bgCardLight),
-                        errorWidget: (_, _, _) => _placeholder(),
-                      )
-                    : _placeholder(),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name,
-                      style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Text(
-                    '$photoCount photo${photoCount != 1 ? 's' : ''}',
-                    style: const TextStyle(
-                        color: AppColors.textMuted, fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
+      body: Center(
+        child: _initialized
+            ? GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _ctrl.value.isPlaying ? _ctrl.pause() : _ctrl.play();
+                  });
+                },
+                child: AspectRatio(
+                  aspectRatio: _ctrl.value.aspectRatio,
+                  child: VideoPlayer(_ctrl),
+                ),
+              )
+            : const CircularProgressIndicator(color: AppColors.rose),
       ),
     );
   }
-
-  Widget _placeholder() => Container(
-        color: AppColors.bgCardLight,
-        child: const Center(
-          child: Text('📷', style: TextStyle(fontSize: 32)),
-        ),
-      );
 }

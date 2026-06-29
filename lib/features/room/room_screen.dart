@@ -409,7 +409,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     final partner = ref.watch(partnerUserProvider).valueOrNull;
     final couple = ref.watch(coupleProvider).valueOrNull;
     final memories = ref.watch(memoriesProvider).valueOrNull ?? [];
-    final moods = ref.watch(moodsProvider).valueOrNull ?? [];
+    final activeMoods = (ref.watch(moodsProvider).valueOrNull ?? [])
+        .where((m) => !m.isExpired)
+        .toList();
+    final moods = activeMoods;
     final myUid = FirebaseAuth.instance.currentUser?.uid;
 
     final myMood = moods.where((m) => m.uid == myUid).firstOrNull?.mood;

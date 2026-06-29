@@ -36,7 +36,7 @@ class TogetherScreen extends ConsumerWidget {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: Colors.transparent,
-                title: const Text('Together'),
+                title: const Text('Fun'),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
