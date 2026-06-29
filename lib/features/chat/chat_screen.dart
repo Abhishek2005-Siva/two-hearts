@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+import 'snap_camera_screen.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
@@ -52,7 +53,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _sending = false;
   bool _isTyping = false;
   bool _whisperMode = false;
-  bool _videoSnapMode = false;
   final _scheduledDeletes = <String>{};
   MessageModel? _replyingTo;
 
@@ -126,27 +126,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
-    // Open camera once — the native camera app has its own photo/video toggle.
-    // Use pickMultipleMedia with camera source so user picks in one session.
-    final picker = ImagePicker();
-    final pickedImage = await picker.pickImage(source: ImageSource.camera, imageQuality: 75);
-    if (pickedImage == null || !mounted) return;
+
+    final result = await Navigator.of(context).push<SnapCameraCapture>(
+      MaterialPageRoute(builder: (_) => const SnapCameraScreen(), fullscreenDialog: true),
+    );
+    if (result == null || !mounted) return;
+
     setState(() => _sending = true);
     HapticFeedback.mediumImpact();
     try {
-      final bytes = await pickedImage.readAsBytes();
-      final url = await CloudinaryService.uploadImage(bytes, folder: 'snaps');
-      await ref.read(firestoreServiceProvider).sendMessage(
-        coupleId,
-        MessageModel(
-          id: const Uuid().v4(),
-          senderId: authUser.uid,
-          content: url,
-          type: MessageType.image,
-          sentAt: DateTime.now(),
-          isSnap: true,
-        ),
-      );
+      if (result.type == SnapCameraResult.photo) {
+        final bytes = await File(result.path).readAsBytes();
+        final url = await CloudinaryService.uploadImage(bytes, folder: 'snaps');
+        await ref.read(firestoreServiceProvider).sendMessage(
+          coupleId,
+          MessageModel(
+            id: const Uuid().v4(),
+            senderId: authUser.uid,
+            content: url,
+            type: MessageType.image,
+            sentAt: DateTime.now(),
+            isSnap: true,
+          ),
+        );
+      } else {
+        final url = await CloudinaryService.uploadVideo(File(result.path), folder: 'snaps');
+        await ref.read(firestoreServiceProvider).sendMessage(
+          coupleId,
+          MessageModel(
+            id: const Uuid().v4(),
+            senderId: authUser.uid,
+            content: url,
+            type: MessageType.video,
+            sentAt: DateTime.now(),
+            isSnap: true,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -169,39 +185,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           type: MessageType.voice,
           sentAt: DateTime.now(),
           voiceDurationSeconds: durationSeconds,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  Future<void> _sendVideoSnap() async {
-    final coupleId = ref.read(coupleIdProvider);
-    final authUser = FirebaseAuth.instance.currentUser;
-    if (coupleId == null || authUser == null) return;
-    final picker = ImagePicker();
-    final picked = await picker.pickVideo(
-      source: ImageSource.camera,
-      maxDuration: const Duration(seconds: 30),
-    );
-    if (picked == null || !mounted) return;
-    setState(() => _sending = true);
-    HapticFeedback.mediumImpact();
-    try {
-      final url = await CloudinaryService.uploadVideo(
-        File(picked.path),
-        folder: 'snaps',
-      );
-      await ref.read(firestoreServiceProvider).sendMessage(
-        coupleId,
-        MessageModel(
-          id: const Uuid().v4(),
-          senderId: authUser.uid,
-          content: url,
-          type: MessageType.video,
-          sentAt: DateTime.now(),
-          isSnap: true,
         ),
       );
     } finally {
@@ -514,16 +497,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               controller: _controller,
               sending: _sending,
               whisperMode: _whisperMode,
-              videoSnapMode: _videoSnapMode,
               accent: accent,
               onSend: _send,
-              onSnap: _videoSnapMode ? _sendVideoSnap : _sendSnap,
-              onSnapPhoto: _sendSnap,
-              onSnapVideo: _sendVideoSnap,
+              onSnap: _sendSnap,
               onToggleWhisper: () =>
                   setState(() => _whisperMode = !_whisperMode),
-              onToggleVideoSnap: () =>
-                  setState(() => _videoSnapMode = !_videoSnapMode),
               onSendVoice: _sendVoice,
             ),
           ],
@@ -833,28 +811,20 @@ class _ChatInput extends StatefulWidget {
   final TextEditingController controller;
   final bool sending;
   final bool whisperMode;
-  final bool videoSnapMode;
   final Color accent;
   final VoidCallback onSend;
   final VoidCallback onSnap;
-  final VoidCallback onSnapPhoto;
-  final VoidCallback onSnapVideo;
   final VoidCallback onToggleWhisper;
-  final VoidCallback onToggleVideoSnap;
   final Future<void> Function(String path, int durationSeconds) onSendVoice;
 
   const _ChatInput({
     required this.controller,
     required this.sending,
     required this.whisperMode,
-    required this.videoSnapMode,
     required this.accent,
     required this.onSend,
     required this.onSnap,
-    required this.onSnapPhoto,
-    required this.onSnapVideo,
     required this.onToggleWhisper,
-    required this.onToggleVideoSnap,
     required this.onSendVoice,
   });
 

@@ -78,9 +78,22 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
               final partnerRequested =
                   hasDeletion && memory.deletionRequestedBy != myUid;
 
-              return Stack(
-                fit: StackFit.expand,
-                children: [
+              return GestureDetector(
+                onTapUp: (details) {
+                  final width = MediaQuery.of(context).size.width;
+                  if (details.localPosition.dx < width / 2) {
+                    _pageCtrl.previousPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut);
+                  } else {
+                    _pageCtrl.nextPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut);
+                  }
+                },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
                   // Full-screen image with pinch-zoom
                   InteractiveViewer(
                     child: Hero(
@@ -161,7 +174,8 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                                 : const SizedBox.shrink(),
                       ),
                     ),
-                ],
+                  ],
+                ),
               );
             },
           ),

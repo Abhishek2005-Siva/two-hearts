@@ -856,6 +856,13 @@ class _MasonryCard extends StatelessWidget {
     this.onLongPress,
   });
 
+  static String _videoThumb(String videoUrl) {
+    if (videoUrl.contains('cloudinary.com')) {
+      return videoUrl.replaceAll(RegExp(r'\.(mp4|mov|avi|webm)$'), '.jpg');
+    }
+    return videoUrl;
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasDeletionRequest = memory.deletionRequestedBy != null;
@@ -875,10 +882,23 @@ class _MasonryCard extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 if (memory.isVideo)
-                  Container(color: Colors.black87,
-                      child: const Center(
-                          child: Icon(Icons.play_circle_outline,
-                              color: Colors.white70, size: 48)))
+                  Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CachedNetworkImage(
+                        imageUrl: _MasonryCard._videoThumb(memory.imageUrl),
+                        fit: BoxFit.cover,
+                        placeholder: (ctx, url) =>
+                            Container(color: Colors.black87),
+                        errorWidget: (ctx, url, err) =>
+                            Container(color: Colors.black87),
+                      ),
+                      const Center(
+                        child: Icon(Icons.play_circle_outline,
+                            color: Colors.white, size: 48),
+                      ),
+                    ],
+                  )
                 else
                   CachedNetworkImage(
                     imageUrl: memory.imageUrl,

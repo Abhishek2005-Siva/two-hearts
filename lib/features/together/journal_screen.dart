@@ -80,7 +80,7 @@ class JournalScreen extends ConsumerWidget {
       builder: (_) => _BookView(
         day: existing ??
             JournalDay(id: today, title: '', sharedEntry: ''),
-        isNew: existing == null,
+        isNew: true,
       ),
     ));
   }
@@ -100,19 +100,39 @@ class _BookshelfBody extends StatelessWidget {
     final shelf1 = entries.take(mid).toList();
     final shelf2 = entries.skip(mid).toList();
 
-    return CustomPaint(
-      painter: _WallPainter(),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 24),
-            _Shelf(books: shelf1),
-            const SizedBox(height: 32),
-            _Shelf(books: shelf2),
-            const SizedBox(height: 140),
-          ],
+    return Stack(
+      children: [
+        // Background: bookshelf image
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/empty_bookshelf.webp',
+            fit: BoxFit.cover,
+          ),
         ),
-      ),
+        // Books and content on top
+        SingleChildScrollView(
+          child: Column(
+            children: [
+              const SizedBox(height: 24),
+              _Shelf(books: shelf1),
+              const SizedBox(height: 32),
+              _Shelf(books: shelf2),
+              const SizedBox(height: 140),
+            ],
+          ),
+        ),
+        // Barrel decoration in bottom-right corner
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: Image.asset(
+            'assets/images/barrel.jpeg',
+            width: 80,
+            height: 100,
+            fit: BoxFit.contain,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -323,19 +343,6 @@ class _DecoItem extends StatelessWidget {
 
 // ─── Painters ─────────────────────────────────────────────────────────────
 
-class _WallPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = const Color(0xFF2A1F14),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_WallPainter old) => false;
-}
-
 class _ShelfPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -385,145 +392,6 @@ class _ShelfPainter extends CustomPainter {
   bool shouldRepaint(_ShelfPainter old) => false;
 }
 
-// ─── Lectern Painter ──────────────────────────────────────────────────────
-
-class _LecternPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    // Shadow/glow beneath lectern
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.4)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(w / 2, h * 0.96), width: w * 0.7, height: 10),
-      shadowPaint,
-    );
-
-    // Dark brown base (trapezoid — wider at bottom)
-    final basePaint = Paint()..color = const Color(0xFF3B1F0A);
-    final basePath = Path()
-      ..moveTo(w * 0.25, h * 0.62)
-      ..lineTo(w * 0.75, h * 0.62)
-      ..lineTo(w * 0.82, h * 0.90)
-      ..lineTo(w * 0.18, h * 0.90)
-      ..close();
-    canvas.drawPath(basePath, basePaint);
-
-    // Base highlight (top edge lighter)
-    final baseHighlight = Paint()
-      ..color = const Color(0xFF6B3A15)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(
-        Offset(w * 0.25, h * 0.62), Offset(w * 0.75, h * 0.62), baseHighlight);
-
-    // Medium brown column/stand
-    final standPaint = Paint()
-      ..shader = LinearGradient(
-        colors: const [Color(0xFF7A4A1A), Color(0xFF5C3510)],
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-      ).createShader(Rect.fromLTWH(w * 0.38, h * 0.35, w * 0.24, h * 0.30));
-    final standRect =
-        RRect.fromRectAndRadius(Rect.fromLTWH(w * 0.38, h * 0.35, w * 0.24, h * 0.30),
-            const Radius.circular(2));
-    canvas.drawRRect(standRect, standPaint);
-
-    // Open book on top of stand
-    // Book body — slightly angled, open V shape
-    final leftPage = Path()
-      ..moveTo(w * 0.10, h * 0.12)
-      ..lineTo(w * 0.50, h * 0.22)
-      ..lineTo(w * 0.50, h * 0.38)
-      ..lineTo(w * 0.08, h * 0.36)
-      ..close();
-    final rightPage = Path()
-      ..moveTo(w * 0.90, h * 0.12)
-      ..lineTo(w * 0.50, h * 0.22)
-      ..lineTo(w * 0.50, h * 0.38)
-      ..lineTo(w * 0.92, h * 0.36)
-      ..close();
-
-    // Book cover (darker outer)
-    final coverPaint = Paint()..color = const Color(0xFF8B5E2A);
-    final leftCover = Path()
-      ..moveTo(w * 0.07, h * 0.11)
-      ..lineTo(w * 0.50, h * 0.21)
-      ..lineTo(w * 0.50, h * 0.40)
-      ..lineTo(w * 0.05, h * 0.38)
-      ..close();
-    final rightCover = Path()
-      ..moveTo(w * 0.93, h * 0.11)
-      ..lineTo(w * 0.50, h * 0.21)
-      ..lineTo(w * 0.50, h * 0.40)
-      ..lineTo(w * 0.95, h * 0.38)
-      ..close();
-    canvas.drawPath(leftCover, coverPaint);
-    canvas.drawPath(rightCover, coverPaint);
-
-    // White pages
-    final pagePaint = Paint()..color = const Color(0xFFFDF6E3);
-    canvas.drawPath(leftPage, pagePaint);
-    canvas.drawPath(rightPage, pagePaint);
-
-    // Page lines (subtle)
-    final linePaint = Paint()
-      ..color = const Color(0xFFBBA97A).withValues(alpha: 0.5)
-      ..strokeWidth = 0.7;
-    for (int i = 1; i <= 3; i++) {
-      final t = i / 4.0;
-      // Left page lines
-      final lx1 = w * 0.10 + (w * 0.40) * t * 0.0 + w * 0.04;
-      final ly = h * 0.12 + (h * 0.24) * t;
-      final lx2 = w * 0.50 - w * 0.04;
-      canvas.drawLine(Offset(lx1, ly), Offset(lx2, ly), linePaint);
-      // Right page lines
-      final rx1 = w * 0.50 + w * 0.04;
-      final rx2 = w * 0.90 - (w * 0.02);
-      canvas.drawLine(Offset(rx1, ly), Offset(rx2, ly), linePaint);
-    }
-
-    // Spine crease in center
-    final spinePaint = Paint()
-      ..color = const Color(0xFF6B4220)
-      ..strokeWidth = 2.0;
-    canvas.drawLine(
-        Offset(w * 0.50, h * 0.21), Offset(w * 0.50, h * 0.40), spinePaint);
-
-    // Lectern top flat surface connecting book to stand
-    final topPaint = Paint()..color = const Color(0xFF6B3A15);
-    final topPath = Path()
-      ..moveTo(w * 0.05, h * 0.36)
-      ..lineTo(w * 0.95, h * 0.36)
-      ..lineTo(w * 0.75, h * 0.45)
-      ..lineTo(w * 0.25, h * 0.45)
-      ..close();
-    canvas.drawPath(topPath, topPaint);
-
-    // Pixel-style accent dots on base (Minecraft block texture hint)
-    final dotPaint = Paint()..color = const Color(0xFF2A1005).withValues(alpha: 0.6);
-    for (int row = 0; row < 2; row++) {
-      for (int col = 0; col < 4; col++) {
-        canvas.drawRect(
-          Rect.fromLTWH(
-            w * 0.28 + col * w * 0.12,
-            h * 0.68 + row * h * 0.08,
-            w * 0.06,
-            h * 0.04,
-          ),
-          dotPaint,
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_LecternPainter old) => false;
-}
-
 // ─── Lectern widget ───────────────────────────────────────────────────────
 
 class _LecternWidget extends StatelessWidget {
@@ -534,22 +402,11 @@ class _LecternWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CustomPaint(
-            painter: _LecternPainter(),
-            size: const Size(80, 100),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Write',
-            style: GoogleFonts.lato(
-              color: const Color(0xFFF5DEB3).withValues(alpha: 0.7),
-              fontSize: 11,
-            ),
-          ),
-        ],
+      child: Image.asset(
+        'assets/images/lectern.webp',
+        width: 100,
+        height: 120,
+        fit: BoxFit.contain,
       ),
     );
   }
@@ -766,6 +623,7 @@ class _BookViewState extends ConsumerState<_BookView> {
                       padding: const EdgeInsets.fromLTRB(52, 16, 16, 16),
                       child: _editing
                           ? _PaperThemedEditor(
+                              key: ValueKey(_editing),
                               initialBlocks: _blocks,
                               onChanged: _onBlocksChanged,
                             )
@@ -781,9 +639,8 @@ class _BookViewState extends ConsumerState<_BookView> {
           // Toolbar
           _BookToolbar(
             editing: _editing,
-            onEdit: () {
-              setState(() => _editing = true);
-            },
+            onEdit: () => setState(() => _editing = true),
+            onSave: () => _save(),
           ),
           const SizedBox(height: 12),
         ],
@@ -797,10 +654,12 @@ class _BookViewState extends ConsumerState<_BookView> {
 class _BookToolbar extends StatelessWidget {
   final bool editing;
   final VoidCallback onEdit;
+  final VoidCallback onSave;
 
   const _BookToolbar({
     required this.editing,
     required this.onEdit,
+    required this.onSave,
   });
 
   @override
@@ -820,8 +679,14 @@ class _BookToolbar extends StatelessWidget {
           if (!editing)
             _ToolbarBtn(
               icon: Icons.edit_outlined,
-              label: 'Edit',
+              label: '✏️ Edit',
               onTap: onEdit,
+            )
+          else
+            _ToolbarBtn(
+              icon: Icons.save_outlined,
+              label: '💾 Save',
+              onTap: onSave,
             ),
         ],
       ),
@@ -874,6 +739,7 @@ class _PaperThemedEditor extends StatelessWidget {
   final ValueChanged<List<ContentBlock>> onChanged;
 
   const _PaperThemedEditor({
+    super.key,
     required this.initialBlocks,
     required this.onChanged,
   });

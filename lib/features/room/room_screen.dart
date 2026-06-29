@@ -856,6 +856,13 @@ class _PolaroidCard extends StatelessWidget {
   const _PolaroidCard(
       {required this.memory, required this.index, required this.nightness});
 
+  static String _polaroidThumb(String url, bool isVideo) {
+    if (isVideo && url.contains('cloudinary.com')) {
+      return url.replaceAll(RegExp(r'\.(mp4|mov|avi|webm)$'), '.jpg');
+    }
+    return url;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Very slight rotations — real polaroids are nearly straight
@@ -902,17 +909,27 @@ class _PolaroidCard extends StatelessWidget {
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(1),
                             child: memory.imageUrl?.isNotEmpty == true
-                                ? CachedNetworkImage(
-                                    imageUrl: memory.imageUrl as String,
-                                    fit: BoxFit.cover,
-                                    width: double.infinity,
-                                    placeholder: (_, _) =>
-                                        Container(color: const Color(0xFFDDCAB4)),
-                                    errorWidget: (_, _, _) => Container(
-                                      color: const Color(0xFFDDCAB4),
-                                      child: const Icon(Icons.image_outlined,
-                                          color: Colors.grey, size: 22),
-                                    ),
+                                ? Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      CachedNetworkImage(
+                                        imageUrl: _polaroidThumb(memory.imageUrl as String, memory.isVideo as bool),
+                                        fit: BoxFit.cover,
+                                        width: double.infinity,
+                                        placeholder: (ctx, url) =>
+                                            Container(color: const Color(0xFFDDCAB4)),
+                                        errorWidget: (ctx, url, err) => Container(
+                                          color: const Color(0xFFDDCAB4),
+                                          child: const Icon(Icons.image_outlined,
+                                              color: Colors.grey, size: 22),
+                                        ),
+                                      ),
+                                      if (memory.isVideo as bool)
+                                        const Center(
+                                          child: Icon(Icons.play_circle_outline,
+                                              color: Colors.white70, size: 28),
+                                        ),
+                                    ],
                                   )
                                 : Container(
                                     color: const Color(0xFFDDCAB4),

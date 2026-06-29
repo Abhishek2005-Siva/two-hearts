@@ -10,7 +10,7 @@ class SnapsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final imagesAsync = ref.watch(chatImagesProvider);
+    final imagesAsync = ref.watch(snapsProvider);
     final accent = ref.watch(accentColorProvider);
 
     return Scaffold(
@@ -35,7 +35,7 @@ class SnapsScreen extends ConsumerWidget {
                       onPressed: () => Navigator.maybePop(context),
                     ),
                     Expanded(
-                      child: Text('Photos & Snaps',
+                      child: Text('Snaps',
                           style: Theme.of(context).textTheme.titleLarge),
                     ),
                   ],
@@ -252,8 +252,16 @@ class _ImageTile extends StatelessWidget {
     required this.onTap,
   });
 
+  static String _snapThumb(String url, bool isVideo) {
+    if (isVideo && url.contains('cloudinary.com')) {
+      return url.replaceAll(RegExp(r'\.(mp4|mov|avi|webm)$'), '.jpg');
+    }
+    return url;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isVideo = message.type == MessageType.video;
     return GestureDetector(
       onTap: onTap,
       child: ClipRRect(
@@ -262,16 +270,21 @@ class _ImageTile extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             CachedNetworkImage(
-              imageUrl: message.content,
+              imageUrl: _snapThumb(message.content, isVideo),
               fit: BoxFit.cover,
-              placeholder: (_, __) => Container(color: AppColors.bgCard),
-              errorWidget: (_, __, ___) => Container(
+              placeholder: (ctx, url) => Container(color: AppColors.bgCard),
+              errorWidget: (ctx, url, err) => Container(
                 color: AppColors.bgCard,
                 child: const Center(
                   child: Text('📷', style: TextStyle(fontSize: 24)),
                 ),
               ),
             ),
+            if (isVideo)
+              const Center(
+                child: Icon(Icons.play_circle_outline,
+                    color: Colors.white70, size: 36),
+              ),
             if (message.isSnap)
               Positioned(
                 top: 4,
