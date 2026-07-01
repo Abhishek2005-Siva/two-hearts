@@ -77,9 +77,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Not signed in → force to auth.
       if (!isAuth) return onAuth ? null : '/auth';
 
-      // Signed in but Firestore hasn't confirmed couple status yet.
-      // Stay put (or leave auth screens to /room) — never flash /pair.
-      if (!coupleLoaded) return onAuth ? '/room' : null;
+      // Signed in but Firestore hasn't confirmed couple status yet — wait.
+      if (!coupleLoaded) return null;
 
       // Couple data loaded — now we know for certain.
       if (!isPaired) return onAuth ? null : '/pair';
