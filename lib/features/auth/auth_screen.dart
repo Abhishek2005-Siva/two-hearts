@@ -21,7 +21,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _password = TextEditingController();
   final _name = TextEditingController();
   final _username = TextEditingController();
-  final _partnerCode = TextEditingController();
   bool _obscure = true;
   String? _error;
   DateTime? _dob;
@@ -58,19 +57,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           password: _password.text.trim(),
         );
       } else {
-        final code = _partnerCode.text.trim();
-        if (code.isEmpty) {
-          setState(() => _error = 'Partner\'s invite code is required to sign up.');
-          return;
-        }
         final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _email.text.trim(),
           password: _password.text.trim(),
         );
         await cred.user?.updateDisplayName(_name.text.trim());
         if (cred.user != null) {
-          final svc = FirestoreService();
-          await svc.createUser(UserModel(
+          await FirestoreService().createUser(UserModel(
             uid: cred.user!.uid,
             displayName: _name.text.trim(),
             email: _email.text.trim(),
@@ -78,13 +71,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             birthday: _dob,
             gender: _gender,
           ));
-          final couple = await svc.redeemInviteCode(code);
-          if (couple == null) {
-            // Code invalid — delete the newly created account and bail
-            await cred.user!.delete();
-            setState(() => _error = 'Invalid or already used invite code.');
-            return;
-          }
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -199,12 +185,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             hint: 'Username (optional)',
                             icon: Icons.alternate_email_rounded,
                           ).animate().fadeIn(delay: 260.ms).slideX(begin: -0.05),
-                          const SizedBox(height: 14),
-                          _Field(
-                            controller: _partnerCode,
-                            hint: 'Partner\'s invite code',
-                            icon: Icons.favorite_border_rounded,
-                          ).animate().fadeIn(delay: 265.ms).slideX(begin: -0.05),
                           const SizedBox(height: 14),
                           // DOB picker row
                           GestureDetector(

@@ -1,11 +1,9 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/firebase/firestore_service.dart';
-import '../../core/firebase/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/app_logo.dart';
 
@@ -44,15 +42,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   Future<void> _createCode() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-      final svc = FirestoreService();
-      await svc.createUser(UserModel(
-        uid: user.uid,
-        displayName: user.displayName ?? user.email!.split('@').first,
-        email: user.email!,
-      ));
-      final code = await svc.createInviteCode();
+      final code = await FirestoreService().createInviteCode();
       setState(() => _generatedCode = code);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -66,15 +56,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     if (code.length != 6) { setState(() => _error = 'Enter the 6-letter code'); return; }
     setState(() { _loading = true; _error = null; });
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-      final svc = FirestoreService();
-      await svc.createUser(UserModel(
-        uid: user.uid,
-        displayName: user.displayName ?? user.email!.split('@').first,
-        email: user.email!,
-      ));
-      final couple = await svc.redeemInviteCode(code);
+      final couple = await FirestoreService().redeemInviteCode(code);
       if (couple == null && mounted) {
         setState(() => _error = 'Code not found or already used.');
       }
