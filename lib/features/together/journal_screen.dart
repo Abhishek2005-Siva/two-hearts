@@ -40,15 +40,18 @@ class JournalScreen extends ConsumerWidget {
     final journalAsync = ref.watch(journalProvider);
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       backgroundColor: const Color(0xFF2A1F14),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1208),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Text(
           'Our Journal',
           style: GoogleFonts.playfairDisplay(
             color: const Color(0xFFF5DEB3),
             fontSize: 22,
             fontWeight: FontWeight.bold,
+            shadows: const [Shadow(color: Colors.black54, blurRadius: 6)],
           ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFFF5DEB3)),
@@ -88,6 +91,17 @@ class JournalScreen extends ConsumerWidget {
 
 // ─── Bookshelf body ───────────────────────────────────────────────────────
 
+// Bookshelf image analysis (empty_bookshelf.webp, portrait 3:4):
+//   Outer wooden frame: ~9% on each side, ~5% top/bottom
+//   Top shelf surface bottom edge:    ~33% from image top
+//   Middle shelf surface bottom edge: ~57% from image top
+//   Bottom shelf surface bottom edge: ~80% from image top
+const _kShelfFractions = [0.33, 0.57, 0.80];
+const _kBookHeight = 110.0;
+// Inner horizontal bounds (inside the wooden frame)
+const _kShelfLeft = 0.09;
+const _kShelfRight = 0.09;
+
 class _BookshelfBody extends StatelessWidget {
   final List<JournalDay> entries;
   final VoidCallback onLecternTap;
@@ -96,44 +110,51 @@ class _BookshelfBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mid = (entries.length / 2).ceil();
-    final shelf1 = entries.take(mid).toList();
-    final shelf2 = entries.skip(mid).toList();
+    // Split entries across 3 shelves
+    final count = entries.length;
+    final s1end = (count / 3).ceil();
+    final s2end = s1end + (count - s1end + 1) ~/ 2;
+    final shelves = [
+      entries.take(s1end).toList(),
+      entries.skip(s1end).take(s2end - s1end).toList(),
+      entries.skip(s2end).toList(),
+    ];
 
-    return Stack(
-      children: [
-        // Background: bookshelf image
-        Positioned.fill(
-          child: Image.asset(
-            'assets/images/empty_bookshelf.webp',
-            fit: BoxFit.cover,
+    return LayoutBuilder(builder: (context, constraints) {
+      final h = constraints.maxHeight;
+      final w = constraints.maxWidth;
+      return Stack(
+        children: [
+          // Full-screen bookshelf background (fill, not cover — matches shelf positions)
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/empty_bookshelf.webp',
+              fit: BoxFit.fill,
+            ),
           ),
-        ),
-        // Books and content on top
-        SingleChildScrollView(
-          child: Column(
-            children: [
-              const SizedBox(height: 24),
-              _Shelf(books: shelf1),
-              const SizedBox(height: 32),
-              _Shelf(books: shelf2),
-              const SizedBox(height: 140),
-            ],
+          // Books on each shelf, aligned to the shelf surface
+          for (int i = 0; i < 3; i++)
+            Positioned(
+              top: h * _kShelfFractions[i] - _kBookHeight,
+              left: w * _kShelfLeft,
+              right: w * _kShelfRight,
+              height: _kBookHeight,
+              child: _Shelf(books: shelves[i]),
+            ),
+          // Barrel decoration in bottom-right corner
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Image.asset(
+              'assets/images/barrel.jpeg',
+              width: 80,
+              height: 100,
+              fit: BoxFit.contain,
+            ),
           ),
-        ),
-        // Barrel decoration in bottom-right corner
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Image.asset(
-            'assets/images/barrel.jpeg',
-            width: 80,
-            height: 100,
-            fit: BoxFit.contain,
-          ),
-        ),
-      ],
-    );
+        ],
+      );
+    });
   }
 }
 
@@ -145,25 +166,12 @@ class _Shelf extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 130,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: _buildBookItems(context),
-            ),
-          ),
-        ),
-        CustomPaint(
-          painter: _ShelfPainter(),
-          child: const SizedBox(height: 22),
-        ),
-      ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: _buildBookItems(context),
+      ),
     );
   }
 
@@ -342,55 +350,6 @@ class _DecoItem extends StatelessWidget {
 }
 
 // ─── Painters ─────────────────────────────────────────────────────────────
-
-class _ShelfPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final woodPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFA0733A), Color(0xFF8B6340), Color(0xFF7A5530)],
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), woodPaint);
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, 8),
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            Colors.black.withValues(alpha: 0.5),
-            Colors.black.withValues(alpha: 0.0),
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ).createShader(Rect.fromLTWH(0, 0, size.width, 8)),
-    );
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, size.height - 6, size.width, 6),
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            Colors.black.withValues(alpha: 0.0),
-            Colors.black.withValues(alpha: 0.4),
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ).createShader(Rect.fromLTWH(0, size.height - 6, size.width, 6)),
-    );
-
-    final grainPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.08)
-      ..strokeWidth = 0.5;
-    for (double x = 0; x < size.width; x += 30) {
-      canvas.drawLine(Offset(x, 0), Offset(x + 10, size.height), grainPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ShelfPainter old) => false;
-}
 
 // ─── Lectern widget ───────────────────────────────────────────────────────
 
