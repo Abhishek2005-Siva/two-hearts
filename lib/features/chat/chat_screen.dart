@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
+import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -331,6 +332,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               isTyping: isTyping,
               partnerOnline: partnerOnline,
               onBackgroundTap: () => _showBackgroundPicker(context, background, customBgUrl),
+              onVideoCall: _startVideoCall,
             ),
             Expanded(
               child: messagesAsync.when(
@@ -493,6 +495,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ],
                 ),
               ),
+            // Typing indicator — shown directly above the input box
+            if (isTyping)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: Row(
+                  children: [
+                    Text(
+                      '${partner?.displayName.split(' ').first ?? 'Partner'} is typing',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const _TypingDots(),
+                  ],
+                ),
+              ),
             _ChatInput(
               controller: _controller,
               sending: _sending,
@@ -512,6 +533,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  Future<void> _startVideoCall() async {
+    final coupleId = ref.read(coupleIdProvider);
+    final myName = FirebaseAuth.instance.currentUser?.displayName ?? 'Partner';
+    if (coupleId == null) return;
+
+    // Send system message to chat
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser != null) {
+      await ref.read(firestoreServiceProvider).sendMessage(
+        coupleId,
+        MessageModel(
+          id: const Uuid().v4(),
+          senderId: authUser.uid,
+          content: '📹 Started a video call',
+          type: MessageType.text,
+          sentAt: DateTime.now(),
+          isSnap: false,
+        ),
+      );
+    }
+
+    final options = JitsiMeetConferenceOptions(
+      serverURL: 'https://meet.jit.si',
+      room: 'twohearts-$coupleId',
+      userInfo: JitsiMeetUserInfo(displayName: myName),
+      featureFlags: {
+        FeatureFlags.welcomePageEnabled: false,
+        FeatureFlags.callIntegrationEnabled: false,
+      },
+      configOverrides: {
+        'startWithAudioMuted': false,
+        'startWithVideoMuted': false,
+        'prejoinPageEnabled': false,
+      },
+    );
+
+    await JitsiMeet().join(options);
+  }
+
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 }
@@ -524,6 +584,7 @@ class _ChatAppBar extends StatelessWidget {
   final bool isTyping;
   final bool partnerOnline;
   final VoidCallback? onBackgroundTap;
+  final VoidCallback? onVideoCall;
 
   const _ChatAppBar({
     required this.partner,
@@ -531,6 +592,7 @@ class _ChatAppBar extends StatelessWidget {
     required this.isTyping,
     required this.partnerOnline,
     this.onBackgroundTap,
+    this.onVideoCall,
   });
 
   @override
@@ -603,6 +665,12 @@ class _ChatAppBar extends StatelessWidget {
                   ],
                 ),
               ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.videocam_outlined,
+                  color: AppColors.textSecondary, size: 22),
+              onPressed: onVideoCall,
+              tooltip: 'Video call',
             ),
             IconButton(
               icon: const Icon(Icons.wallpaper_outlined,
@@ -1265,6 +1333,61 @@ class _VoicePreviewSheetState extends State<_VoicePreviewSheet> {
           ]),
         ],
       ),
+    );
+  }
+}
+
+// ── Typing Dots ───────────────────────────────────────────────────────────
+
+class _TypingDots extends StatefulWidget {
+  const _TypingDots();
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            final delay = i / 3;
+            final t = (_ctrl.value - delay).clamp(0.0, 1.0);
+            final offset = (t < 0.5 ? t * 2 : 2 - t * 2) * 4.0;
+            return Container(
+              width: 4,
+              height: 4,
+              margin: const EdgeInsets.symmetric(horizontal: 1),
+              transform: Matrix4.translationValues(0, -offset, 0),
+              decoration: const BoxDecoration(
+                color: AppColors.textMuted,
+                shape: BoxShape.circle,
+              ),
+            );
+          }),
+        );
+      },
     );
   }
 }

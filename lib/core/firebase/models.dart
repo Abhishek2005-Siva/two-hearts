@@ -556,6 +556,106 @@ class BucketItem {
       };
 }
 
+// ──────────────── Place Pin ────────────────
+
+class PlacePin {
+  final String id;
+  final String name;
+  final String? note;
+  final double lat;
+  final double lng;
+  final String? emoji;
+  final bool visited;
+  final DateTime createdAt;
+  final String createdBy;
+
+  const PlacePin({
+    required this.id,
+    required this.name,
+    this.note,
+    required this.lat,
+    required this.lng,
+    this.emoji,
+    this.visited = false,
+    required this.createdAt,
+    required this.createdBy,
+  });
+
+  factory PlacePin.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return PlacePin(
+      id: doc.id,
+      name: d['name'] ?? '',
+      note: d['note'],
+      lat: (d['lat'] ?? 0.0).toDouble(),
+      lng: (d['lng'] ?? 0.0).toDouble(),
+      emoji: d['emoji'],
+      visited: d['visited'] ?? false,
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdBy: d['createdBy'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        if (note != null) 'note': note,
+        'lat': lat,
+        'lng': lng,
+        if (emoji != null) 'emoji': emoji,
+        'visited': visited,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'createdBy': createdBy,
+      };
+}
+
+// ──────────────── Book Wish ────────────────
+
+class BookWish {
+  final String id;
+  final String title;
+  final String author;
+  final String? coverUrl;
+  final String? note;
+  final bool read;
+  final String addedBy;
+  final DateTime addedAt;
+
+  const BookWish({
+    required this.id,
+    required this.title,
+    required this.author,
+    this.coverUrl,
+    this.note,
+    this.read = false,
+    required this.addedBy,
+    required this.addedAt,
+  });
+
+  factory BookWish.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return BookWish(
+      id: doc.id,
+      title: d['title'] ?? '',
+      author: d['author'] ?? '',
+      coverUrl: d['coverUrl'],
+      note: d['note'],
+      read: d['read'] ?? false,
+      addedBy: d['addedBy'] ?? '',
+      addedAt: (d['addedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'title': title,
+        'author': author,
+        if (coverUrl != null) 'coverUrl': coverUrl,
+        if (note != null) 'note': note,
+        'read': read,
+        'addedBy': addedBy,
+        'addedAt': Timestamp.fromDate(addedAt),
+      };
+}
+
 // ──────────────── Room Object ────────────────
 
 enum RoomObjectType { photoFrame, letterEnvelope, journalBook, bucketTrophy, gift }

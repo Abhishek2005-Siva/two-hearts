@@ -738,6 +738,68 @@ class FirestoreService {
         .delete();
   }
 
+  // ── Places ────────────────────────────────────────────────────────────────
+
+  Stream<List<PlacePin>> watchPlaces(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('places')
+      .orderBy('createdAt', descending: false)
+      .snapshots()
+      .map((s) => s.docs.map(PlacePin.fromDoc).toList());
+
+  Future<void> addPlace(String coupleId, PlacePin place) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('places')
+      .doc(place.id)
+      .set(place.toMap());
+
+  Future<void> deletePlace(String coupleId, String placeId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('places')
+      .doc(placeId)
+      .delete();
+
+  Future<void> toggleVisited(String coupleId, String placeId, bool visited) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('places')
+      .doc(placeId)
+      .update({'visited': visited});
+
+  // ── Books ─────────────────────────────────────────────────────────────────
+
+  Stream<List<BookWish>> watchBooks(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('books')
+      .orderBy('addedAt', descending: false)
+      .snapshots()
+      .map((s) => s.docs.map(BookWish.fromDoc).toList());
+
+  Future<void> addBook(String coupleId, BookWish book) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('books')
+      .doc(book.id)
+      .set(book.toMap());
+
+  Future<void> deleteBook(String coupleId, String bookId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('books')
+      .doc(bookId)
+      .delete();
+
+  Future<void> toggleRead(String coupleId, String bookId, bool read) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('books')
+      .doc(bookId)
+      .update({'read': read});
+
   // ── FCM token ─────────────────────────────────────────────────────────────
 
   Future<void> saveFCMToken(String token) => _db

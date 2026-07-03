@@ -192,6 +192,22 @@ final compatibilityStatsProvider = FutureProvider<Map<String, int>>((ref) {
   return ref.read(firestoreServiceProvider).getCompatibilityStats(coupleId);
 });
 
+// ── Places ────────────────────────────────────────────────────────────────
+
+final placesProvider = StreamProvider<List<PlacePin>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchPlaces(coupleId);
+});
+
+// ── Books ─────────────────────────────────────────────────────────────────
+
+final booksProvider = StreamProvider<List<BookWish>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchBooks(coupleId);
+});
+
 // ── Theme Mode ───────────────────────────────────────────────────────────
 
 final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.dark);
