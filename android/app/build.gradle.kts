@@ -26,7 +26,7 @@ android {
         applicationId = "com.twohearts.two_hearts"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 24 // Jitsi Meet requires 24+
+        minSdk = 26 // Jitsi Meet SDK 12 requires 26+
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
