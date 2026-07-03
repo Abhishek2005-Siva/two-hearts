@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/firebase/firestore_service.dart';
 import '../../core/firebase/models.dart';
 import '../../core/theme/app_theme.dart';
@@ -56,6 +57,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           email: email,
           password: _password.text.trim(),
         );
+        if (mounted) context.go('/room');
       } else {
         final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _email.text.trim(),
@@ -72,6 +74,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             gender: _gender,
           ));
         }
+        if (mounted) context.go('/pair');
       }
     } on FirebaseAuthException catch (e) {
       setState(() => _error = _friendlyError(e.code));

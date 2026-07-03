@@ -14,11 +14,15 @@ import '../../core/utils/cloudinary_service.dart';
 class RichContentEditor extends StatefulWidget {
   final List<ContentBlock> initialBlocks;
   final ValueChanged<List<ContentBlock>> onChanged;
+  final Color textColor;
+  final Color hintColor;
 
   const RichContentEditor({
     super.key,
     required this.initialBlocks,
     required this.onChanged,
+    this.textColor = Colors.white,
+    this.hintColor = Colors.white38,
   });
 
   @override
@@ -282,6 +286,8 @@ class _RichContentEditorState extends State<RichContentEditor> {
           key: ValueKey(block.id),
           block: block,
           controller: _controllers[block.id]!,
+          textColor: widget.textColor,
+          hintColor: widget.hintColor,
           onChanged: () => _notify(),
           onDelete: () => _removeBlock(block.id),
           onSizeChanged: (size) => _updateBlock(block.copyWith(textSize: size)),
@@ -319,6 +325,8 @@ class _RichContentEditorState extends State<RichContentEditor> {
 class _TextBlockEditor extends StatelessWidget {
   final ContentBlock block;
   final TextEditingController controller;
+  final Color textColor;
+  final Color hintColor;
   final VoidCallback onChanged;
   final VoidCallback onDelete;
   final ValueChanged<TextSize> onSizeChanged;
@@ -327,6 +335,8 @@ class _TextBlockEditor extends StatelessWidget {
     super.key,
     required this.block,
     required this.controller,
+    this.textColor = Colors.white,
+    this.hintColor = Colors.white38,
     required this.onChanged,
     required this.onDelete,
     required this.onSizeChanged,
@@ -355,7 +365,7 @@ class _TextBlockEditor extends StatelessWidget {
             // backspace at start of empty block deletes it
           },
           style: TextStyle(
-            color: Colors.white,
+            color: textColor,
             fontSize: _fontSize,
             height: 1.6,
           ),
@@ -364,7 +374,7 @@ class _TextBlockEditor extends StatelessWidget {
             contentPadding: const EdgeInsets.symmetric(vertical: 4),
             hintText: _hintText,
             hintStyle: TextStyle(
-              color: Colors.white38,
+              color: hintColor,
               fontSize: _fontSize,
             ),
           ),

@@ -31,8 +31,12 @@ final coupleIdProvider = Provider<String?>((ref) {
 });
 
 final coupleProvider = StreamProvider<CoupleModel?>((ref) {
+  final userAsync = ref.watch(currentUserProvider);
+  // While user doc is loading, keep the provider in AsyncLoading
+  if (userAsync is AsyncLoading) return const Stream.empty();
   final coupleId = ref.watch(coupleIdProvider);
-  if (coupleId == null) return const Stream.empty();
+  // User doc loaded but no coupleId → emit null so router knows they're unpaired
+  if (coupleId == null) return Stream.value(null);
   return ref.read(firestoreServiceProvider).watchCouple(coupleId);
 });
 

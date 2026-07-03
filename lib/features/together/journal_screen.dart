@@ -91,16 +91,15 @@ class JournalScreen extends ConsumerWidget {
 
 // ─── Bookshelf body ───────────────────────────────────────────────────────
 
-// Bookshelf image analysis (empty_bookshelf.webp, portrait 3:4):
-//   Outer wooden frame: ~9% on each side, ~5% top/bottom
-//   Top shelf surface bottom edge:    ~33% from image top
-//   Middle shelf surface bottom edge: ~57% from image top
-//   Bottom shelf surface bottom edge: ~80% from image top
-const _kShelfFractions = [0.33, 0.57, 0.80];
+// empty_bookshelf.webp: portrait 3:4 wooden bookcase, 3 horizontal shelf boards.
+// Image rendered with BoxFit.cover so vertical fractions map 1:1 to screen %.
+// Shelf board BOTTOM edges (where books rest) measured from image top:
+//   Shelf 1 bottom: ~30%   Shelf 2 bottom: ~55%   Shelf 3 bottom: ~80%
+// Horizontal inner bounds (inside the outer wooden frame): ~8% each side.
+const _kShelfFractions = [0.30, 0.55, 0.80];
 const _kBookHeight = 110.0;
-// Inner horizontal bounds (inside the wooden frame)
-const _kShelfLeft = 0.09;
-const _kShelfRight = 0.09;
+const _kShelfLeft = 0.08;
+const _kShelfRight = 0.08;
 
 class _BookshelfBody extends StatelessWidget {
   final List<JournalDay> entries;
@@ -129,7 +128,8 @@ class _BookshelfBody extends StatelessWidget {
           Positioned.fill(
             child: Image.asset(
               'assets/images/empty_bookshelf.webp',
-              fit: BoxFit.fill,
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
             ),
           ),
           // Books on each shelf, aligned to the shelf surface
@@ -720,6 +720,8 @@ class _PaperThemedEditor extends StatelessWidget {
         child: RichContentEditor(
           initialBlocks: initialBlocks,
           onChanged: onChanged,
+          textColor: const Color(0xFF2A1A0A),
+          hintColor: const Color(0xFF2A1A0A).withValues(alpha: 0.35),
         ),
       ),
     );
