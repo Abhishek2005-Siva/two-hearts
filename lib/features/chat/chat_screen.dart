@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
-import 'package:url_launcher/url_launcher.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'video_call_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -535,25 +535,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Future<void> _startVideoCall() async {
     final coupleId = ref.read(coupleIdProvider);
-    if (coupleId == null) return;
+    if (coupleId == null || !mounted) return;
 
-    final authUser = FirebaseAuth.instance.currentUser;
-    if (authUser != null) {
-      await ref.read(firestoreServiceProvider).sendMessage(
-        coupleId,
-        MessageModel(
-          id: const Uuid().v4(),
-          senderId: authUser.uid,
-          content: '📹 Started a video call — join at meet.jit.si/twohearts-$coupleId',
-          type: MessageType.text,
-          sentAt: DateTime.now(),
-          isSnap: false,
-        ),
-      );
-    }
+    final callId = '${DateTime.now().millisecondsSinceEpoch}';
+    final partnerName = ref.read(partnerUserProvider).valueOrNull?.displayName;
 
-    final url = Uri.parse('https://meet.jit.si/twohearts-$coupleId');
-    await launchUrl(url, mode: LaunchMode.externalApplication);
+    await Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => VideoCallScreen(
+        coupleId: coupleId,
+        callId: callId,
+        isCaller: true,
+        partnerName: partnerName,
+      ),
+    ));
   }
 
   bool _sameDay(DateTime a, DateTime b) =>

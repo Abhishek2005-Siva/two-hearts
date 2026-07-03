@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -206,6 +207,36 @@ final booksProvider = StreamProvider<List<BookWish>>((ref) {
   final coupleId = ref.watch(coupleIdProvider);
   if (coupleId == null) return const Stream.empty();
   return ref.read(firestoreServiceProvider).watchBooks(coupleId);
+});
+
+// ── Incoming Video Call ───────────────────────────────────────────────────
+
+final incomingCallProvider = StreamProvider<Map<String, dynamic>?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  if (coupleId == null || me == null) return Stream.value(null);
+
+  return FirebaseFirestore.instance
+      .collection('couples')
+      .doc(coupleId)
+      .collection('calls')
+      .where('status', isEqualTo: 'ringing')
+      .snapshots()
+      .map((snap) {
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      if (data['callerId'] != me.uid) {
+        final created = (data['createdAt'] as Timestamp?)?.toDate();
+        // Ignore calls older than 60 seconds (stale)
+        if (created != null &&
+            DateTime.now().difference(created).inSeconds > 60) {
+          continue;
+        }
+        return {'id': doc.id, ...data};
+      }
+    }
+    return null;
+  });
 });
 
 // ── Theme Mode ───────────────────────────────────────────────────────────
