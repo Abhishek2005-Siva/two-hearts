@@ -127,7 +127,7 @@ class _BookshelfBody extends StatelessWidget {
           // Full-screen bookshelf background (fill, not cover — matches shelf positions)
           Positioned.fill(
             child: Image.asset(
-              'assets/images/empty_bookshelf.webp',
+              'assets/images/empty_bookshelf.png',
               fit: BoxFit.cover,
               alignment: Alignment.center,
             ),
@@ -141,17 +141,6 @@ class _BookshelfBody extends StatelessWidget {
               height: _kBookHeight,
               child: _Shelf(books: shelves[i]),
             ),
-          // Barrel decoration in bottom-right corner
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: Image.asset(
-              'assets/images/barrel.jpeg',
-              width: 80,
-              height: 100,
-              fit: BoxFit.contain,
-            ),
-          ),
         ],
       );
     });

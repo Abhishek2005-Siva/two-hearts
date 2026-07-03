@@ -240,6 +240,35 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               ),
                             ],
                           ).animate().fadeIn(delay: 285.ms),
+                          const SizedBox(height: 16),
+                          // Pairing notice
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppColors.rose.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                  color: AppColors.rose.withValues(alpha: 0.25)),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.info_outline_rounded,
+                                    color: AppColors.rose, size: 16),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'After signing up, your partner must also create an account — then you\'ll both connect using a shared code.',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ).animate().fadeIn(delay: 290.ms),
                           const SizedBox(height: 14),
                         ],
                         _Field(

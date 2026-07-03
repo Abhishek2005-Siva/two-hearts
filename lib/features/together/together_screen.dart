@@ -92,8 +92,8 @@ class TogetherScreen extends ConsumerWidget {
                     const SizedBox(height: 14),
                     _TogetherTile(
                       emoji: '📍',
-                      title: 'Places',
-                      subtitle: 'Pin spots to visit together',
+                      title: 'Destination Wishlist',
+                      subtitle: 'Pin dream spots to visit together',
                       accent: accent,
                       onTap: () => context.push('/places'),
                     ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.05),

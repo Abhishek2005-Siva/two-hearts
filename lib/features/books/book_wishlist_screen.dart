@@ -8,8 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
+import 'pdf_viewer_screen.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -609,13 +609,18 @@ class _BookCardState extends State<_BookCard> {
                       ],
                       if (widget.book.pdfUrl != null) ...[
                         OutlinedButton.icon(
-                          onPressed: () => launchUrl(
-                            Uri.parse(widget.book.pdfUrl!),
-                            mode: LaunchMode.externalApplication,
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              fullscreenDialog: true,
+                              builder: (_) => PdfViewerScreen(
+                                url: widget.book.pdfUrl!,
+                                title: widget.book.title,
+                              ),
+                            ),
                           ),
                           icon: const Icon(Icons.picture_as_pdf_rounded,
                               size: 18, color: AppColors.rose),
-                          label: const Text('Open PDF',
+                          label: const Text('Read in-app',
                               style: TextStyle(color: AppColors.rose)),
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(

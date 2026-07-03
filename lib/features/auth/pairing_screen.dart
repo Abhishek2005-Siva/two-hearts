@@ -17,56 +17,77 @@ class PairingScreen extends ConsumerStatefulWidget {
 }
 
 class _PairingScreenState extends ConsumerState<PairingScreen> {
-  bool _loading = false;
+  bool _codeLoading = false;
+  bool _joinLoading = false;
   String? _generatedCode;
-  late final TextEditingController _codeController;
-  String? _error;
+  final _joinCtrl = TextEditingController();
+  String? _joinError;
   bool _showJoin = false;
 
   @override
   void initState() {
     super.initState();
-    _codeController = TextEditingController(text: widget.initialCode ?? '');
-    // If we received a code from a deep link, jump straight to the join view
     if (widget.initialCode != null && widget.initialCode!.isNotEmpty) {
+      _joinCtrl.text = widget.initialCode!;
       _showJoin = true;
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _createCode());
     }
   }
 
   @override
   void dispose() {
-    _codeController.dispose();
+    _joinCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _createCode() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() { _codeLoading = true; });
     try {
       final code = await FirestoreService().createInviteCode();
-      setState(() => _generatedCode = code);
+      if (mounted) setState(() => _generatedCode = code);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _generatedCode = null);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _codeLoading = false);
     }
   }
 
   Future<void> _redeemCode() async {
-    final code = _codeController.text.trim().toUpperCase();
-    if (code.length != 6) { setState(() => _error = 'Enter the 6-letter code'); return; }
-    setState(() { _loading = true; _error = null; });
+    final code = _joinCtrl.text.trim().toUpperCase();
+    if (code.length != 6) {
+      setState(() => _joinError = 'Enter the 6-letter code');
+      return;
+    }
+    setState(() { _joinLoading = true; _joinError = null; });
     try {
       final couple = await FirestoreService().redeemInviteCode(code);
       if (couple == null && mounted) {
-        setState(() => _error = 'Code not found or already used.');
+        setState(() => _joinError = 'Code not found or already used.');
       }
     } catch (e) {
       final msg = e.toString();
-      setState(() => _error = msg.contains('PERMISSION_DENIED')
+      setState(() => _joinError = msg.contains('PERMISSION_DENIED')
           ? 'Invalid code. Make sure you typed it correctly.'
           : msg);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _joinLoading = false);
+    }
+  }
+
+  Future<void> _shareWhatsApp(String code) async {
+    final link = 'twohearts:///pair?code=$code';
+    final text = Uri.encodeComponent(
+      'Join me on Two Hearts 💕\n\n'
+      'Sign up at the app, then tap this link to connect:\n$link\n\n'
+      'Or open Two Hearts → Pair → Enter Code: $code',
+    );
+    final waUri = Uri.parse('whatsapp://send?text=$text');
+    if (await canLaunchUrl(waUri)) {
+      await launchUrl(waUri);
+    } else {
+      await launchUrl(Uri.parse('https://wa.me/?text=$text'),
+          mode: LaunchMode.externalApplication);
     }
   }
 
@@ -81,47 +102,155 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF2A0820), Color(0xFF0D0408)],
+                colors: [Color(0xFF2A0820), Color(0xFF0D0408), Color(0xFF120610)],
+                stops: [0.0, 0.55, 1.0],
+              ),
+            ),
+          ),
+          // Decorative glow
+          Positioned(
+            top: -40,
+            left: -60,
+            child: Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.rose.withValues(alpha: 0.07),
               ),
             ),
           ),
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 16),
-                  const AnimatedLogo(size: 52).animate().scale(
+                  const SizedBox(height: 8),
+                  const AnimatedLogo(size: 48).animate().scale(
                     begin: const Offset(0.5, 0.5),
                     duration: 600.ms,
                     curve: Curves.elasticOut,
                   ),
                   const SizedBox(height: 20),
-                  Text('Connect\nwith your\nperson.',
+                  Text('Connect\nyour worlds.',
                       style: Theme.of(context).textTheme.displayLarge)
                       .animate().fadeIn().slideX(begin: -0.1),
                   const SizedBox(height: 8),
-                  Text('Share a 6-letter code to pair your worlds.',
-                      style: Theme.of(context).textTheme.bodyMedium)
-                      .animate().fadeIn(delay: 200.ms),
-                  const SizedBox(height: 40),
-                  if (_generatedCode != null)
-                    _CodeDisplay(code: _generatedCode!)
-                  else if (_showJoin)
-                    _JoinView(
-                      controller: _codeController,
-                      loading: _loading,
-                      error: _error,
-                      onRedeem: _redeemCode,
-                    )
-                  else
-                    _ChoiceView(
-                      loading: _loading,
-                      onCreate: _createCode,
-                      onJoin: () => setState(() => _showJoin = true),
-                    ),
+                  Text(
+                    'Both partners sign up, then connect with a code.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ).animate().fadeIn(delay: 150.ms),
                   const SizedBox(height: 32),
+
+                  // ── Step indicators ───────────────────────────────────
+                  _StepBanner().animate().fadeIn(delay: 200.ms),
+
+                  const SizedBox(height: 28),
+
+                  // ── Your invite code ──────────────────────────────────
+                  Text(
+                    'YOUR INVITE CODE',
+                    style: TextStyle(
+                      color: AppColors.rose.withValues(alpha: 0.7),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.6,
+                    ),
+                  ).animate().fadeIn(delay: 250.ms),
+                  const SizedBox(height: 10),
+                  _MyCodeSection(
+                    loading: _codeLoading,
+                    code: _generatedCode,
+                    onShare: _generatedCode != null
+                        ? () => _shareWhatsApp(_generatedCode!)
+                        : null,
+                    onCopy: _generatedCode != null
+                        ? () {
+                            Clipboard.setData(
+                                ClipboardData(text: _generatedCode!));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text('Code copied!'),
+                                backgroundColor: AppColors.bgCard,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            );
+                          }
+                        : null,
+                  ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.08),
+
+                  const SizedBox(height: 28),
+
+                  // ── Divider ───────────────────────────────────────────
+                  Row(
+                    children: [
+                      Expanded(
+                          child: Divider(
+                              color: Colors.white.withValues(alpha: 0.1))),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: Text(
+                          'OR YOUR PARTNER SHARED THEIRS',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                          child: Divider(
+                              color: Colors.white.withValues(alpha: 0.1))),
+                    ],
+                  ).animate().fadeIn(delay: 350.ms),
+
+                  const SizedBox(height: 20),
+
+                  // ── Enter partner's code ──────────────────────────────
+                  GestureDetector(
+                    onTap: () => setState(() => _showJoin = !_showJoin),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Enter your partner\'s code',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        Icon(
+                          _showJoin
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white38,
+                        ),
+                      ],
+                    ),
+                  ).animate().fadeIn(delay: 380.ms),
+
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeInOut,
+                    child: _showJoin
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: _JoinSection(
+                              controller: _joinCtrl,
+                              loading: _joinLoading,
+                              error: _joinError,
+                              onRedeem: _redeemCode,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -132,210 +261,196 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   }
 }
 
-// ── Choice ────────────────────────────────────────────────────────────────
+// ── Step banner ───────────────────────────────────────────────────────────────
 
-class _ChoiceView extends StatelessWidget {
-  final bool loading;
-  final VoidCallback onCreate;
-  final VoidCallback onJoin;
-  const _ChoiceView({required this.loading, required this.onCreate, required this.onJoin});
+class _StepBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.rose.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.rose.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        children: [
+          _Step(num: '1', text: 'You sign up — you\'re here now ✓'),
+          const SizedBox(height: 8),
+          _Step(num: '2', text: 'Your partner signs up too'),
+          const SizedBox(height: 8),
+          _Step(num: '3', text: 'Share the code below so they can connect'),
+        ],
+      ),
+    );
+  }
+}
+
+class _Step extends StatelessWidget {
+  final String num;
+  final String text;
+  const _Step({required this.num, required this.text});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
       children: [
-        _OptionCard(
-          icon: Icons.add_link_rounded,
-          title: 'Create Invite Code',
-          subtitle: 'Generate a code and share it',
-          gradient: const [Color(0xFFFF6B8A), Color(0xFFFF8C42)],
-          onTap: loading ? null : onCreate,
-        ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1),
-        const SizedBox(height: 16),
-        _OptionCard(
-          icon: Icons.vpn_key_rounded,
-          title: 'Enter a Code',
-          subtitle: 'Your partner already created one',
-          gradient: const [Color(0xFF9B7EC8), Color(0xFF6B9BD2)],
-          onTap: onJoin,
-        ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.1),
-        if (loading) ...[
-          const SizedBox(height: 32),
-          const Center(child: CircularProgressIndicator(color: AppColors.rose)),
-        ],
+        Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.rose.withValues(alpha: 0.2),
+          ),
+          child: Center(
+            child: Text(
+              num,
+              style: const TextStyle(
+                color: AppColors.rose,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          text,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 13,
+            height: 1.3,
+          ),
+        ),
       ],
     );
   }
 }
 
-class _OptionCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final List<Color> gradient;
-  final VoidCallback? onTap;
-  const _OptionCard({required this.icon, required this.title, required this.subtitle,
-      required this.gradient, this.onTap});
+// ── My code section ───────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.divider, width: 0.5),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: gradient),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: gradient[0].withValues(alpha: 0.4),
-                    blurRadius: 12, offset: const Offset(0, 4))],
-              ),
-              child: Icon(icon, color: Colors.white, size: 22),
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-                ],
-              ),
-            ),
-            const Icon(Icons.arrow_forward_ios_rounded, color: AppColors.textMuted, size: 16),
-          ],
-        ),
-      ),
-    );
-  }
-}
+class _MyCodeSection extends StatelessWidget {
+  final bool loading;
+  final String? code;
+  final VoidCallback? onShare;
+  final VoidCallback? onCopy;
 
-// ── Code Display ──────────────────────────────────────────────────────────
-
-class _CodeDisplay extends StatelessWidget {
-  final String code;
-  const _CodeDisplay({required this.code});
-
-  Future<void> _shareWhatsApp(BuildContext context, String code) async {
-    final link = 'twohearts:///pair?code=$code';
-    final text = Uri.encodeComponent(
-      'Join me on Two Hearts 💕\n\n'
-      'Tap this link to connect automatically:\n$link\n\n'
-      'Or open Two Hearts → Pair → Enter Code: $code',
-    );
-
-    final waUri = Uri.parse('whatsapp://send?text=$text');
-    if (await canLaunchUrl(waUri)) {
-      await launchUrl(waUri);
-    } else {
-      // WhatsApp not installed — fall back to system share sheet
-      final shareUri = Uri.parse('https://wa.me/?text=$text');
-      await launchUrl(shareUri, mode: LaunchMode.externalApplication);
-    }
-  }
+  const _MyCodeSection({
+    required this.loading,
+    required this.code,
+    this.onShare,
+    this.onCopy,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Share this code',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
-          const SizedBox(height: 20),
-          ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [AppColors.rose, AppColors.coral],
-            ).createShader(bounds),
-            child: Text(
-              code,
-              style: const TextStyle(
-                fontSize: 44, fontWeight: FontWeight.bold,
-                letterSpacing: 10, color: Colors.white,
+          if (loading)
+            const SizedBox(
+              height: 60,
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.rose),
               ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // WhatsApp share button
-          GestureDetector(
-            onTap: () => _shareWhatsApp(context, code),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF25D366),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(color: const Color(0xFF25D366).withValues(alpha: 0.4),
-                      blurRadius: 12, offset: const Offset(0, 4)),
-                ],
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.send_rounded, color: Colors.white, size: 18),
-                  SizedBox(width: 10),
-                  Text('Share via WhatsApp',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600,
-                          fontSize: 15)),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Copy code button
-          GradientButton(
-            label: 'Copy Code',
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: code));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Code copied!'),
-                  backgroundColor: AppColors.bgCard,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            )
+          else if (code != null)
+            ShaderMask(
+              shaderCallback: (b) => const LinearGradient(
+                colors: [AppColors.rose, AppColors.coral],
+              ).createShader(b),
+              child: Text(
+                code!,
+                style: const TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 12,
+                  color: Colors.white,
                 ),
-              );
-            },
-          ),
+              ),
+            )
+          else
+            const Text(
+              'Could not generate code.\nCheck your connection.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+          const SizedBox(height: 8),
+          if (code != null)
+            const Text(
+              'Share this with your partner',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            ),
           const SizedBox(height: 20),
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SizedBox(width: 8, height: 8,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose)),
-              SizedBox(width: 10),
-              Text('Waiting for your partner…',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-            ],
-          ),
+          if (code != null) ...[
+            GestureDetector(
+              onTap: onShare,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF25D366),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                        color: const Color(0xFF25D366).withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3)),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.send_rounded, color: Colors.white, size: 17),
+                    SizedBox(width: 8),
+                    Text('Share via WhatsApp',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            GradientButton(label: 'Copy Code', onTap: onCopy ?? () {}),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                SizedBox(
+                    width: 8,
+                    height: 8,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: AppColors.rose)),
+                SizedBox(width: 10),
+                Text('Waiting for your partner…',
+                    style: TextStyle(
+                        color: AppColors.textSecondary, fontSize: 13)),
+              ],
+            ),
+          ],
         ],
       ),
-    ).animate().scale(begin: const Offset(0.9, 0.9)).fadeIn();
+    );
   }
 }
 
-// ── Join View ─────────────────────────────────────────────────────────────
+// ── Join section ──────────────────────────────────────────────────────────────
 
-class _JoinView extends StatelessWidget {
+class _JoinSection extends StatelessWidget {
   final TextEditingController controller;
   final bool loading;
   final String? error;
   final VoidCallback onRedeem;
-  const _JoinView({required this.controller, required this.loading,
-      this.error, required this.onRedeem});
+
+  const _JoinSection({
+    required this.controller,
+    required this.loading,
+    this.error,
+    required this.onRedeem,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -344,27 +459,34 @@ class _JoinView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Enter code', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 20),
+          Text("Partner's code",
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 18),
           TextField(
             controller: controller,
             textCapitalization: TextCapitalization.characters,
             maxLength: 6,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 32, letterSpacing: 10,
-              fontWeight: FontWeight.bold, color: AppColors.textPrimary,
+              fontSize: 30,
+              letterSpacing: 10,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
             ),
-            decoration: const InputDecoration(counterText: '', hintText: '······'),
+            decoration: const InputDecoration(
+                counterText: '', hintText: '······'),
           ),
           if (error != null) ...[
-            const SizedBox(height: 12),
-            Text(error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+            const SizedBox(height: 10),
+            Text(error!,
+                style:
+                    const TextStyle(color: Colors.redAccent, fontSize: 13)),
           ],
-          const SizedBox(height: 20),
-          GradientButton(label: 'Connect ♡', onTap: onRedeem, loading: loading),
+          const SizedBox(height: 18),
+          GradientButton(
+              label: 'Connect ♡', onTap: onRedeem, loading: loading),
         ],
       ),
-    ).animate().fadeIn().slideY(begin: 0.1);
+    );
   }
 }

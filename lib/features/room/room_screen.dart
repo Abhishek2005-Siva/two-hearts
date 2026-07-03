@@ -149,15 +149,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
       coupleId,
       toUid: partner?.uid,
     );
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('♡ Sent to your person'),
-        backgroundColor: AppColors.bgCard,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        margin: const EdgeInsets.all(16),
-      ));
-    }
   }
 
   void _showMoodPicker() {

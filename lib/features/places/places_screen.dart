@@ -503,10 +503,9 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
         .map((p) => LatLng(p.lat, p.lng))
         .toList();
 
-    // Stats header height: topPad + 70
-    const statsBarH = 70.0;
-    final statsBarBottom = topPad + statsBarH;
+    // Header height: topPad + row(~44) + gap(10) + line(2) + gap(10) + search(48) + padding(10+12)
     const searchBarH = 48.0;
+    final statsBarBottom = topPad + 146.0;
 
     return Scaffold(
       body: Stack(
@@ -517,8 +516,9 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
             options: MapOptions(
               initialCenter: const LatLng(20.0, 0.0),
               initialZoom: 2.5,
-              minZoom: 3.0,
+              minZoom: 2.0,
               maxZoom: 18.0,
+              cameraConstraint: CameraConstraint.unconstrained(),
               onTap: (tapPos, point) {
                 if (_searchResults.isNotEmpty) {
                   setState(() => _searchResults = []);
@@ -621,24 +621,28 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                             ),
                           ),
                           const SizedBox(width: 12),
-                          // Total pins — big number
-                          Text(
-                            '${places.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 32,
-                              fontWeight: FontWeight.w900,
-                              height: 1.0,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'destinations',
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          // Title + count
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Destination Wishlist',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.1,
+                                ),
+                              ),
+                              Text(
+                                '${places.length} spot${places.length == 1 ? '' : 's'} pinned',
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
                           const Spacer(),
                           // Micro stats
@@ -657,7 +661,7 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                           ),
                         ],
                       ),
-                      // Rose gradient line at bottom
+                      // Rose gradient line
                       const SizedBox(height: 10),
                       Container(
                         height: 1.5,
@@ -671,6 +675,72 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                           ),
                         ),
                       ),
+                      // Search bar inside header
+                      const SizedBox(height: 10),
+                      Container(
+                        height: searchBarH,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(searchBarH / 2),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15),
+                              width: 0.8),
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 14),
+                            const Icon(Icons.search_rounded,
+                                color: _kRose, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: _searchCtrl,
+                                focusNode: _searchFocus,
+                                onChanged: _onSearchChanged,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: 'Search places…',
+                                  hintStyle: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.45),
+                                      fontSize: 14),
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ),
+                            if (_searchLoading)
+                              const Padding(
+                                padding: EdgeInsets.only(right: 14),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: _kRose),
+                                ),
+                              )
+                            else if (_searchCtrl.text.isNotEmpty)
+                              GestureDetector(
+                                onTap: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchResults = []);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 14),
+                                  child: Icon(Icons.close_rounded,
+                                      color: Colors.white.withValues(alpha: 0.5),
+                                      size: 18),
+                                ),
+                              )
+                            else
+                              const SizedBox(width: 14),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 2),
                     ],
                   ),
                 ),
@@ -678,155 +748,64 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
             ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.4, duration: 400.ms),
           ),
 
-          // ── Search bar ───────────────────────────────────────────────────
-          Positioned(
-            top: statsBarBottom + 8,
-            left: 12,
-            right: 12,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Search pill
-                Container(
-                  height: searchBarH,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8F8F8),
-                    borderRadius: BorderRadius.circular(searchBarH / 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.30),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 14),
-                      const Icon(Icons.search_rounded,
-                          color: _kRose, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchCtrl,
-                          focusNode: _searchFocus,
-                          onChanged: _onSearchChanged,
-                          style: const TextStyle(
-                            color: Color(0xFF1C1C1E),
-                            fontSize: 14,
-                          ),
-                          decoration: const InputDecoration(
-                            hintText: 'Search places…',
-                            hintStyle: TextStyle(
-                                color: Color(0xFF9999AA), fontSize: 14),
-                            border: InputBorder.none,
-                            isDense: true,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                      ),
-                      if (_searchLoading)
-                        const Padding(
-                          padding: EdgeInsets.only(right: 8),
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: _kRose),
-                          ),
-                        )
-                      else if (_searchCtrl.text.isNotEmpty)
-                        GestureDetector(
-                          onTap: () {
-                            _searchCtrl.clear();
-                            setState(() => _searchResults = []);
-                          },
-                          child: const Padding(
-                            padding: EdgeInsets.only(right: 8),
-                            child: Icon(Icons.close_rounded,
-                                color: Color(0xFF9999AA), size: 18),
-                          ),
-                        ),
-                      // Location crosshair
-                      GestureDetector(
-                        onTap: _flyToCurrentLocation,
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          margin: const EdgeInsets.only(right: 6),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _kRose.withValues(alpha: 0.1),
-                          ),
-                          child: const Icon(Icons.my_location_rounded,
-                              color: _kRose, size: 18),
-                        ),
-                      ),
-                    ],
-                  ),
+          // ── Search dropdown results (below header) ───────────────────────
+          if (_searchResults.isNotEmpty)
+            Positioned(
+              top: statsBarBottom + 4,
+              left: 12,
+              right: 12,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1C1C24),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.40),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-
-                // Animated dropdown results
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
-                  child: _searchResults.isEmpty
-                      ? const SizedBox.shrink()
-                      : Container(
-                          margin: const EdgeInsets.only(top: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8F8F8),
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.20),
-                                blurRadius: 14,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ListView.separated(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _searchResults.length,
-                            separatorBuilder: (_, i) => const Divider(
-                                height: 1, color: Color(0xFFE8E0F0)),
-                            itemBuilder: (_, i) {
-                              final r = _searchResults[i];
-                              return InkWell(
-                                onTap: () => _selectSearchResult(r),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 10),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.location_on_rounded,
-                                          color: _kRose, size: 16),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          r.displayName,
-                                          style: const TextStyle(
-                                            color: Color(0xFF1C1C1E),
-                                            fontSize: 13,
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _searchResults.length,
+                  separatorBuilder: (_, i) => Divider(
+                      height: 1, color: Colors.white.withValues(alpha: 0.08)),
+                  itemBuilder: (_, i) {
+                    final r = _searchResults[i];
+                    return InkWell(
+                      onTap: () => _selectSearchResult(r),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.location_on_rounded,
+                                color: _kRose, size: 16),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                r.displayName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
                                 ),
-                              );
-                            },
-                          ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                    );
+                  },
                 ),
-              ],
+              ),
             ),
-          ),
 
           // ── Bottom destination cards ─────────────────────────────────────
           if (places.isNotEmpty)
@@ -949,6 +928,15 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Location button above + button
+                FloatingActionButton.small(
+                  heroTag: 'locate_me',
+                  backgroundColor: AppColors.bgCard,
+                  onPressed: _flyToCurrentLocation,
+                  child: const Icon(Icons.my_location_rounded,
+                      color: _kRose, size: 20),
+                ),
+                const SizedBox(height: 10),
                 // + button — shows hint snackbar
                 FloatingActionButton(
                   heroTag: 'add_place',
