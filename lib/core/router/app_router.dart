@@ -45,7 +45,9 @@ class _RouterNotifier extends ChangeNotifier {
     ref.listen<AsyncValue<CoupleModel?>>(coupleProvider, (_, next) {
       if (next is AsyncLoading) return; // still fetching — don't decide yet
       _coupleLoaded = true;
-      final paired = (next.valueOrNull?.members.length ?? 0) >= 2;
+      // Paired = has a couple doc at all. Once a user generates OR enters a
+      // code the doc exists; we never send them back to /pair after that.
+      final paired = next.valueOrNull != null;
       if (paired != _isPaired) {
         _isPaired = paired;
       }
