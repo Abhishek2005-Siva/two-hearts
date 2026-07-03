@@ -41,6 +41,12 @@ android {
     }
 }
 
+configurations.all {
+    // Jitsi Meet bundles media3 classes inside react-native-video; exclude the
+    // standalone artifact to avoid duplicate class errors at build time.
+    exclude(group = "androidx.media3", module = "media3-exoplayer-rtsp")
+}
+
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
