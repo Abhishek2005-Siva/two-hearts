@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -10,7 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
@@ -18,7 +19,12 @@ import '../../core/theme/app_theme.dart';
 
 const _kEmojis = ['🍜', '🏕️', '🌊', '🎡', '🛍️', '🏛️', '✨'];
 
-// ── Nominatim search result ───────────────────────────────────────────────
+// ── Colours ──────────────────────────────────────────────────────────────────
+
+const _kGreen = Color(0xFF22C55E);
+const _kRose = Color(0xFFF43F5E);
+
+// ── Nominatim search result ───────────────────────────────────────────────────
 
 class _SearchResult {
   final String displayName;
@@ -31,37 +37,84 @@ class _SearchResult {
     required this.lon,
   });
 
-  factory _SearchResult.fromJson(Map<String, dynamic> json) {
-    return _SearchResult(
-      displayName: json['display_name'] as String,
-      lat: double.parse(json['lat'] as String),
-      lon: double.parse(json['lon'] as String),
-    );
-  }
+  factory _SearchResult.fromJson(Map<String, dynamic> json) => _SearchResult(
+        displayName: json['display_name'] as String,
+        lat: double.parse(json['lat'] as String),
+        lon: double.parse(json['lon'] as String),
+      );
 }
 
-// ── Pulse animation for unvisited markers ─────────────────────────────────
+// ── Tear-drop pin painter ─────────────────────────────────────────────────────
 
-class _PulseMarker extends StatefulWidget {
+class _TearDropPainter extends CustomPainter {
   final Color color;
-  final String? emoji;
+
+  const _TearDropPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    // Circle occupies top portion; point at the bottom
+    final r = w / 2.0;
+    final circleCenter = Offset(w / 2, r);
+
+    final path = Path();
+    // Start at bottom tip
+    path.moveTo(w / 2, h);
+    // Left curve up to circle
+    path.quadraticBezierTo(0, h * 0.55, 0, r);
+    // Top circle arc
+    path.arcToPoint(Offset(w, r), radius: Radius.circular(r), clockwise: false);
+    // Right curve down to tip
+    path.quadraticBezierTo(w, h * 0.55, w / 2, h);
+    path.close();
+
+    canvas.drawShadow(path, color.withValues(alpha: 0.5), 4, false);
+
+    // Fill
+    canvas.drawPath(path, Paint()..color = color);
+
+    // White outline
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.85)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    // Highlight gloss on upper-left of circle
+    final glossPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.25)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(circleCenter.dx - r * 0.25, circleCenter.dy - r * 0.25), r * 0.28, glossPaint);
+  }
+
+  @override
+  bool shouldRepaint(_TearDropPainter old) => old.color != color;
+}
+
+// ── Tear-drop pin widget (with optional pulse for unvisited) ──────────────────
+
+class _TearDropPin extends StatefulWidget {
   final bool visited;
+  final String? emoji;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
-  const _PulseMarker({
-    required this.color,
-    this.emoji,
+  const _TearDropPin({
     required this.visited,
+    this.emoji,
     required this.onTap,
     required this.onLongPress,
   });
 
   @override
-  State<_PulseMarker> createState() => _PulseMarkerState();
+  State<_TearDropPin> createState() => _TearDropPinState();
 }
 
-class _PulseMarkerState extends State<_PulseMarker>
+class _TearDropPinState extends State<_TearDropPin>
     with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _scale;
@@ -72,19 +125,19 @@ class _PulseMarkerState extends State<_PulseMarker>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1600),
     );
-    _scale = Tween<double>(begin: 1.0, end: 2.5).animate(
+    _scale = Tween<double>(begin: 1.0, end: 2.8).animate(
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
     );
-    _opacity = Tween<double>(begin: 0.6, end: 0.0).animate(
+    _opacity = Tween<double>(begin: 0.55, end: 0.0).animate(
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
     );
     if (!widget.visited) _ctrl.repeat();
   }
 
   @override
-  void didUpdateWidget(_PulseMarker old) {
+  void didUpdateWidget(_TearDropPin old) {
     super.didUpdateWidget(old);
     if (widget.visited && _ctrl.isAnimating) _ctrl.stop();
     if (!widget.visited && !_ctrl.isAnimating) _ctrl.repeat();
@@ -98,53 +151,61 @@ class _PulseMarkerState extends State<_PulseMarker>
 
   @override
   Widget build(BuildContext context) {
-    final pinColor = widget.visited ? const Color(0xFF4CAF50) : AppColors.rose;
+    const pinW = 28.0;
+    const pinH = 40.0;
+    const totalW = 56.0;
+    const totalH = 60.0;
+    final color = widget.visited ? _kGreen : _kRose;
+
     return GestureDetector(
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
       child: SizedBox(
-        width: 48,
-        height: 48,
+        width: totalW,
+        height: totalH,
         child: Stack(
-          alignment: Alignment.center,
+          alignment: Alignment.topCenter,
           children: [
+            // Pulse ring behind the pin (unvisited only)
             if (!widget.visited)
-              AnimatedBuilder(
-                animation: _ctrl,
-                builder: (ctx, child) => Transform.scale(
-                  scale: _scale.value,
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: pinColor.withValues(alpha: _opacity.value),
+              Positioned(
+                top: totalH / 2 - pinW / 2,
+                left: totalW / 2 - pinW / 2,
+                child: AnimatedBuilder(
+                  animation: _ctrl,
+                  builder: (_, child) => Transform.scale(
+                    scale: _scale.value,
+                    child: Container(
+                      width: pinW,
+                      height: pinW,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: color.withValues(alpha: _opacity.value),
+                      ),
                     ),
                   ),
                 ),
               ),
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: pinColor,
-                boxShadow: [
-                  BoxShadow(
-                    color: pinColor.withValues(alpha: 0.6),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+            // Tear-drop pin
+            Positioned(
+              top: 4,
+              left: (totalW - pinW) / 2,
+              child: SizedBox(
+                width: pinW,
+                height: pinH,
+                child: CustomPaint(
+                  painter: _TearDropPainter(color: color),
+                  child: Align(
+                    alignment: const Alignment(0, -0.35),
+                    child: widget.visited
+                        ? const Icon(Icons.check_rounded,
+                            color: Colors.white, size: 14)
+                        : Text(
+                            widget.emoji ?? '📍',
+                            style: const TextStyle(fontSize: 12),
+                          ),
                   ),
-                ],
-              ),
-              child: Center(
-                child: widget.visited
-                    ? const Icon(Icons.check_rounded,
-                        color: Colors.white, size: 18)
-                    : Text(
-                        widget.emoji ?? '📍',
-                        style: const TextStyle(fontSize: 16),
-                      ),
+                ),
               ),
             ),
           ],
@@ -154,7 +215,7 @@ class _PulseMarkerState extends State<_PulseMarker>
   }
 }
 
-// ── Current location dot marker ───────────────────────────────────────────
+// ── Location dot ─────────────────────────────────────────────────────────────
 
 class _LocationDot extends StatelessWidget {
   const _LocationDot();
@@ -162,32 +223,31 @@ class _LocationDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 28,
-      height: 28,
+      width: 20,
+      height: 20,
       child: Stack(
         alignment: Alignment.center,
         children: [
           Container(
-            width: 24,
-            height: 24,
+            width: 20,
+            height: 20,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.blue.withValues(alpha: 0.20),
+              color: Colors.blue.withValues(alpha: 0.22),
+              border: Border.all(
+                  color: Colors.blue.withValues(alpha: 0.3), width: 1),
             ),
           ),
           Container(
-            width: 14,
-            height: 14,
+            width: 12,
+            height: 12,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.blue,
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: const [
                 BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 4,
-                  offset: Offset(0, 2),
-                ),
+                    color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))
               ],
             ),
           ),
@@ -197,7 +257,7 @@ class _LocationDot extends StatelessWidget {
   }
 }
 
-// ── Main Screen ───────────────────────────────────────────────────────────
+// ── Main Screen ───────────────────────────────────────────────────────────────
 
 class PlacesScreen extends ConsumerStatefulWidget {
   const PlacesScreen({super.key});
@@ -208,7 +268,6 @@ class PlacesScreen extends ConsumerStatefulWidget {
 
 class _PlacesScreenState extends ConsumerState<PlacesScreen> {
   final _mapController = MapController();
-  bool _addingMode = false;
 
   // Current location
   LatLng? _currentLocation;
@@ -220,7 +279,7 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
   bool _searchLoading = false;
   Timer? _searchDebounce;
 
-  // Add-pin sheet fields
+  // Add-pin sheet fields (managed by screen so we can pre-fill coords)
   final _nameCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
   String _selectedEmoji = '✨';
@@ -235,31 +294,31 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
     super.dispose();
   }
 
-  void _enterAddMode() {
-    setState(() {
-      _addingMode = true;
-      _searchResults = [];
-    });
-    _searchFocus.unfocus();
+  // ── Long-press → open add sheet immediately ──────────────────────────────
+
+  void _onMapLongPress(TapPosition tapPos, LatLng point) {
     HapticFeedback.mediumImpact();
+    _searchResults = [];
+    _searchFocus.unfocus();
+    setState(() => _searchResults = []);
+    _showAddSheet(point);
   }
 
-  void _cancelAddMode() => setState(() => _addingMode = false);
+  // ── Confirm add ──────────────────────────────────────────────────────────
 
-  Future<void> _confirmAdd() async {
+  Future<void> _confirmAdd(LatLng latlng) async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
     final coupleId = ref.read(coupleIdProvider);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (coupleId == null || uid == null) return;
 
-    final center = _mapController.camera.center;
     final pin = PlacePin(
       id: const Uuid().v4(),
       name: name,
       note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-      lat: center.latitude,
-      lng: center.longitude,
+      lat: latlng.latitude,
+      lng: latlng.longitude,
       emoji: _selectedEmoji,
       visited: false,
       createdAt: DateTime.now(),
@@ -268,20 +327,15 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
 
     _nameCtrl.clear();
     _noteCtrl.clear();
-    setState(() {
-      _addingMode = false;
-      _selectedEmoji = '✨';
-    });
+    setState(() => _selectedEmoji = '✨');
 
     await ref.read(firestoreServiceProvider).addPlace(coupleId, pin);
     HapticFeedback.lightImpact();
   }
 
-  void _showPinDetail(PlacePin pin) {
-    _showDetailSheet(pin);
-  }
+  // ── Detail sheet ─────────────────────────────────────────────────────────
 
-  void _showDetailSheet(PlacePin pin) {
+  void _showPinDetail(PlacePin pin) {
     final coupleId = ref.read(coupleIdProvider);
     if (coupleId == null) return;
     final container = ProviderScope.containerOf(context);
@@ -298,9 +352,8 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
           onToggleVisited: (v) => ref
               .read(firestoreServiceProvider)
               .toggleVisited(coupleId, pin.id, v),
-          onDelete: () => ref
-              .read(firestoreServiceProvider)
-              .deletePlace(coupleId, pin.id),
+          onDelete: () =>
+              ref.read(firestoreServiceProvider).deletePlace(coupleId, pin.id),
         ),
       ),
     );
@@ -333,7 +386,7 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                   .deletePlace(coupleId, pin.id);
             },
             child: const Text('Delete',
-                style: TextStyle(color: AppColors.rose)),
+                style: TextStyle(color: _kRose)),
           ),
         ],
       ),
@@ -344,7 +397,7 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
     _mapController.move(LatLng(pin.lat, pin.lng), 14.0);
   }
 
-  // ── Location ──────────────────────────────────────────────────────────
+  // ── Location ─────────────────────────────────────────────────────────────
 
   Future<void> _flyToCurrentLocation() async {
     LocationPermission permission = await Geolocator.checkPermission();
@@ -367,12 +420,10 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
 
     try {
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
       final loc = LatLng(pos.latitude, pos.longitude);
-      setState(() => _currentLocation = loc);
+      if (mounted) setState(() => _currentLocation = loc);
       _mapController.move(loc, 15.0);
     } catch (_) {
       if (mounted) {
@@ -386,7 +437,7 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
     }
   }
 
-  // ── Search ────────────────────────────────────────────────────────────
+  // ── Search ───────────────────────────────────────────────────────────────
 
   void _onSearchChanged(String query) {
     _searchDebounce?.cancel();
@@ -407,7 +458,9 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
           'https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=5');
       final response = await http.get(
         uri,
-        headers: {'User-Agent': 'TwoHeartsApp/1.0 (abhishek2005.siva@gmail.com)'},
+        headers: {
+          'User-Agent': 'TwoHeartsApp/1.0 (abhishek2005.siva@gmail.com)'
+        },
       );
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
@@ -417,7 +470,7 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
         if (mounted) setState(() => _searchResults = results);
       }
     } catch (_) {
-      // Silently ignore network errors in search
+      // Silently ignore network errors
     } finally {
       if (mounted) setState(() => _searchLoading = false);
     }
@@ -433,23 +486,32 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
     _searchFocus.unfocus();
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    final accent = ref.watch(accentColorProvider);
     final placesAsync = ref.watch(placesProvider);
     final places = placesAsync.valueOrNull ?? [];
-    final visited = places.where((p) => p.visited).length;
-    final toGo = places.length - visited;
+    final visited = places.where((p) => p.visited).toList();
+    final toGo = places.length - visited.length;
     final topPad = MediaQuery.of(context).padding.top;
     final botPad = MediaQuery.of(context).padding.bottom;
 
-    // Height of the stats bar (approx): topPad + 12 + 62 + 12 = topPad + 86
-    final statsBarBottom = topPad + 12 + 62.0;
+    // Love trail: visited pins sorted by createdAt
+    final trailPoints = (List<PlacePin>.from(visited)
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt)))
+        .map((p) => LatLng(p.lat, p.lng))
+        .toList();
+
+    // Stats header height: topPad + 70
+    const statsBarH = 70.0;
+    final statsBarBottom = topPad + statsBarH;
+    const searchBarH = 48.0;
 
     return Scaffold(
       body: Stack(
         children: [
-          // ── Map ──────────────────────────────────────────────────────
+          // ── Map ─────────────────────────────────────────────────────────
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
@@ -463,37 +525,58 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                   _searchFocus.unfocus();
                 }
               },
+              onLongPress: _onMapLongPress,
             ),
             children: [
+              // Satellite imagery base
               TileLayer(
                 urlTemplate:
-                    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                 userAgentPackageName: 'com.twohearts.app',
               ),
+              // Reference labels overlay
+              TileLayer(
+                urlTemplate:
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+                userAgentPackageName: 'com.twohearts.app',
+              ),
+              // Love trail polyline
+              if (trailPoints.length >= 2)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: trailPoints,
+                      strokeWidth: 2.5,
+                      color: _kRose.withValues(alpha: 0.6),
+                      pattern: StrokePattern.dashed(segments: const [12, 6]),
+                      strokeCap: StrokeCap.round,
+                      strokeJoin: StrokeJoin.round,
+                    ),
+                  ],
+                ),
               // Current location marker
               if (_currentLocation != null)
                 MarkerLayer(
                   markers: [
                     Marker(
                       point: _currentLocation!,
-                      width: 28,
-                      height: 28,
+                      width: 20,
+                      height: 20,
                       child: const _LocationDot(),
                     ),
                   ],
                 ),
-              // Place pins
+              // Place pin markers
               MarkerLayer(
                 markers: places.map((pin) {
                   return Marker(
                     point: LatLng(pin.lat, pin.lng),
-                    width: 48,
-                    height: 48,
-                    child: _PulseMarker(
-                      color: accent,
-                      emoji: pin.emoji,
+                    width: 56,
+                    height: 60,
+                    alignment: Alignment.topCenter,
+                    child: _TearDropPin(
                       visited: pin.visited,
+                      emoji: pin.emoji,
                       onTap: () => _showPinDetail(pin),
                       onLongPress: () => _longPressDelete(pin),
                     ),
@@ -503,74 +586,88 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
             ],
           ),
 
-          // ── Crosshair reticle ─────────────────────────────────────────
-          if (_addingMode)
-            const Center(
-              child: _Crosshair(),
-            ),
-
-          // ── Top overlay: stats ────────────────────────────────────────
+          // ── Stats header ─────────────────────────────────────────────────
           Positioned(
-            top: topPad + 12,
-            left: 16,
-            right: 72,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
+            top: 0,
+            left: 0,
+            right: 0,
+            child: ClipRect(
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 18, vertical: 12),
+                  padding: EdgeInsets.only(
+                      top: topPad + 10, bottom: 12, left: 16, right: 16),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.12)),
+                    color: Colors.black.withValues(alpha: 0.60),
                   ),
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Places to Visit',
-                              style: TextStyle(
-                                color:
-                                    Colors.white.withValues(alpha: 0.9),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Back button
+                          GestureDetector(
+                            onTap: () => Navigator.maybePop(context),
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withValues(alpha: 0.1),
                               ),
+                              child: const Icon(Icons.arrow_back_ios_new_rounded,
+                                  color: Colors.white70, size: 16),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              places.isEmpty
-                                  ? 'Pin your first spot'
-                                  : '$visited visited • $toGo to go',
-                              style: TextStyle(
-                                color:
-                                    Colors.white.withValues(alpha: 0.6),
-                                fontSize: 12,
-                              ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Total pins — big number
+                          Text(
+                            '${places.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 32,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
                             ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'destinations',
+                            style: TextStyle(
+                              color: Colors.white60,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const Spacer(),
+                          // Micro stats
+                          _MicroStat(
+                            icon: '✓',
+                            count: visited.length,
+                            label: 'visited',
+                            color: _kGreen,
+                          ),
+                          const SizedBox(width: 14),
+                          _MicroStat(
+                            icon: '♡',
+                            count: toGo,
+                            label: 'to go',
+                            color: _kRose,
+                          ),
+                        ],
                       ),
+                      // Rose gradient line at bottom
+                      const SizedBox(height: 10),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
+                        height: 1.5,
+                        decoration: const BoxDecoration(
                           gradient: LinearGradient(
-                              colors: [accent, AppColors.coral]),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${places.length} pins',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                            colors: [
+                              Colors.transparent,
+                              _kRose,
+                              Colors.transparent,
+                            ],
                           ),
                         ),
                       ),
@@ -578,133 +675,123 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                   ),
                 ),
               ),
-            ).animate().fadeIn().slideY(begin: -0.3),
+            ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.4, duration: 400.ms),
           ),
 
-          // ── Back button ───────────────────────────────────────────────
+          // ── Search bar ───────────────────────────────────────────────────
           Positioned(
-            top: topPad + 12,
-            right: 16,
-            child: ClipOval(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: GestureDetector(
-                  onTap: () => Navigator.maybePop(context),
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.12)),
-                    ),
-                    child: const Icon(Icons.arrow_back_ios_new_rounded,
-                        color: Colors.white70, size: 18),
+            top: statsBarBottom + 8,
+            left: 12,
+            right: 12,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Search pill
+                Container(
+                  height: searchBarH,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F8F8),
+                    borderRadius: BorderRadius.circular(searchBarH / 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.30),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ),
-              ),
-            ),
-          ),
-
-          // ── Search bar (below stats overlay) ─────────────────────────
-          if (!_addingMode)
-            Positioned(
-              top: statsBarBottom + 10,
-              left: 16,
-              right: 16,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                      child: Container(
-                        height: 46,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.50),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.14)),
-                        ),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 12),
-                            const Icon(Icons.search_rounded,
-                                color: Colors.white54, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: _searchCtrl,
-                                focusNode: _searchFocus,
-                                onChanged: _onSearchChanged,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: 'Search places…',
-                                  hintStyle: TextStyle(
-                                      color: Colors.white38, fontSize: 14),
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                            ),
-                            if (_searchLoading)
-                              const Padding(
-                                padding: EdgeInsets.only(right: 12),
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white54,
-                                  ),
-                                ),
-                              )
-                            else if (_searchCtrl.text.isNotEmpty)
-                              GestureDetector(
-                                onTap: () {
-                                  _searchCtrl.clear();
-                                  setState(() => _searchResults = []);
-                                },
-                                child: const Padding(
-                                  padding: EdgeInsets.only(right: 12),
-                                  child: Icon(Icons.close_rounded,
-                                      color: Colors.white54, size: 18),
-                                ),
-                              ),
-                          ],
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 14),
+                      const Icon(Icons.search_rounded,
+                          color: _kRose, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchCtrl,
+                          focusNode: _searchFocus,
+                          onChanged: _onSearchChanged,
+                          style: const TextStyle(
+                            color: Color(0xFF1C1C1E),
+                            fontSize: 14,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: 'Search places…',
+                            hintStyle: TextStyle(
+                                color: Color(0xFF9999AA), fontSize: 14),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-
-                  // Dropdown results
-                  if (_searchResults.isNotEmpty)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      if (_searchLoading)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: _kRose),
+                          ),
+                        )
+                      else if (_searchCtrl.text.isNotEmpty)
+                        GestureDetector(
+                          onTap: () {
+                            _searchCtrl.clear();
+                            setState(() => _searchResults = []);
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.only(right: 8),
+                            child: Icon(Icons.close_rounded,
+                                color: Color(0xFF9999AA), size: 18),
+                          ),
+                        ),
+                      // Location crosshair
+                      GestureDetector(
+                        onTap: _flyToCurrentLocation,
                         child: Container(
+                          width: 36,
+                          height: 36,
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _kRose.withValues(alpha: 0.1),
+                          ),
+                          child: const Icon(Icons.my_location_rounded,
+                              color: _kRose, size: 18),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Animated dropdown results
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  child: _searchResults.isEmpty
+                      ? const SizedBox.shrink()
+                      : Container(
                           margin: const EdgeInsets.only(top: 6),
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.75),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.12)),
+                            color: const Color(0xFFF8F8F8),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.20),
+                                blurRadius: 14,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
                           child: ListView.separated(
                             padding: const EdgeInsets.symmetric(vertical: 6),
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             itemCount: _searchResults.length,
-                            separatorBuilder: (_, _) => Divider(
-                              height: 1,
-                              color: Colors.white.withValues(alpha: 0.08),
-                            ),
+                            separatorBuilder: (_, i) => const Divider(
+                                height: 1, color: Color(0xFFE8E0F0)),
                             itemBuilder: (_, i) {
                               final r = _searchResults[i];
                               return InkWell(
@@ -716,13 +803,13 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                                   child: Row(
                                     children: [
                                       const Icon(Icons.location_on_rounded,
-                                          color: AppColors.rose, size: 16),
+                                          color: _kRose, size: 16),
                                       const SizedBox(width: 10),
                                       Expanded(
                                         child: Text(
                                           r.displayName,
                                           style: const TextStyle(
-                                            color: Colors.white,
+                                            color: Color(0xFF1C1C1E),
                                             fontSize: 13,
                                           ),
                                           maxLines: 2,
@@ -736,105 +823,147 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                             },
                           ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
 
-          // ── Bottom: horizontal chip list ──────────────────────────────
-          if (places.isNotEmpty && !_addingMode)
+          // ── Bottom destination cards ─────────────────────────────────────
+          if (places.isNotEmpty)
             Positioned(
-              bottom: botPad + 96,
+              bottom: botPad + 90,
               left: 0,
               right: 0,
-              child: SizedBox(
-                height: 44,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: places.length,
-                  separatorBuilder: (_, i) => const SizedBox(width: 8),
-                  itemBuilder: (_, i) {
-                    final p = places[i];
-                    return GestureDetector(
-                      onTap: () => _flyTo(p),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(22),
-                          border: Border.all(
-                            color: p.visited
-                                ? const Color(0xFF4CAF50)
-                                    .withValues(alpha: 0.6)
-                                : accent.withValues(alpha: 0.5),
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(p.emoji ?? '📍',
-                                style: const TextStyle(fontSize: 14)),
-                            const SizedBox(width: 6),
-                            Text(
-                              p.name,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+              child: Container(
+                decoration: BoxDecoration(
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 20,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
+                ),
+                child: SizedBox(
+                  height: 80,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: places.length,
+                    separatorBuilder: (_, i) => const SizedBox(width: 10),
+                    itemBuilder: (_, i) {
+                      final p = places[i];
+                      return GestureDetector(
+                        onTap: () => _flyTo(p),
+                        child: Container(
+                          width: 160,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.black.withValues(alpha: 0.72),
+                                Colors.black.withValues(alpha: 0.55),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            border: Border(
+                              left: BorderSide(
+                                color: p.visited ? _kGreen : _kRose,
+                                width: 3,
                               ),
                             ),
-                          ],
+                            boxShadow: [
+                              BoxShadow(
+                                color: (p.visited ? _kGreen : _kRose)
+                                    .withValues(alpha: 0.18),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          child: Row(
+                            children: [
+                              Text(
+                                p.emoji ?? '📍',
+                                style: const TextStyle(fontSize: 28),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      p.name,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: (p.visited ? _kGreen : _kRose)
+                                            .withValues(alpha: 0.18),
+                                        borderRadius:
+                                            BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: p.visited ? _kGreen : _kRose,
+                                          width: 0.5,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        p.visited ? 'Visited' : 'To visit',
+                                        style: TextStyle(
+                                          color: p.visited ? _kGreen : _kRose,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
+              ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.3, duration: 350.ms),
             ),
 
-          // ── FABs: location / add / confirm / cancel ───────────────────
+          // ── FABs ─────────────────────────────────────────────────────────
           Positioned(
             bottom: botPad + 24,
             right: 16,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_addingMode) ...[
-                  FloatingActionButton(
-                    heroTag: 'cancel_place',
-                    mini: true,
-                    backgroundColor: AppColors.bgCard,
-                    onPressed: _cancelAddMode,
-                    child: const Icon(Icons.close_rounded,
-                        color: Colors.white70),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                if (!_addingMode) ...[
-                  FloatingActionButton(
-                    heroTag: 'location_fab',
-                    mini: true,
-                    backgroundColor: AppColors.bgCard,
-                    onPressed: _flyToCurrentLocation,
-                    child: const Icon(Icons.my_location_rounded,
-                        color: Colors.white70),
-                  ),
-                  const SizedBox(height: 10),
-                ],
+                // + button — shows hint snackbar
                 FloatingActionButton(
                   heroTag: 'add_place',
-                  backgroundColor:
-                      _addingMode ? const Color(0xFF4CAF50) : accent,
-                  onPressed:
-                      _addingMode ? _showAddSheet : _enterAddMode,
-                  child: Icon(
-                    _addingMode ? Icons.check_rounded : Icons.add_rounded,
-                    color: Colors.white,
-                  ),
+                  backgroundColor: _kRose,
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Long press on the map to drop a pin'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  child: const Icon(Icons.add_rounded,
+                      color: Colors.white, size: 26),
                 ),
               ],
             ),
@@ -844,7 +973,7 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
     );
   }
 
-  void _showAddSheet() {
+  void _showAddSheet(LatLng latlng) {
     final container = ProviderScope.containerOf(context);
     showModalBottomSheet(
       context: context,
@@ -853,59 +982,63 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
       builder: (_) => UncontrolledProviderScope(
         container: container,
         child: _AddPinSheet(
+          latlng: latlng,
           nameCtrl: _nameCtrl,
           noteCtrl: _noteCtrl,
           selectedEmoji: _selectedEmoji,
           onEmojiSelected: (e) => setState(() => _selectedEmoji = e),
-          onConfirm: _confirmAdd,
+          onConfirm: () => _confirmAdd(latlng),
         ),
       ),
     );
   }
 }
 
-// ── Crosshair widget ──────────────────────────────────────────────────────
+// ── Micro stat widget ─────────────────────────────────────────────────────────
 
-class _Crosshair extends StatelessWidget {
-  const _Crosshair();
+class _MicroStat extends StatelessWidget {
+  final String icon;
+  final int count;
+  final String label;
+  final Color color;
+
+  const _MicroStat({
+    required this.icon,
+    required this.count,
+    required this.label,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: SizedBox(
-        width: 60,
-        height: 60,
-        child: CustomPaint(painter: _CrosshairPainter()),
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$icon $count',
+          style: TextStyle(
+            color: color,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white38,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _CrosshairPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.rose
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    const gap = 8.0;
-    const arm = 14.0;
-    canvas.drawLine(Offset(cx - arm - gap, cy), Offset(cx - gap, cy), paint);
-    canvas.drawLine(Offset(cx + gap, cy), Offset(cx + arm + gap, cy), paint);
-    canvas.drawLine(Offset(cx, cy - arm - gap), Offset(cx, cy - gap), paint);
-    canvas.drawLine(Offset(cx, cy + gap), Offset(cx, cy + arm + gap), paint);
-    canvas.drawCircle(Offset(cx, cy), 4, paint..style = PaintingStyle.fill);
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
-}
-
-// ── Add pin bottom sheet ──────────────────────────────────────────────────
+// ── Add pin bottom sheet ──────────────────────────────────────────────────────
 
 class _AddPinSheet extends StatefulWidget {
+  final LatLng latlng;
   final TextEditingController nameCtrl;
   final TextEditingController noteCtrl;
   final String selectedEmoji;
@@ -913,6 +1046,7 @@ class _AddPinSheet extends StatefulWidget {
   final VoidCallback onConfirm;
 
   const _AddPinSheet({
+    required this.latlng,
     required this.nameCtrl,
     required this.noteCtrl,
     required this.selectedEmoji,
@@ -933,14 +1067,22 @@ class _AddPinSheetState extends State<_AddPinSheet> {
     _emoji = widget.selectedEmoji;
   }
 
+  String _formatCoord(double val, bool isLat) {
+    final dir = isLat ? (val >= 0 ? 'N' : 'S') : (val >= 0 ? 'E' : 'W');
+    return '${val.abs().toStringAsFixed(4)}° $dir';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final lat = widget.latlng.latitude;
+    final lng = widget.latlng.longitude;
+
     return Padding(
       padding:
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: EdgeInsets.fromLTRB(
-            24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
+            24, 0, 24, MediaQuery.of(context).padding.bottom + 24),
         decoration: const BoxDecoration(
           color: AppColors.bgMid,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -950,31 +1092,121 @@ class _AddPinSheetState extends State<_AddPinSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Handle
             Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.divider,
-                  borderRadius: BorderRadius.circular(2),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 8),
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.divider,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-            Text('Pin this spot',
+
+            // Minimap preview / GPS readout
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: _kRose.withValues(alpha: 0.3)),
+                boxShadow: [
+                  BoxShadow(
+                    color: _kRose.withValues(alpha: 0.1),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _kRose.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'GPS COORDINATES',
+                          style: TextStyle(
+                            color: _kRose,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.4,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _kGreen,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'LOCKED',
+                        style: TextStyle(
+                          color: _kGreen,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Text('📍 ', style: TextStyle(fontSize: 18)),
+                      Expanded(
+                        child: Text(
+                          '${_formatCoord(lat, true)},  ${_formatCoord(lng, false)}',
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            Text('Pin this spot ♡',
                 style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
+
+            const SizedBox(height: 14),
+
             TextField(
               controller: widget.nameCtrl,
               autofocus: true,
               style: const TextStyle(color: AppColors.textPrimary),
               decoration: const InputDecoration(
                 hintText: 'Name this place…',
-                prefixIcon:
-                    Icon(Icons.place_rounded, color: AppColors.rose),
+                prefixIcon: Icon(Icons.place_rounded, color: _kRose),
               ),
             ),
+
             const SizedBox(height: 12),
+
             TextField(
               controller: widget.noteCtrl,
               style: const TextStyle(color: AppColors.textPrimary),
@@ -984,10 +1216,12 @@ class _AddPinSheetState extends State<_AddPinSheet> {
                     Icon(Icons.notes_rounded, color: AppColors.textMuted),
               ),
             ),
+
             const SizedBox(height: 16),
-            Text('Category',
-                style: Theme.of(context).textTheme.labelSmall),
+
+            Text('Category', style: Theme.of(context).textTheme.labelSmall),
             const SizedBox(height: 8),
+
             Wrap(
               spacing: 8,
               children: _kEmojis.map((e) {
@@ -1002,26 +1236,25 @@ class _AddPinSheetState extends State<_AddPinSheet> {
                     height: 42,
                     decoration: BoxDecoration(
                       color: selected
-                          ? AppColors.rose.withValues(alpha: 0.2)
+                          ? _kRose.withValues(alpha: 0.2)
                           : AppColors.bgCard,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: selected
-                            ? AppColors.rose
-                            : AppColors.divider,
+                        color: selected ? _kRose : AppColors.divider,
                         width: selected ? 1.5 : 0.5,
                       ),
                     ),
                     child: Center(
-                        child:
-                            Text(e, style: const TextStyle(fontSize: 22))),
+                        child: Text(e, style: const TextStyle(fontSize: 22))),
                   ),
                 );
               }).toList(),
             ),
+
             const SizedBox(height: 20),
+
             GradientButton(
-              label: 'Pin it here',
+              label: 'Pin this spot ♡',
               onTap: () {
                 Navigator.pop(context);
                 widget.onConfirm();
@@ -1034,7 +1267,7 @@ class _AddPinSheetState extends State<_AddPinSheet> {
   }
 }
 
-// ── Pin detail sheet ──────────────────────────────────────────────────────
+// ── Pin detail sheet ──────────────────────────────────────────────────────────
 
 class _PinDetailSheet extends ConsumerWidget {
   final PlacePin pin;
@@ -1132,13 +1365,11 @@ class _PinDetailSheet extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
                       color: pin.visited
-                          ? const Color(0xFF4CAF50).withValues(alpha: 0.15)
+                          ? _kGreen.withValues(alpha: 0.15)
                           : AppColors.bgCard,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: pin.visited
-                            ? const Color(0xFF4CAF50)
-                            : AppColors.divider,
+                        color: pin.visited ? _kGreen : AppColors.divider,
                       ),
                     ),
                     child: Row(
@@ -1148,9 +1379,8 @@ class _PinDetailSheet extends ConsumerWidget {
                           pin.visited
                               ? Icons.check_circle_rounded
                               : Icons.radio_button_unchecked_rounded,
-                          color: pin.visited
-                              ? const Color(0xFF4CAF50)
-                              : AppColors.textMuted,
+                          color:
+                              pin.visited ? _kGreen : AppColors.textMuted,
                           size: 18,
                         ),
                         const SizedBox(width: 8),
@@ -1158,7 +1388,7 @@ class _PinDetailSheet extends ConsumerWidget {
                           pin.visited ? 'Visited!' : 'Mark visited',
                           style: TextStyle(
                             color: pin.visited
-                                ? const Color(0xFF4CAF50)
+                                ? _kGreen
                                 : AppColors.textSecondary,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1177,13 +1407,13 @@ class _PinDetailSheet extends ConsumerWidget {
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.rose.withValues(alpha: 0.1),
+                    color: _kRose.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                        color: AppColors.rose.withValues(alpha: 0.4)),
+                    border:
+                        Border.all(color: _kRose.withValues(alpha: 0.4)),
                   ),
                   child: const Icon(Icons.delete_outline_rounded,
-                      color: AppColors.rose, size: 22),
+                      color: _kRose, size: 22),
                 ),
               ),
             ],
@@ -1193,3 +1423,7 @@ class _PinDetailSheet extends ConsumerWidget {
     );
   }
 }
+
+// ── Unused import guard ───────────────────────────────────────────────────────
+// dart:math is used by _TearDropPainter indirectly; kept for safety
+final _kMathPi = math.pi; // ignore: unused_element
