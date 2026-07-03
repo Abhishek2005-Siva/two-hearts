@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
@@ -51,9 +53,12 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
+  final _searchCtrl = TextEditingController();
   bool _sending = false;
   bool _isTyping = false;
   bool _whisperMode = false;
+  bool _searchMode = false;
+  String _searchQuery = '';
   final _scheduledDeletes = <String>{};
   MessageModel? _replyingTo;
 
@@ -169,6 +174,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  Future<void> _sendGif(String gifUrl) async {
+    final coupleId = ref.read(coupleIdProvider);
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (coupleId == null || authUser == null) return;
+    await ref.read(firestoreServiceProvider).sendMessage(
+      coupleId,
+      MessageModel(
+        id: const Uuid().v4(),
+        senderId: authUser.uid,
+        content: gifUrl,
+        type: MessageType.image,
+        sentAt: DateTime.now(),
+      ),
+    );
+  }
+
+  void _showGifPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _GifPickerSheet(
+        onSelect: (url) {
+          Navigator.pop(context);
+          _sendGif(url);
+        },
+      ),
+    );
+  }
+
   Future<void> _sendVoice(String path, int durationSeconds) async {
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
@@ -275,6 +310,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _scrollController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -333,7 +369,53 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               partnerOnline: partnerOnline,
               onBackgroundTap: () => _showBackgroundPicker(context, background, customBgUrl),
               onVideoCall: _startVideoCall,
+              onSearchTap: () => setState(() {
+                _searchMode = !_searchMode;
+                if (!_searchMode) {
+                  _searchCtrl.clear();
+                  _searchQuery = '';
+                }
+              }),
             ),
+            if (_searchMode)
+              Container(
+                color: const Color(0xFF0D0D0D),
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchCtrl,
+                        autofocus: true,
+                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                        onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                        decoration: InputDecoration(
+                          hintText: 'Search messages…',
+                          hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
+                          prefixIcon: const Icon(Icons.search_rounded,
+                              color: AppColors.textMuted, size: 18),
+                          filled: true,
+                          fillColor: AppColors.bgCard,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded,
+                          color: AppColors.textMuted, size: 20),
+                      onPressed: () => setState(() {
+                        _searchMode = false;
+                        _searchCtrl.clear();
+                        _searchQuery = '';
+                      }),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: messagesAsync.when(
                 loading: () => const Center(
@@ -376,21 +458,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   );
                 },
                 data: (messages) {
-                  if (messages.isEmpty) {
+                  final filtered = _searchQuery.isEmpty
+                      ? messages
+                      : messages
+                          .where((m) => m.content
+                              .toLowerCase()
+                              .contains(_searchQuery.toLowerCase()))
+                          .toList();
+
+                  if (filtered.isEmpty) {
                     return Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('💌', style: TextStyle(fontSize: 56)),
+                          Text(_searchQuery.isNotEmpty ? '🔍' : '💌',
+                              style: const TextStyle(fontSize: 56)),
                           const SizedBox(height: 16),
-                          Text('Send your first message ♡',
-                              style: Theme.of(context).textTheme.bodyMedium),
+                          Text(
+                            _searchQuery.isNotEmpty
+                                ? 'No messages found'
+                                : 'Send your first message ♡',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
                         ],
                       ),
                     );
                   }
                   // reverse:true with original ascending list → newest at bottom
-                  final reversed = messages.reversed.toList();
+                  final reversed = filtered.reversed.toList();
                   return ListView.builder(
                     controller: _scrollController,
                     reverse: true,
@@ -523,6 +618,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onSnap: _sendSnap,
               onToggleWhisper: () =>
                   setState(() => _whisperMode = !_whisperMode),
+              onGifTap: _showGifPicker,
               onSendVoice: _sendVoice,
             ),
           ],
@@ -564,6 +660,7 @@ class _ChatAppBar extends StatelessWidget {
   final bool partnerOnline;
   final VoidCallback? onBackgroundTap;
   final VoidCallback? onVideoCall;
+  final VoidCallback? onSearchTap;
 
   const _ChatAppBar({
     required this.partner,
@@ -572,6 +669,7 @@ class _ChatAppBar extends StatelessWidget {
     required this.partnerOnline,
     this.onBackgroundTap,
     this.onVideoCall,
+    this.onSearchTap,
   });
 
   @override
@@ -583,11 +681,7 @@ class _ChatAppBar extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(
           children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                  color: AppColors.textPrimary, size: 20),
-              onPressed: () => Navigator.maybePop(context),
-            ),
+            const SizedBox(width: 12),
             if (partner?.avatarUrl != null)
               CircleAvatar(
                   radius: 18,
@@ -644,6 +738,12 @@ class _ChatAppBar extends StatelessWidget {
                   ],
                 ),
               ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.search_rounded,
+                  color: AppColors.textSecondary, size: 22),
+              onPressed: onSearchTap,
+              tooltip: 'Search messages',
             ),
             IconButton(
               icon: const Icon(Icons.videocam_outlined,
@@ -862,6 +962,7 @@ class _ChatInput extends StatefulWidget {
   final VoidCallback onSend;
   final VoidCallback onSnap;
   final VoidCallback onToggleWhisper;
+  final VoidCallback onGifTap;
   final Future<void> Function(String path, int durationSeconds) onSendVoice;
 
   const _ChatInput({
@@ -872,6 +973,7 @@ class _ChatInput extends StatefulWidget {
     required this.onSend,
     required this.onSnap,
     required this.onToggleWhisper,
+    required this.onGifTap,
     required this.onSendVoice,
   });
 
@@ -1080,6 +1182,22 @@ class _ChatInputState extends State<_ChatInput> {
                 borderRadius: BorderRadius.circular(12)),
             child: const Icon(Icons.camera_alt_outlined,
                 color: AppColors.textSecondary, size: 22),
+          ),
+        ),
+        const SizedBox(width: 6),
+        GestureDetector(
+          onTap: widget.onGifTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(12)),
+            child: const Text('GIF',
+                style: TextStyle(
+                    color: AppColors.rose,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5)),
           ),
         ),
         const SizedBox(width: 8),
@@ -1622,6 +1740,22 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(msg.reactionEmoji!,
                       style: const TextStyle(fontSize: 16)),
+                ),
+              if (isMe && msg.readByPartner)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.done_all_rounded,
+                          size: 12, color: accent.withValues(alpha: 0.8)),
+                      const SizedBox(width: 3),
+                      Text('Seen',
+                          style: TextStyle(
+                              color: accent.withValues(alpha: 0.8),
+                              fontSize: 10)),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -2260,6 +2394,162 @@ class _FullscreenVideoViewState extends State<_FullscreenVideoView> {
                     color: Colors.white, size: 22),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── GIF Picker Sheet ──────────────────────────────────────────────────────
+
+class _GifPickerSheet extends StatefulWidget {
+  final void Function(String url) onSelect;
+  const _GifPickerSheet({required this.onSelect});
+
+  @override
+  State<_GifPickerSheet> createState() => _GifPickerSheetState();
+}
+
+class _GifPickerSheetState extends State<_GifPickerSheet> {
+  // Replace with your Tenor v2 API key from https://tenor.com/developer/dashboard
+  static const _tenorKey = 'LIVDSRZULELA';
+  static const _baseUrl = 'https://tenor.googleapis.com/v2';
+
+  final _searchCtrl = TextEditingController();
+  List<String> _urls = [];
+  bool _loading = true;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch('love');
+    _searchCtrl.addListener(_onSearch);
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearch() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      final q = _searchCtrl.text.trim();
+      _fetch(q.isEmpty ? 'love' : q);
+    });
+  }
+
+  Future<void> _fetch(String query) async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      final uri = Uri.parse(
+          '$_baseUrl/search?key=$_tenorKey&q=${Uri.encodeComponent(query)}&limit=30&media_filter=tinygif');
+      final resp = await http.get(uri);
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final results = (data['results'] as List?) ?? [];
+        final urls = results
+            .map((r) =>
+                (r['media_formats']?['tinygif']?['url'] as String?) ?? '')
+            .where((u) => u.isNotEmpty)
+            .toList();
+        setState(() {
+          _urls = urls;
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _urls = [];
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _urls = [];
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.65,
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+                color: AppColors.divider,
+                borderRadius: BorderRadius.circular(2)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: TextField(
+              controller: _searchCtrl,
+              autofocus: true,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Search GIFs…',
+                hintStyle: const TextStyle(color: AppColors.textMuted),
+                prefixIcon: const Icon(Icons.search_rounded,
+                    color: AppColors.textMuted, size: 20),
+                filled: true,
+                fillColor: AppColors.bgCard,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.rose))
+                : _urls.isEmpty
+                    ? const Center(
+                        child: Text('No GIFs found',
+                            style: TextStyle(color: AppColors.textMuted)))
+                    : GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          childAspectRatio: 1.4,
+                        ),
+                        itemCount: _urls.length,
+                        itemBuilder: (ctx, i) => GestureDetector(
+                          onTap: () => widget.onSelect(_urls[i]),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: CachedNetworkImage(
+                              imageUrl: _urls[i],
+                              fit: BoxFit.cover,
+                              placeholder: (_, _) =>
+                                  Container(color: AppColors.bgCard),
+                              errorWidget: (_, _, _) =>
+                                  Container(color: AppColors.bgCard),
+                            ),
+                          ),
+                        ),
+                      ),
           ),
         ],
       ),

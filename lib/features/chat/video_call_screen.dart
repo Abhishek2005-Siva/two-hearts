@@ -266,7 +266,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   }
 
   Future<void> _hangUp({bool notify = true}) async {
-    if (_disposed) return;
+    if (_disposed) {
+      // Already cleaned up (e.g. remote ended the call) — just pop.
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
     _disposed = true;
     _timer?.cancel();
     _answerSub?.cancel();

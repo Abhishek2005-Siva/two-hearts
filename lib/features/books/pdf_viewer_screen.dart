@@ -47,7 +47,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         throw Exception('Download failed (${response.statusCode})');
       }
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/book_${widget.url.hashCode}.pdf');
+      final file = File('${dir.path}/book_${widget.url.hashCode.abs()}.pdf');
       await file.writeAsBytes(response.bodyBytes);
       if (mounted) setState(() => _localPath = file.path);
     } catch (e) {

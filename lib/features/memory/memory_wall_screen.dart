@@ -26,6 +26,10 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   // null = show all memories; non-null = filter to a specific collection
   String? _activeCollectionId;
 
+  // Multi-select state
+  bool _selectMode = false;
+  final Set<String> _selectedIds = {};
+
   Future<void> _showAddMemorySheet() async {
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
@@ -36,6 +40,10 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     final media = await picker.pickMultipleMedia();
     if (media.isEmpty || !mounted) return;
     setState(() => _uploading = true);
+    // Capture service and ids NOW before any awaits so navigation away
+    // doesn't cause ref access errors mid-upload.
+    final firestoreService = ref.read(firestoreServiceProvider);
+    final uploaderUid = authUser.uid;
     try {
       for (final xfile in media) {
         final id = const Uuid().v4();
@@ -49,11 +57,11 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
             File(xfile.path),
             folder: 'two_hearts/$coupleId',
           );
-          await ref.read(firestoreServiceProvider).addMemory(
+          await firestoreService.addMemory(
             coupleId,
             MemoryModel(
               id: id,
-              uploaderUid: authUser.uid,
+              uploaderUid: uploaderUid,
               imageUrl: url,
               createdAt: DateTime.now(),
               isVideo: true,
@@ -62,11 +70,11 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
         } else {
           final bytes = await xfile.readAsBytes();
           final url = await CloudinaryService.uploadImage(bytes, folder: 'two_hearts/$coupleId');
-          await ref.read(firestoreServiceProvider).addMemory(
+          await firestoreService.addMemory(
             coupleId,
             MemoryModel(
               id: id,
-              uploaderUid: authUser.uid,
+              uploaderUid: uploaderUid,
               imageUrl: url,
               createdAt: DateTime.now(),
             ),
@@ -78,7 +86,56 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     }
   }
 
+  void _onSelectToggle(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+        if (_selectedIds.isEmpty) _selectMode = false;
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _exitSelectMode() => setState(() { _selectMode = false; _selectedIds.clear(); });
+
+  void _addSelectedToCollection(String coupleId) {
+    final ids = Set<String>.from(_selectedIds);
+    _exitSelectMode();
+    final collections = ref.read(photoCollectionsProvider).valueOrNull ?? [];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _AddToCollectionSheet(
+        memory: MemoryModel(id: ids.first, uploaderUid: '', imageUrl: '', createdAt: DateTime.now()),
+        coupleId: coupleId,
+        collections: collections,
+        onAssign: (collectionId) async {
+          final svc = ref.read(firestoreServiceProvider);
+          for (final id in ids) {
+            await svc.assignToCollection(coupleId, id, collectionId);
+          }
+        },
+        onCreateNew: (name) async {
+          final svc = ref.read(firestoreServiceProvider);
+          final col = await svc.createCollection(coupleId, name);
+          for (final id in ids) {
+            await svc.assignToCollection(coupleId, id, col.id);
+          }
+        },
+      ),
+    );
+  }
+
   void _onLongPress(MemoryModel memory, String myUid, String coupleId) {
+    if (!_selectMode) {
+      setState(() {
+        _selectMode = true;
+        _selectedIds.add(memory.id);
+      });
+      return;
+    }
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -214,6 +271,7 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final coupleId = ref.read(coupleIdProvider) ?? '';
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -231,41 +289,89 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                 padding: const EdgeInsets.fromLTRB(4, 4, 16, 0),
                 child: Row(
                   children: [
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text('Memories',
-                          style: Theme.of(context).textTheme.titleLarge),
-                    ),
-                    if (_uploading)
-                      const Padding(
-                        padding: EdgeInsets.only(right: 4),
-                        child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: AppColors.rose)),
-                      )
-                    else
+                    if (_selectMode) ...[
                       IconButton(
-                        icon: const Icon(Icons.add_photo_alternate_outlined,
+                        icon: const Icon(Icons.close_rounded,
                             color: AppColors.textPrimary),
-                        onPressed: _showAddMemorySheet,
+                        onPressed: _exitSelectMode,
                       ),
+                      Text('${_selectedIds.length} selected',
+                          style: Theme.of(context).textTheme.titleLarge),
+                    ] else ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('Memories',
+                            style: Theme.of(context).textTheme.titleLarge),
+                      ),
+                      if (_uploading)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 4),
+                          child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: AppColors.rose)),
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(Icons.add_photo_alternate_outlined,
+                              color: AppColors.textPrimary),
+                          onPressed: _showAddMemorySheet,
+                        ),
+                    ],
                   ],
                 ),
               ),
-              const SizedBox(height: 4),
-              _CollectionsRow(
-                activeCollectionId: _activeCollectionId,
-                onSelect: (id) => setState(() => _activeCollectionId = id),
-              ),
+              if (!_selectMode) ...[
+                const SizedBox(height: 4),
+                _CollectionsRow(
+                  activeCollectionId: _activeCollectionId,
+                  onSelect: (id) => setState(() => _activeCollectionId = id),
+                ),
+              ],
               Expanded(
                 child: _MemoriesTab(
                   onLongPress: _onLongPress,
                   onUpload: _showAddMemorySheet,
                   activeCollectionId: _activeCollectionId,
+                  selectMode: _selectMode,
+                  selectedIds: _selectedIds,
+                  onSelectToggle: _onSelectToggle,
                 ),
               ),
+              if (_selectMode && _selectedIds.isNotEmpty)
+                Container(
+                  color: AppColors.bgCard,
+                  padding: EdgeInsets.fromLTRB(
+                      16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+                  child: Row(
+                    children: [
+                      Text('${_selectedIds.length} selected',
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 14)),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: coupleId.isNotEmpty
+                            ? () => _addSelectedToCollection(coupleId)
+                            : null,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 10),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                                colors: [AppColors.rose, AppColors.coral]),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text('Add to Collection',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -275,6 +381,8 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
 }
 
 // ── Collections Row ───────────────────────────────────────────────────────
+
+const _kLikedCollectionId = '__liked__';
 
 class _CollectionsRow extends ConsumerWidget {
   final String? activeCollectionId;
@@ -312,7 +420,8 @@ class _CollectionsRow extends ConsumerWidget {
       }
     }
 
-    if (collections.isEmpty && activeCollectionId == null) {
+    final likedCount = memories.where((m) => m.favorite).length;
+    if (collections.isEmpty && activeCollectionId == null && likedCount == 0) {
       return const SizedBox.shrink();
     }
 
@@ -364,6 +473,54 @@ class _CollectionsRow extends ConsumerWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             children: [
+              // ── Liked ♡ virtual collection ──────────────────────────────
+              if (likedCount > 0) ...[
+                GestureDetector(
+                  onTap: () => onSelect(activeCollectionId == _kLikedCollectionId
+                      ? null
+                      : _kLikedCollectionId),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 90,
+                    margin: const EdgeInsets.only(right: 10, bottom: 4),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: activeCollectionId == _kLikedCollectionId
+                          ? AppColors.rose.withValues(alpha: 0.25)
+                          : AppColors.bgCard,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: activeCollectionId == _kLikedCollectionId
+                            ? AppColors.rose
+                            : AppColors.divider,
+                        width: activeCollectionId == _kLikedCollectionId ? 1.5 : 0.5,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.favorite_rounded,
+                            color: activeCollectionId == _kLikedCollectionId
+                                ? AppColors.rose
+                                : AppColors.textMuted,
+                            size: 22),
+                        const Spacer(),
+                        Text('Liked',
+                            style: TextStyle(
+                              color: activeCollectionId == _kLikedCollectionId
+                                  ? AppColors.rose
+                                  : AppColors.textPrimary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            )),
+                        Text('$likedCount',
+                            style: const TextStyle(
+                                color: AppColors.textMuted, fontSize: 10)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               ...collections.map((col) {
                 final isActive = activeCollectionId == col.id;
                 final color = _collectionColor(col.name);
@@ -665,11 +822,17 @@ class _MemoriesTab extends ConsumerWidget {
   final void Function(MemoryModel, String, String) onLongPress;
   final VoidCallback onUpload;
   final String? activeCollectionId;
+  final bool selectMode;
+  final Set<String> selectedIds;
+  final void Function(String) onSelectToggle;
 
   const _MemoriesTab({
     required this.onLongPress,
     required this.onUpload,
     this.activeCollectionId,
+    required this.selectMode,
+    required this.selectedIds,
+    required this.onSelectToggle,
   });
 
 
@@ -690,9 +853,11 @@ class _MemoriesTab extends ConsumerWidget {
         // Filter by active collection if one is selected
         final memories = activeCollectionId == null
             ? allMemories
-            : allMemories
-                .where((m) => m.collectionId == activeCollectionId)
-                .toList();
+            : activeCollectionId == _kLikedCollectionId
+                ? allMemories.where((m) => m.favorite).toList()
+                : allMemories
+                    .where((m) => m.collectionId == activeCollectionId)
+                    .toList();
 
         if (allMemories.isEmpty) {
           return Center(
@@ -748,6 +913,9 @@ class _MemoriesTab extends ConsumerWidget {
                   myUid: myUid,
                   coupleId: coupleId,
                   onLongPress: onLongPress,
+                  selectMode: selectMode,
+                  selectedIds: selectedIds,
+                  onSelectToggle: onSelectToggle,
                   ref: ref,
                 ),
               ),
@@ -762,6 +930,9 @@ class _MemoriesTab extends ConsumerWidget {
                   myUid: myUid,
                   coupleId: coupleId,
                   onLongPress: onLongPress,
+                  selectMode: selectMode,
+                  selectedIds: selectedIds,
+                  onSelectToggle: onSelectToggle,
                   ref: ref,
                 ),
               ),
@@ -782,6 +953,9 @@ class _MasonryColumn extends StatelessWidget {
   final String myUid;
   final String coupleId;
   final void Function(MemoryModel, String, String) onLongPress;
+  final bool selectMode;
+  final Set<String> selectedIds;
+  final void Function(String) onSelectToggle;
   final WidgetRef ref;
 
   const _MasonryColumn({
@@ -793,6 +967,9 @@ class _MasonryColumn extends StatelessWidget {
     required this.myUid,
     required this.coupleId,
     required this.onLongPress,
+    required this.selectMode,
+    required this.selectedIds,
+    required this.onSelectToggle,
     required this.ref,
   });
 
@@ -813,16 +990,20 @@ class _MasonryColumn extends StatelessWidget {
             aspectRatio: aspectRatio,
             accent: accent,
             myUid: myUid,
-            onTap: () {
-              if (memory.isVideo) {
-                Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => _FullscreenVideoPlayer(url: memory.imageUrl),
-                ));
-              } else {
-                context.go('/memory/${memory.id}');
-              }
-            },
-            onFavorite: () async {
+            selectMode: selectMode,
+            selected: selectedIds.contains(memory.id),
+            onTap: selectMode
+                ? () => onSelectToggle(memory.id)
+                : () {
+                    if (memory.isVideo) {
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => _FullscreenVideoPlayer(url: memory.imageUrl),
+                      ));
+                    } else {
+                      context.push('/memory/${memory.id}');
+                    }
+                  },
+            onFavorite: selectMode ? () {} : () async {
               if (coupleId.isEmpty) return;
               await ref.read(firestoreServiceProvider).toggleFavoriteMemory(
                   coupleId, memory.id, !memory.favorite);
@@ -842,6 +1023,8 @@ class _MasonryCard extends StatelessWidget {
   final double aspectRatio;
   final Color accent;
   final String myUid;
+  final bool selectMode;
+  final bool selected;
   final VoidCallback onTap;
   final VoidCallback onFavorite;
   final VoidCallback? onLongPress;
@@ -851,6 +1034,8 @@ class _MasonryCard extends StatelessWidget {
     required this.aspectRatio,
     required this.accent,
     required this.myUid,
+    required this.selectMode,
+    required this.selected,
     required this.onTap,
     required this.onFavorite,
     this.onLongPress,
@@ -966,25 +1151,56 @@ class _MasonryCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                // Favorite button
-                Positioned(
-                  top: 8, right: 8,
-                  child: GestureDetector(
-                    onTap: onFavorite,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(
-                          color: Colors.black38, shape: BoxShape.circle),
-                      child: Icon(
-                        memory.favorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: memory.favorite ? AppColors.rose : Colors.white,
-                        size: 16,
+                // Favorite button (hidden in select mode)
+                if (!selectMode)
+                  Positioned(
+                    top: 8, right: 8,
+                    child: GestureDetector(
+                      onTap: onFavorite,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                            color: Colors.black38, shape: BoxShape.circle),
+                        child: Icon(
+                          memory.favorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          color: memory.favorite ? AppColors.rose : Colors.white,
+                          size: 16,
+                        ),
                       ),
                     ),
                   ),
-                ),
+                // Selection overlay
+                if (selectMode)
+                  Positioned.fill(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppColors.rose.withValues(alpha: 0.35)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                if (selectMode)
+                  Positioned(
+                    top: 8, right: 8,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: 24, height: 24,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: selected ? AppColors.rose : Colors.black38,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: selected
+                          ? const Icon(Icons.check_rounded,
+                              color: Colors.white, size: 14)
+                          : null,
+                    ),
+                  ),
               ],
             ),
           ),

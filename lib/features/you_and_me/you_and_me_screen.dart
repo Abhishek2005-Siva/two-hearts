@@ -1,12 +1,15 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/firebase/firestore_service.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/cloudinary_service.dart';
 
 class YouAndMeScreen extends ConsumerWidget {
   const YouAndMeScreen({super.key});
@@ -46,6 +49,11 @@ class YouAndMeScreen extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
+
+                    // Profile picture
+                    const _ProfilePicSection()
+                        .animate().fadeIn(),
+                    const SizedBox(height: 20),
 
                     // Appearance toggle
                     _AppearanceSection(accent: accent),
@@ -536,6 +544,164 @@ class _CompatibilityCard extends ConsumerWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+// ── Profile Picture Section ───────────────────────────────────────────────
+
+class _ProfilePicSection extends ConsumerStatefulWidget {
+  const _ProfilePicSection();
+
+  @override
+  ConsumerState<_ProfilePicSection> createState() => _ProfilePicSectionState();
+}
+
+class _ProfilePicSectionState extends ConsumerState<_ProfilePicSection> {
+  bool _uploading = false;
+
+  Future<void> _pickAndUpload() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+        source: ImageSource.gallery, imageQuality: 85, maxWidth: 512);
+    if (picked == null || !mounted) return;
+
+    setState(() => _uploading = true);
+    try {
+      final bytes = await picked.readAsBytes();
+      final url = await CloudinaryService.uploadImage(bytes, folder: 'avatars');
+      await ref.read(firestoreServiceProvider).updateUser({'avatarUrl': url});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Profile picture updated ♡'),
+            backgroundColor: AppColors.bgCard,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $e'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authUser = FirebaseAuth.instance.currentUser;
+    final myUser = ref.watch(currentUserProvider).valueOrNull;
+    final accent = ref.watch(accentColorProvider);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.bgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _uploading ? null : _pickAndUpload,
+            child: Stack(
+              children: [
+                CircleAvatar(
+                  radius: 32,
+                  backgroundColor: accent.withValues(alpha: 0.2),
+                  backgroundImage: myUser?.avatarUrl != null
+                      ? CachedNetworkImageProvider(myUser!.avatarUrl!)
+                      : null,
+                  child: myUser?.avatarUrl == null
+                      ? Text(
+                          authUser?.displayName?.isNotEmpty == true
+                              ? authUser!.displayName![0].toUpperCase()
+                              : '?',
+                          style: TextStyle(
+                              color: accent,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold),
+                        )
+                      : null,
+                ),
+                if (_uploading)
+                  const Positioned.fill(
+                    child: CircleAvatar(
+                      radius: 32,
+                      backgroundColor: Colors.black54,
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.bgCard, width: 2),
+                    ),
+                    child: const Icon(Icons.edit_rounded,
+                        color: Colors.white, size: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Profile picture',
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                const Text('Shows next to your name in chat',
+                    style: TextStyle(
+                        color: AppColors.textMuted, fontSize: 12)),
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: _uploading ? null : _pickAndUpload,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      _uploading ? 'Uploading…' : 'Change Photo',
+                      style: TextStyle(
+                          color: accent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

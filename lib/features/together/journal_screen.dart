@@ -23,12 +23,23 @@ const List<Color> _kBookColors = [
   Color(0xFF5C6E3E), // olive
   Color(0xFF6B4226), // chocolate
   Color(0xFF1E5E5E), // dark teal
+  Color(0xFF9E4545), // crimson
+  Color(0xFF3B5998), // denim blue
 ];
 
 Color _bookColor(String id) =>
     _kBookColors[id.hashCode.abs() % _kBookColors.length];
 
-double _bookWidth(String id) => (id.hashCode.abs() % 17) + 36.0; // 36–52
+// Width varies 34–58px for more visual variety
+double _bookWidth(String id) => (id.hashCode.abs() % 25) + 34.0;
+
+// Height varies 85–138px — books stand at different heights
+double _bookHeight(String id) => (id.hashCode.abs() % 54) + 85.0;
+
+enum _BookDesign { plain, striped, gilded, embossed }
+
+_BookDesign _bookDesign(String id) =>
+    _BookDesign.values[(id.hashCode.abs() ~/ 3) % _BookDesign.values.length];
 
 // ─── Main Screen ──────────────────────────────────────────────────────────
 
@@ -91,13 +102,12 @@ class JournalScreen extends ConsumerWidget {
 
 // ─── Bookshelf body ───────────────────────────────────────────────────────
 
-// empty_bookshelf.webp: portrait 3:4 wooden bookcase, 3 horizontal shelf boards.
-// Image rendered with BoxFit.cover so vertical fractions map 1:1 to screen %.
-// Shelf board BOTTOM edges (where books rest) measured from image top:
-//   Shelf 1 bottom: ~30%   Shelf 2 bottom: ~55%   Shelf 3 bottom: ~80%
-// Horizontal inner bounds (inside the outer wooden frame): ~8% each side.
+// Shelf board BOTTOM edges (fractional from screen top, where books rest).
 const _kShelfFractions = [0.38, 0.60, 0.82];
-const _kBookHeight = 110.0;
+// Extra upward nudge so books sit slightly higher on each shelf board.
+const _kShelfUpShift = 22.0;
+// Tallest possible book; container must be >= this.
+const _kBookContainerHeight = 150.0;
 const _kShelfLeft = 0.08;
 const _kShelfRight = 0.08;
 
@@ -109,22 +119,21 @@ class _BookshelfBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Split entries across 3 shelves
-    final count = entries.length;
-    final s1end = (count / 3).ceil();
-    final s2end = s1end + (count - s1end + 1) ~/ 2;
-    final shelves = [
-      entries.take(s1end).toList(),
-      entries.skip(s1end).take(s2end - s1end).toList(),
-      entries.skip(s2end).toList(),
-    ];
-
     return LayoutBuilder(builder: (context, constraints) {
       final h = constraints.maxHeight;
       final w = constraints.maxWidth;
+
+      // Fill shelves sequentially: compute capacity by average book width (46px)
+      final shelfW = w * (1 - _kShelfLeft - _kShelfRight);
+      final maxPerShelf = (shelfW / 46).floor().clamp(4, 14);
+      final shelves = [
+        entries.take(maxPerShelf).toList(),
+        entries.skip(maxPerShelf).take(maxPerShelf).toList(),
+        entries.skip(maxPerShelf * 2).toList(),
+      ];
+
       return Stack(
         children: [
-          // Full-screen bookshelf background (fill, not cover — matches shelf positions)
           Positioned.fill(
             child: Image.asset(
               'assets/images/empty_bookshelf.png',
@@ -132,13 +141,12 @@ class _BookshelfBody extends StatelessWidget {
               alignment: Alignment.center,
             ),
           ),
-          // Books on each shelf, aligned to the shelf surface
           for (int i = 0; i < 3; i++)
             Positioned(
-              top: h * _kShelfFractions[i] - _kBookHeight,
+              top: h * _kShelfFractions[i] - _kBookContainerHeight - _kShelfUpShift,
               left: w * _kShelfLeft,
               right: w * _kShelfRight,
-              height: _kBookHeight,
+              height: _kBookContainerHeight,
               child: _Shelf(books: shelves[i]),
             ),
         ],
@@ -208,6 +216,8 @@ class _BookSpine extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _bookColor(day.id);
     final width = _bookWidth(day.id);
+    final height = _bookHeight(day.id);
+    final design = _bookDesign(day.id);
     final title = day.title ?? 'Untitled';
     final dateStr = _formatId(day.id);
 
@@ -215,68 +225,138 @@ class _BookSpine extends StatelessWidget {
       onTap: onTap,
       child: Container(
         width: width,
-        height: 120,
-        margin: const EdgeInsets.only(right: 2),
+        height: height,
+        margin: const EdgeInsets.only(right: 3),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              color.withValues(alpha: 0.85),
-              color,
-              color.withValues(alpha: 0.7),
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
+          gradient: _spineGradient(design, color),
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(3),
             topRight: Radius.circular(3),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.5),
-              blurRadius: 4,
-              offset: const Offset(2, 2),
+              color: Colors.black.withValues(alpha: 0.55),
+              blurRadius: 5,
+              offset: const Offset(2, 3),
             ),
           ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
           children: [
-            Expanded(
-              child: Center(
-                child: RotatedBox(
-                  quarterTurns: 3,
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.lato(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.95),
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.3,
+            // Gilded edge strip on left
+            if (design == _BookDesign.gilded)
+              Positioned(
+                left: 0, top: 0, bottom: 0,
+                child: Container(
+                  width: 4,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFFFFD700), Color(0xFFB8860B)],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                     ),
                   ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: RotatedBox(
-                quarterTurns: 3,
-                child: Text(
-                  dateStr,
-                  style: GoogleFonts.lato(
-                    fontSize: 7,
-                    color: Colors.white.withValues(alpha: 0.6),
+            // Stripe pattern
+            if (design == _BookDesign.striped)
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(3), topRight: Radius.circular(3)),
+                  child: _StripeOverlay(color: color),
+                ),
+              ),
+            // Embossed circle ornament
+            if (design == _BookDesign.embossed)
+              Positioned(
+                top: 8, left: 0, right: 0,
+                child: Center(
+                  child: Container(
+                    width: width * 0.55,
+                    height: width * 0.55,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.25), width: 1.5),
+                    ),
                   ),
                 ),
               ),
+            // Title + date text
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Center(
+                    child: RotatedBox(
+                      quarterTurns: 3,
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.lato(
+                          fontSize: 10,
+                          color: Colors.white.withValues(alpha: 0.92),
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: RotatedBox(
+                    quarterTurns: 3,
+                    child: Text(
+                      dateStr,
+                      style: GoogleFonts.lato(
+                        fontSize: 7,
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  Gradient _spineGradient(_BookDesign design, Color color) {
+    switch (design) {
+      case _BookDesign.striped:
+        return LinearGradient(
+          colors: [color, color.withValues(alpha: 0.75)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        );
+      case _BookDesign.gilded:
+        return LinearGradient(
+          colors: [color.withValues(alpha: 0.9), color, color.withValues(alpha: 0.8)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        );
+      case _BookDesign.embossed:
+        return RadialGradient(
+          center: const Alignment(-0.3, -0.5),
+          radius: 1.4,
+          colors: [color.withValues(alpha: 0.95), color.withValues(alpha: 0.65)],
+        );
+      case _BookDesign.plain:
+        return LinearGradient(
+          colors: [
+            color.withValues(alpha: 0.9),
+            color,
+            color.withValues(alpha: 0.7),
+          ],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        );
+    }
   }
 
   String _formatId(String id) {
@@ -285,6 +365,37 @@ class _BookSpine extends StatelessWidget {
     if (id.length >= 4) return id.substring(0, 4);
     return id;
   }
+}
+
+// ─── Stripe overlay for striped book design ───────────────────────────────
+
+class _StripeOverlay extends StatelessWidget {
+  final Color color;
+  const _StripeOverlay({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _StripePainter(color: color));
+  }
+}
+
+class _StripePainter extends CustomPainter {
+  final Color color;
+  const _StripePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final light = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..strokeWidth = 4;
+    const gap = 8.0;
+    for (double y = 0; y < size.height + size.width; y += gap) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y - size.width), light);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_StripePainter old) => old.color != color;
 }
 
 // ─── Decorative candle ────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/firebase/models.dart';
+import '../../core/globals.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/app_logo.dart';
@@ -23,11 +24,15 @@ class RoomScreen extends ConsumerStatefulWidget {
   ConsumerState<RoomScreen> createState() => _RoomScreenState();
 }
 
+class _HeartParticle {
+  final double x;
+  final AnimationController ctrl;
+  _HeartParticle({required this.x, required this.ctrl});
+}
+
 class _RoomScreenState extends ConsumerState<RoomScreen>
     with TickerProviderStateMixin {
-  bool _heartVisible = false;
-  late AnimationController _heartCtrl;
-  double _heartX = 0.5;
+  final List<_HeartParticle> _hearts = [];
   String? _lastSignalId; // dedup — never show same signal twice
 
   // Partner mood overlay
@@ -49,11 +54,29 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     return 1.0 - ((hour - 5) / 1.0);
   }
 
+  void _spawnHeart(double x) {
+    final ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2000));
+    final particle = _HeartParticle(x: x, ctrl: ctrl);
+    setState(() => _hearts.add(particle));
+    ctrl.forward().then((_) {
+      if (mounted) setState(() => _hearts.remove(particle));
+      ctrl.dispose();
+    });
+  }
+
+  void _spawnHearts(int count) {
+    final rng = math.Random();
+    for (int i = 0; i < count; i++) {
+      Future.delayed(Duration(milliseconds: i * 150), () {
+        if (mounted) _spawnHeart(0.2 + rng.nextDouble() * 0.6);
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _heartCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 3));
     _twinkleCtrl = AnimationController(
         vsync: this, duration: const Duration(seconds: 2))
       ..repeat();
@@ -96,14 +119,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
 
   void _showSignal({required String type, String? message}) {
     HapticFeedback.mediumImpact();
-    setState(() {
-      _heartVisible = true;
-      _heartX = 0.3 + (0.4 * (DateTime.now().millisecond / 1000));
-    });
-    _heartCtrl.forward(from: 0);
-    Future.delayed(const Duration(seconds: 4), () {
-      if (mounted) setState(() => _heartVisible = false);
-    });
+    _spawnHearts(4);
 
     final (emoji, text) = switch (type) {
       'goodMorning' => ('☀️', 'Good morning from your person!'),
@@ -112,22 +128,20 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
       _ => ('♡', message ?? 'Thinking of you ♡'),
     };
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Row(children: [
-          Text('$emoji  ', style: const TextStyle(fontSize: 18)),
-          Expanded(
-              child: Text(text,
-                  style: const TextStyle(color: Colors.white))),
-        ]),
-        backgroundColor: AppColors.bgCard,
-        behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 5),
-      ));
-    }
+    scaffoldMessengerKey.currentState?.showSnackBar(SnackBar(
+      content: Row(children: [
+        Text('$emoji  ', style: const TextStyle(fontSize: 18)),
+        Expanded(
+            child: Text(text,
+                style: const TextStyle(color: Colors.white))),
+      ]),
+      backgroundColor: AppColors.bgCard,
+      behavior: SnackBarBehavior.floating,
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      margin: const EdgeInsets.all(16),
+      duration: const Duration(seconds: 5),
+    ));
   }
 
   void _showPartnerMoodPopup(MoodType mood) {
@@ -145,6 +159,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     final partner = ref.read(partnerUserProvider).valueOrNull;
     if (coupleId == null) return;
     HapticFeedback.mediumImpact();
+    _spawnHearts(6);
     await ref.read(firestoreServiceProvider).sendThinkingOfYou(
       coupleId,
       toUid: partner?.uid,
@@ -387,7 +402,9 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
 
   @override
   void dispose() {
-    _heartCtrl.dispose();
+    for (final h in _hearts) {
+      h.ctrl.dispose();
+    }
     _twinkleCtrl.dispose();
     _timeTimer?.cancel();
     super.dispose();
@@ -490,16 +507,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      const SizedBox(height: 18),
-
-                      // "Thinking of You" pill
-                      _ThinkingOfYouPill(
-                        accent: accent,
-                        onTap: _sendThinkingOfYou,
-                      ).animate().fadeIn(delay: 200.ms),
-
-                      const SizedBox(height: 16),
-
                       // Polaroid memory strip
                       if (memories.isNotEmpty)
                         _PolaroidStrip(
@@ -518,27 +525,38 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
           // 3. Character name labels + tap areas overlaid on full screen
           _buildCharacterOverlay(context, me, partner, myMood, accent, size),
 
-          // 4. Floating heart animation (unchanged)
-          if (_heartVisible)
-            AnimatedBuilder(
-              animation: _heartCtrl,
-              builder: (_, _) {
-                final t = _heartCtrl.value;
-                return Positioned(
-                  left: size.width * _heartX,
-                  bottom: 100 + 300 * t,
-                  child: Opacity(
-                    opacity: (1 - t).clamp(0.0, 1.0),
-                    child: Transform.scale(
-                      scale: 1.0 + t * 0.5,
-                      child: const Text('♡',
-                          style: TextStyle(
-                              fontSize: 40, color: AppColors.rose)),
-                    ),
-                  ),
-                );
-              },
+          // 4. Thinking of You pill — centered just above the characters
+          Positioned(
+            top: size.height * 0.42,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _ThinkingOfYouPill(
+                accent: accent,
+                onTap: _sendThinkingOfYou,
+              ).animate().fadeIn(delay: 200.ms),
             ),
+          ),
+
+          // 5. Rising hearts (sender and receiver)
+          ..._hearts.map((h) => AnimatedBuilder(
+            animation: h.ctrl,
+            builder: (_, _) {
+              final t = h.ctrl.value;
+              return Positioned(
+                left: size.width * h.x,
+                bottom: 80 + 320 * t,
+                child: Opacity(
+                  opacity: (1 - t).clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: 1.0 + t * 0.6,
+                    child: const Text('♡',
+                        style: TextStyle(fontSize: 36, color: AppColors.rose)),
+                  ),
+                ),
+              );
+            },
+          )),
         ],
       ),
     );

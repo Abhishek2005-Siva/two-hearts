@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:video_player/video_player.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -79,7 +80,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                   hasDeletion && memory.deletionRequestedBy != myUid;
 
               return GestureDetector(
-                onTapUp: (details) {
+                onTapUp: memory.isVideo ? null : (details) {
                   final width = MediaQuery.of(context).size.width;
                   if (details.localPosition.dx < width / 2) {
                     _pageCtrl.previousPage(
@@ -94,6 +95,9 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
+                  if (memory.isVideo)
+                    _VideoPageItem(url: memory.imageUrl)
+                  else
                   // Full-screen image with pinch-zoom
                   InteractiveViewer(
                     child: Hero(
@@ -216,6 +220,58 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Inline video player for the detail PageView ───────────────────────────
+
+class _VideoPageItem extends StatefulWidget {
+  final String url;
+  const _VideoPageItem({required this.url});
+
+  @override
+  State<_VideoPageItem> createState() => _VideoPageItemState();
+}
+
+class _VideoPageItemState extends State<_VideoPageItem> {
+  late final VideoPlayerController _ctrl;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _initialized = true);
+          _ctrl.play();
+          _ctrl.setLooping(true);
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_initialized) {
+      return const Center(
+          child: CircularProgressIndicator(color: AppColors.rose));
+    }
+    return GestureDetector(
+      onTap: () => setState(
+          () => _ctrl.value.isPlaying ? _ctrl.pause() : _ctrl.play()),
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: _ctrl.value.aspectRatio,
+          child: VideoPlayer(_ctrl),
+        ),
       ),
     );
   }

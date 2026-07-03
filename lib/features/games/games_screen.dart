@@ -1091,8 +1091,8 @@ class _WyrGame extends StatelessWidget {
                       fontWeight: FontWeight.w600)),
               const SizedBox(height: 20),
               _OptionButton(label: game.optionA, option: 'A', myPick: myPick,
-                  bothPicked: bothPicked, game: game, myName: myName,
-                  partnerName: partnerName, accent: accent,
+                  bothPicked: bothPicked, game: game, myUid: myUid,
+                  myName: myName, partnerName: partnerName, accent: accent,
                   onTap: myPick == null ? () => onPick('A') : null),
               const SizedBox(height: 14),
               Container(
@@ -1107,8 +1107,8 @@ class _WyrGame extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               _OptionButton(label: game.optionB, option: 'B', myPick: myPick,
-                  bothPicked: bothPicked, game: game, myName: myName,
-                  partnerName: partnerName, accent: accent,
+                  bothPicked: bothPicked, game: game, myUid: myUid,
+                  myName: myName, partnerName: partnerName, accent: accent,
                   onTap: myPick == null ? () => onPick('B') : null),
             ],
           ),
@@ -1131,6 +1131,7 @@ class _OptionButton extends StatelessWidget {
   final String? myPick;
   final bool bothPicked;
   final GameRound game;
+  final String myUid;
   final String myName;
   final String partnerName;
   final Color accent;
@@ -1138,8 +1139,9 @@ class _OptionButton extends StatelessWidget {
 
   const _OptionButton({
     required this.label, required this.option, required this.myPick,
-    required this.bothPicked, required this.game, required this.myName,
-    required this.partnerName, required this.accent, this.onTap,
+    required this.bothPicked, required this.game, required this.myUid,
+    required this.myName, required this.partnerName, required this.accent,
+    this.onTap,
   });
 
   @override
@@ -1150,7 +1152,7 @@ class _OptionButton extends StatelessWidget {
     if (bothPicked) {
       for (final entry in game.picks.entries) {
         if (entry.value == option) {
-          pickerNames.add(entry.key == '' ? myName : partnerName);
+          pickerNames.add(entry.key == myUid ? myName : partnerName);
         }
       }
     }

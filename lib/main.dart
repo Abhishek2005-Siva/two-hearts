@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'core/globals.dart';
 import 'core/providers/providers.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -53,27 +54,8 @@ Future<void> _initNotifications() async {
 
   FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
 
-  // Show foreground notifications via local_notifications
-  FirebaseMessaging.onMessage.listen((message) {
-    final notification = message.notification;
-    final android = message.notification?.android;
-    if (notification != null && android != null) {
-      _localNotifications.show(
-        notification.hashCode,
-        notification.title,
-        notification.body,
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            channel.id,
-            channel.name,
-            channelDescription: channel.description,
-            importance: Importance.high,
-            priority: Priority.high,
-          ),
-        ),
-      );
-    }
-  });
+  // Foreground messages are handled in-app (SnackBar/overlay in room_screen).
+  // We intentionally do NOT show a system notification when the app is active.
 }
 
 void main() async {
@@ -120,6 +102,7 @@ class _TwoHeartsAppState extends ConsumerState<TwoHeartsApp> {
     return MaterialApp.router(
       title: 'Two Hearts',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.build(accent),
       themeMode: themeMode,
