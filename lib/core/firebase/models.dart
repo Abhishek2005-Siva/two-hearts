@@ -613,8 +613,9 @@ class PlacePin {
 class BookWish {
   final String id;
   final String title;
-  final String author;
+  final String? author;
   final String? coverUrl;
+  final String? pdfUrl;
   final String? note;
   final bool read;
   final String addedBy;
@@ -623,8 +624,9 @@ class BookWish {
   const BookWish({
     required this.id,
     required this.title,
-    required this.author,
+    this.author,
     this.coverUrl,
+    this.pdfUrl,
     this.note,
     this.read = false,
     required this.addedBy,
@@ -636,8 +638,9 @@ class BookWish {
     return BookWish(
       id: doc.id,
       title: d['title'] ?? '',
-      author: d['author'] ?? '',
+      author: d['author'],
       coverUrl: d['coverUrl'],
+      pdfUrl: d['pdfUrl'],
       note: d['note'],
       read: d['read'] ?? false,
       addedBy: d['addedBy'] ?? '',
@@ -647,8 +650,9 @@ class BookWish {
 
   Map<String, dynamic> toMap() => {
         'title': title,
-        'author': author,
+        if (author != null) 'author': author,
         if (coverUrl != null) 'coverUrl': coverUrl,
+        if (pdfUrl != null) 'pdfUrl': pdfUrl,
         if (note != null) 'note': note,
         'read': read,
         'addedBy': addedBy,

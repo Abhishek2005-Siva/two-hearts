@@ -1,15 +1,19 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:confetti/confetti.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/cloudinary_service.dart';
 
 // ── Deterministic spine color ─────────────────────────────────────────────
 
@@ -531,13 +535,14 @@ class _BookCardState extends State<_BookCard> {
                                 : TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 3),
-                          Text(
-                            widget.book.author,
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
+                          if (widget.book.author != null)
+                            Text(
+                              widget.book.author!,
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 13,
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 8),
                           Row(
                             children: [
@@ -601,6 +606,25 @@ class _BookCardState extends State<_BookCard> {
                           ),
                         ),
                         const SizedBox(height: 12),
+                      ],
+                      if (widget.book.pdfUrl != null) ...[
+                        OutlinedButton.icon(
+                          onPressed: () => launchUrl(
+                            Uri.parse(widget.book.pdfUrl!),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          icon: const Icon(Icons.picture_as_pdf_rounded,
+                              size: 18, color: AppColors.rose),
+                          label: const Text('Open PDF',
+                              style: TextStyle(color: AppColors.rose)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                                color: AppColors.rose, width: 0.8),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                       ],
                       GradientButton(
                         label: widget.book.read
@@ -706,36 +730,56 @@ class _AddBookSheet extends StatefulWidget {
 
 class _AddBookSheetState extends State<_AddBookSheet> {
   final _titleCtrl = TextEditingController();
-  final _authorCtrl = TextEditingController();
-  final _coverCtrl = TextEditingController();
-  final _noteCtrl = TextEditingController();
+  String? _pdfPath;
+  String? _pdfName;
   bool _loading = false;
 
   @override
   void dispose() {
     _titleCtrl.dispose();
-    _authorCtrl.dispose();
-    _coverCtrl.dispose();
-    _noteCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPdf() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _pdfPath = result.files.single.path;
+        _pdfName = result.files.single.name;
+      });
+    }
   }
 
   Future<void> _submit() async {
     final title = _titleCtrl.text.trim();
-    final author = _authorCtrl.text.trim();
-    if (title.isEmpty || author.isEmpty) return;
+    if (title.isEmpty) return;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
     setState(() => _loading = true);
 
+    String? pdfUrl;
+    if (_pdfPath != null) {
+      try {
+        pdfUrl = await CloudinaryService.uploadPdf(File(_pdfPath!));
+      } catch (_) {
+        if (mounted) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('PDF upload failed, adding without PDF')),
+          );
+        }
+      }
+    }
+
     final book = BookWish(
       id: const Uuid().v4(),
       title: title,
-      author: author,
-      coverUrl: _coverCtrl.text.trim().isEmpty ? null : _coverCtrl.text.trim(),
-      note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+      pdfUrl: pdfUrl,
       read: false,
       addedBy: uid,
       addedAt: DateTime.now(),
@@ -748,8 +792,7 @@ class _AddBookSheetState extends State<_AddBookSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: EdgeInsets.fromLTRB(
             24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
@@ -758,75 +801,89 @@ class _AddBookSheetState extends State<_AddBookSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           border: Border(top: BorderSide(color: AppColors.divider)),
         ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.divider,
-                    borderRadius: BorderRadius.circular(2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Add a Book', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _titleCtrl,
+              autofocus: true,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                hintText: 'Book title *',
+                prefixIcon: Icon(Icons.book_rounded, color: AppColors.rose),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // PDF picker
+            GestureDetector(
+              onTap: _pickPdf,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.bgCard,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _pdfPath != null
+                        ? AppColors.rose
+                        : AppColors.divider,
+                    width: _pdfPath != null ? 1.5 : 0.5,
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Text('Add a Book',
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _titleCtrl,
-                autofocus: true,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                  hintText: 'Book title *',
-                  prefixIcon: Icon(Icons.book_rounded,
-                      color: AppColors.rose),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.picture_as_pdf_rounded,
+                      color: _pdfPath != null ? AppColors.rose : AppColors.textMuted,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _pdfName ?? 'Upload PDF (optional)',
+                        style: TextStyle(
+                          color: _pdfPath != null
+                              ? AppColors.textPrimary
+                              : AppColors.textMuted,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (_pdfPath != null)
+                      GestureDetector(
+                        onTap: () => setState(() {
+                          _pdfPath = null;
+                          _pdfName = null;
+                        }),
+                        child: const Icon(Icons.close_rounded,
+                            color: AppColors.textMuted, size: 18),
+                      ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _authorCtrl,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                  hintText: 'Author *',
-                  prefixIcon: Icon(Icons.person_outline_rounded,
-                      color: AppColors.textMuted),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _coverCtrl,
-                style: const TextStyle(color: AppColors.textPrimary),
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  hintText: 'Cover image URL (optional)',
-                  prefixIcon: Icon(Icons.image_outlined,
-                      color: AppColors.textMuted),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _noteCtrl,
-                style: const TextStyle(color: AppColors.textPrimary),
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  hintText: 'Note (optional)…',
-                  prefixIcon: Icon(Icons.notes_rounded,
-                      color: AppColors.textMuted),
-                ),
-              ),
-              const SizedBox(height: 20),
-              GradientButton(
-                label: 'Add to wishlist',
-                loading: _loading,
-                onTap: _submit,
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 20),
+            GradientButton(
+              label: 'Add to wishlist',
+              loading: _loading,
+              onTap: _submit,
+            ),
+          ],
         ),
       ),
     );

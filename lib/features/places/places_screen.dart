@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:uuid/uuid.dart';
@@ -14,6 +17,28 @@ import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
 const _kEmojis = ['🍜', '🏕️', '🌊', '🎡', '🛍️', '🏛️', '✨'];
+
+// ── Nominatim search result ───────────────────────────────────────────────
+
+class _SearchResult {
+  final String displayName;
+  final double lat;
+  final double lon;
+
+  const _SearchResult({
+    required this.displayName,
+    required this.lat,
+    required this.lon,
+  });
+
+  factory _SearchResult.fromJson(Map<String, dynamic> json) {
+    return _SearchResult(
+      displayName: json['display_name'] as String,
+      lat: double.parse(json['lat'] as String),
+      lon: double.parse(json['lon'] as String),
+    );
+  }
+}
 
 // ── Pulse animation for unvisited markers ─────────────────────────────────
 
@@ -129,6 +154,49 @@ class _PulseMarkerState extends State<_PulseMarker>
   }
 }
 
+// ── Current location dot marker ───────────────────────────────────────────
+
+class _LocationDot extends StatelessWidget {
+  const _LocationDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.blue.withValues(alpha: 0.20),
+            ),
+          ),
+          Container(
+            width: 14,
+            height: 14,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.blue,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Main Screen ───────────────────────────────────────────────────────────
 
 class PlacesScreen extends ConsumerStatefulWidget {
@@ -142,6 +210,16 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
   final _mapController = MapController();
   bool _addingMode = false;
 
+  // Current location
+  LatLng? _currentLocation;
+
+  // Search
+  final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode();
+  List<_SearchResult> _searchResults = [];
+  bool _searchLoading = false;
+  Timer? _searchDebounce;
+
   // Add-pin sheet fields
   final _nameCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
@@ -151,13 +229,18 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _noteCtrl.dispose();
+    _searchCtrl.dispose();
+    _searchFocus.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
   void _enterAddMode() {
     setState(() {
       _addingMode = true;
+      _searchResults = [];
     });
+    _searchFocus.unfocus();
     HapticFeedback.mediumImpact();
   }
 
@@ -261,6 +344,95 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
     _mapController.move(LatLng(pin.lat, pin.lng), 14.0);
   }
 
+  // ── Location ──────────────────────────────────────────────────────────
+
+  Future<void> _flyToCurrentLocation() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Location permission is permanently denied. Enable it in app settings.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+    if (permission == LocationPermission.denied) return;
+
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      final loc = LatLng(pos.latitude, pos.longitude);
+      setState(() => _currentLocation = loc);
+      _mapController.move(loc, 15.0);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not get current location.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────
+
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    if (query.trim().isEmpty) {
+      setState(() => _searchResults = []);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+      _runSearch(query.trim());
+    });
+  }
+
+  Future<void> _runSearch(String query) async {
+    setState(() => _searchLoading = true);
+    try {
+      final encoded = Uri.encodeQueryComponent(query);
+      final uri = Uri.parse(
+          'https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=5');
+      final response = await http.get(
+        uri,
+        headers: {'User-Agent': 'TwoHeartsApp/1.0 (abhishek2005.siva@gmail.com)'},
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
+        final results = data
+            .map((e) => _SearchResult.fromJson(e as Map<String, dynamic>))
+            .toList();
+        if (mounted) setState(() => _searchResults = results);
+      }
+    } catch (_) {
+      // Silently ignore network errors in search
+    } finally {
+      if (mounted) setState(() => _searchLoading = false);
+    }
+  }
+
+  void _selectSearchResult(_SearchResult result) {
+    final loc = LatLng(result.lat, result.lon);
+    _mapController.move(loc, 13.0);
+    setState(() {
+      _searchResults = [];
+      _searchCtrl.clear();
+    });
+    _searchFocus.unfocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     final accent = ref.watch(accentColorProvider);
@@ -268,25 +440,50 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
     final places = placesAsync.valueOrNull ?? [];
     final visited = places.where((p) => p.visited).length;
     final toGo = places.length - visited;
+    final topPad = MediaQuery.of(context).padding.top;
+    final botPad = MediaQuery.of(context).padding.bottom;
+
+    // Height of the stats bar (approx): topPad + 12 + 62 + 12 = topPad + 86
+    final statsBarBottom = topPad + 12 + 62.0;
 
     return Scaffold(
       body: Stack(
         children: [
-          // ── Map ────────────────────────────────────────────────────────
+          // ── Map ──────────────────────────────────────────────────────
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
               initialCenter: const LatLng(20.0, 0.0),
               initialZoom: 2.5,
-              onTap: (tapPos, point) {},
+              minZoom: 3.0,
+              maxZoom: 18.0,
+              onTap: (tapPos, point) {
+                if (_searchResults.isNotEmpty) {
+                  setState(() => _searchResults = []);
+                  _searchFocus.unfocus();
+                }
+              },
             ),
             children: [
               TileLayer(
                 urlTemplate:
-                    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
                 subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'com.twohearts.app',
               ),
+              // Current location marker
+              if (_currentLocation != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _currentLocation!,
+                      width: 28,
+                      height: 28,
+                      child: const _LocationDot(),
+                    ),
+                  ],
+                ),
+              // Place pins
               MarkerLayer(
                 markers: places.map((pin) {
                   return Marker(
@@ -306,15 +503,15 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
             ],
           ),
 
-          // ── Crosshair reticle ──────────────────────────────────────────
+          // ── Crosshair reticle ─────────────────────────────────────────
           if (_addingMode)
             const Center(
               child: _Crosshair(),
             ),
 
-          // ── Top overlay: stats ─────────────────────────────────────────
+          // ── Top overlay: stats ────────────────────────────────────────
           Positioned(
-            top: MediaQuery.of(context).padding.top + 12,
+            top: topPad + 12,
             left: 16,
             right: 72,
             child: ClipRRect(
@@ -384,9 +581,9 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
             ).animate().fadeIn().slideY(begin: -0.3),
           ),
 
-          // ── Back button ────────────────────────────────────────────────
+          // ── Back button ───────────────────────────────────────────────
           Positioned(
-            top: MediaQuery.of(context).padding.top + 12,
+            top: topPad + 12,
             right: 16,
             child: ClipOval(
               child: BackdropFilter(
@@ -409,10 +606,146 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
             ),
           ),
 
-          // ── Bottom: horizontal chip list ───────────────────────────────
+          // ── Search bar (below stats overlay) ─────────────────────────
+          if (!_addingMode)
+            Positioned(
+              top: statsBarBottom + 10,
+              left: 16,
+              right: 16,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.50),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.14)),
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 12),
+                            const Icon(Icons.search_rounded,
+                                color: Colors.white54, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: _searchCtrl,
+                                focusNode: _searchFocus,
+                                onChanged: _onSearchChanged,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                                decoration: const InputDecoration(
+                                  hintText: 'Search places…',
+                                  hintStyle: TextStyle(
+                                      color: Colors.white38, fontSize: 14),
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ),
+                            if (_searchLoading)
+                              const Padding(
+                                padding: EdgeInsets.only(right: 12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white54,
+                                  ),
+                                ),
+                              )
+                            else if (_searchCtrl.text.isNotEmpty)
+                              GestureDetector(
+                                onTap: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchResults = []);
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.only(right: 12),
+                                  child: Icon(Icons.close_rounded,
+                                      color: Colors.white54, size: 18),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Dropdown results
+                  if (_searchResults.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                        child: Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.12)),
+                          ),
+                          child: ListView.separated(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _searchResults.length,
+                            separatorBuilder: (_, _) => Divider(
+                              height: 1,
+                              color: Colors.white.withValues(alpha: 0.08),
+                            ),
+                            itemBuilder: (_, i) {
+                              final r = _searchResults[i];
+                              return InkWell(
+                                onTap: () => _selectSearchResult(r),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 10),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.location_on_rounded,
+                                          color: AppColors.rose, size: 16),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          r.displayName,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+          // ── Bottom: horizontal chip list ──────────────────────────────
           if (places.isNotEmpty && !_addingMode)
             Positioned(
-              bottom: MediaQuery.of(context).padding.bottom + 96,
+              bottom: botPad + 96,
               left: 0,
               right: 0,
               child: SizedBox(
@@ -434,7 +767,8 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                           borderRadius: BorderRadius.circular(22),
                           border: Border.all(
                             color: p.visited
-                                ? const Color(0xFF4CAF50).withValues(alpha: 0.6)
+                                ? const Color(0xFF4CAF50)
+                                    .withValues(alpha: 0.6)
                                 : accent.withValues(alpha: 0.5),
                             width: 1,
                           ),
@@ -462,9 +796,9 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
               ),
             ),
 
-          // ── FAB: add / confirm / cancel ───────────────────────────────
+          // ── FABs: location / add / confirm / cancel ───────────────────
           Positioned(
-            bottom: MediaQuery.of(context).padding.bottom + 24,
+            bottom: botPad + 24,
             right: 16,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -476,6 +810,17 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
                     backgroundColor: AppColors.bgCard,
                     onPressed: _cancelAddMode,
                     child: const Icon(Icons.close_rounded,
+                        color: Colors.white70),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                if (!_addingMode) ...[
+                  FloatingActionButton(
+                    heroTag: 'location_fab',
+                    mini: true,
+                    backgroundColor: AppColors.bgCard,
+                    onPressed: _flyToCurrentLocation,
+                    child: const Icon(Icons.my_location_rounded,
                         color: Colors.white70),
                   ),
                   const SizedBox(height: 10),
@@ -591,8 +936,8 @@ class _AddPinSheetState extends State<_AddPinSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: EdgeInsets.fromLTRB(
             24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
@@ -668,8 +1013,8 @@ class _AddPinSheetState extends State<_AddPinSheet> {
                       ),
                     ),
                     child: Center(
-                        child: Text(e,
-                            style: const TextStyle(fontSize: 22))),
+                        child:
+                            Text(e, style: const TextStyle(fontSize: 22))),
                   ),
                 );
               }).toList(),

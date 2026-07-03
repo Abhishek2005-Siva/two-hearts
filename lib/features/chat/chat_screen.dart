@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
-import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -535,10 +535,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Future<void> _startVideoCall() async {
     final coupleId = ref.read(coupleIdProvider);
-    final myName = FirebaseAuth.instance.currentUser?.displayName ?? 'Partner';
     if (coupleId == null) return;
 
-    // Send system message to chat
     final authUser = FirebaseAuth.instance.currentUser;
     if (authUser != null) {
       await ref.read(firestoreServiceProvider).sendMessage(
@@ -546,7 +544,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         MessageModel(
           id: const Uuid().v4(),
           senderId: authUser.uid,
-          content: '📹 Started a video call',
+          content: '📹 Started a video call — join at meet.jit.si/twohearts-$coupleId',
           type: MessageType.text,
           sentAt: DateTime.now(),
           isSnap: false,
@@ -554,22 +552,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       );
     }
 
-    final options = JitsiMeetConferenceOptions(
-      serverURL: 'https://meet.jit.si',
-      room: 'twohearts-$coupleId',
-      userInfo: JitsiMeetUserInfo(displayName: myName),
-      featureFlags: {
-        FeatureFlags.welcomePageEnabled: false,
-        FeatureFlags.callIntegrationEnabled: false,
-      },
-      configOverrides: {
-        'startWithAudioMuted': false,
-        'startWithVideoMuted': false,
-        'prejoinPageEnabled': false,
-      },
-    );
-
-    await JitsiMeet().join(options);
+    final url = Uri.parse('https://meet.jit.si/twohearts-$coupleId');
+    await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
   bool _sameDay(DateTime a, DateTime b) =>

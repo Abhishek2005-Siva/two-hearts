@@ -16,6 +16,7 @@ class RichContentEditor extends StatefulWidget {
   final ValueChanged<List<ContentBlock>> onChanged;
   final Color textColor;
   final Color hintColor;
+  final Color toolbarIconColor;
 
   const RichContentEditor({
     super.key,
@@ -23,6 +24,7 @@ class RichContentEditor extends StatefulWidget {
     required this.onChanged,
     this.textColor = Colors.white,
     this.hintColor = Colors.white38,
+    this.toolbarIconColor = Colors.white70,
   });
 
   @override
@@ -268,6 +270,7 @@ class _RichContentEditorState extends State<RichContentEditor> {
         ..._blocks.map((b) => _buildBlock(b)),
         const SizedBox(height: 8),
         _BlockToolbar(
+          iconColor: widget.toolbarIconColor,
           onAddText: () => _addTextBlock(),
           onAddHeading: () => _addTextBlock(size: TextSize.heading),
           onAddVoice: _startVoiceRecording,
@@ -750,6 +753,7 @@ class _LinkBlockEditor extends StatelessWidget {
 // ── Block toolbar ─────────────────────────────────────────────────────────
 
 class _BlockToolbar extends StatelessWidget {
+  final Color iconColor;
   final VoidCallback onAddText;
   final VoidCallback onAddHeading;
   final VoidCallback onAddVoice;
@@ -758,6 +762,7 @@ class _BlockToolbar extends StatelessWidget {
   final VoidCallback onAddLink;
 
   const _BlockToolbar({
+    this.iconColor = Colors.white70,
     required this.onAddText,
     required this.onAddHeading,
     required this.onAddVoice,
@@ -768,28 +773,30 @@ class _BlockToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bg = iconColor.withValues(alpha: 0.08);
+    final border = iconColor.withValues(alpha: 0.15);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: bg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white12),
+        border: Border.all(color: border),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            _ToolBtn(label: 'T', tooltip: 'Text', onTap: onAddText),
+            _ToolBtn(label: 'T', tooltip: 'Text', color: iconColor, onTap: onAddText),
             const SizedBox(width: 4),
-            _ToolBtn(label: 'H', tooltip: 'Heading', onTap: onAddHeading),
+            _ToolBtn(label: 'H', tooltip: 'Heading', color: iconColor, onTap: onAddHeading),
             const SizedBox(width: 4),
-            _ToolBtn(icon: Icons.mic_rounded, tooltip: 'Voice', onTap: onAddVoice),
+            _ToolBtn(icon: Icons.mic_rounded, tooltip: 'Voice', color: iconColor, onTap: onAddVoice),
             const SizedBox(width: 4),
-            _ToolBtn(icon: Icons.photo_rounded, tooltip: 'Image', onTap: onAddImage),
+            _ToolBtn(icon: Icons.photo_rounded, tooltip: 'Image', color: iconColor, onTap: onAddImage),
             const SizedBox(width: 4),
-            _ToolBtn(icon: Icons.videocam_rounded, tooltip: 'Video', onTap: onAddVideo),
+            _ToolBtn(icon: Icons.videocam_rounded, tooltip: 'Video', color: iconColor, onTap: onAddVideo),
             const SizedBox(width: 4),
-            _ToolBtn(icon: Icons.link_rounded, tooltip: 'Link', onTap: onAddLink),
+            _ToolBtn(icon: Icons.link_rounded, tooltip: 'Link', color: iconColor, onTap: onAddLink),
           ],
         ),
       ),
@@ -801,12 +808,14 @@ class _ToolBtn extends StatelessWidget {
   final String? label;
   final IconData? icon;
   final String tooltip;
+  final Color color;
   final VoidCallback onTap;
 
   const _ToolBtn({
     this.label,
     this.icon,
     required this.tooltip,
+    this.color = Colors.white70,
     required this.onTap,
   });
 
@@ -820,15 +829,15 @@ class _ToolBtn extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: Colors.white10,
+            color: color.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
           alignment: Alignment.center,
           child: icon != null
-              ? Icon(icon, color: Colors.white70, size: 18)
+              ? Icon(icon, color: color, size: 18)
               : Text(label ?? '',
-                  style: const TextStyle(
-                    color: Colors.white70,
+                  style: TextStyle(
+                    color: color,
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                   )),

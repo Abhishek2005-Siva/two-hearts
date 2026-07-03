@@ -26,7 +26,7 @@ android {
         applicationId = "com.twohearts.two_hearts"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 26 // Jitsi Meet SDK 12 requires 26+
+        minSdk = 21
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -39,12 +39,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-}
-
-configurations.all {
-    // Jitsi Meet bundles media3 classes inside react-native-video; exclude the
-    // standalone artifact to avoid duplicate class errors at build time.
-    exclude(group = "androidx.media3", module = "media3-exoplayer-rtsp")
 }
 
 dependencies {

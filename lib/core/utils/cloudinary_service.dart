@@ -85,4 +85,28 @@ class CloudinaryService {
     final json = jsonDecode(body) as Map<String, dynamic>;
     return json['secure_url'] as String;
   }
+
+  /// Uploads a PDF [file] to Cloudinary (resource_type=raw) and returns the secure URL.
+  static Future<String> uploadPdf(File file, {String folder = 'two_hearts/books'}) async {
+    final uri = Uri.parse('$_baseUrl/$kCloudName/raw/upload');
+    final request = http.MultipartRequest('POST', uri)
+      ..fields['upload_preset'] = kUploadPreset
+      ..fields['folder'] = folder
+      ..fields['resource_type'] = 'raw'
+      ..files.add(await http.MultipartFile.fromPath(
+        'file',
+        file.path,
+        filename: '${DateTime.now().millisecondsSinceEpoch}.pdf',
+      ));
+
+    final response = await request.send();
+    if (response.statusCode != 200) {
+      final body = await response.stream.bytesToString();
+      throw Exception('Cloudinary PDF upload failed: $body');
+    }
+
+    final body = await response.stream.bytesToString();
+    final json = jsonDecode(body) as Map<String, dynamic>;
+    return json['secure_url'] as String;
+  }
 }

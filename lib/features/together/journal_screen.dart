@@ -77,12 +77,12 @@ class JournalScreen extends ConsumerWidget {
 
   void _openTodayEntry(
       BuildContext context, WidgetRef ref, List<JournalDay> entries) {
-    final today = DateTime.now().toIso8601String().substring(0, 10);
-    final existing = entries.where((e) => e.id == today).firstOrNull;
+    // Always create a fresh entry; use date+millis so _formatId shows the date
+    final now = DateTime.now();
+    final id = '${now.toIso8601String().substring(0, 10)}-${now.millisecondsSinceEpoch}';
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => _BookView(
-        day: existing ??
-            JournalDay(id: today, title: '', sharedEntry: ''),
+        day: JournalDay(id: id, title: '', sharedEntry: ''),
         isNew: true,
       ),
     ));
@@ -96,7 +96,7 @@ class JournalScreen extends ConsumerWidget {
 // Shelf board BOTTOM edges (where books rest) measured from image top:
 //   Shelf 1 bottom: ~30%   Shelf 2 bottom: ~55%   Shelf 3 bottom: ~80%
 // Horizontal inner bounds (inside the outer wooden frame): ~8% each side.
-const _kShelfFractions = [0.30, 0.55, 0.80];
+const _kShelfFractions = [0.38, 0.60, 0.82];
 const _kBookHeight = 110.0;
 const _kShelfLeft = 0.08;
 const _kShelfRight = 0.08;
@@ -722,6 +722,7 @@ class _PaperThemedEditor extends StatelessWidget {
           onChanged: onChanged,
           textColor: const Color(0xFF2A1A0A),
           hintColor: const Color(0xFF2A1A0A).withValues(alpha: 0.35),
+          toolbarIconColor: const Color(0xFF5C3D1E),
         ),
       ),
     );

@@ -24,10 +24,12 @@ class _SnapCameraScreenState extends State<SnapCameraScreen> with WidgetsBinding
   int _cameraIndex = 0;
   bool _isReady = false;
   bool _isRecording = false;
+  bool _isLocked = false;
   bool _isProcessing = false;
   Timer? _recordTimer;
   int _recordSeconds = 0;
   static const int _maxVideoSeconds = 30;
+  static const double _lockThreshold = -40.0;
 
   @override
   void initState() {
@@ -105,6 +107,7 @@ class _SnapCameraScreenState extends State<SnapCameraScreen> with WidgetsBinding
     await ctrl.startVideoRecording();
     setState(() {
       _isRecording = true;
+      _isLocked = false;
       _recordSeconds = 0;
     });
     _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -120,6 +123,7 @@ class _SnapCameraScreenState extends State<SnapCameraScreen> with WidgetsBinding
     if (ctrl == null || !_isRecording) return;
     setState(() {
       _isRecording = false;
+      _isLocked = false;
       _isProcessing = true;
     });
     HapticFeedback.mediumImpact();
@@ -209,22 +213,62 @@ class _SnapCameraScreenState extends State<SnapCameraScreen> with WidgetsBinding
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Hint text
+                // Hint / lock indicator
                 if (!_isRecording)
                   const Padding(
                     padding: EdgeInsets.only(bottom: 16),
                     child: Text(
-                      'Tap for photo  ·  Hold for video',
+                      'Tap photo  ·  Hold video  ·  Swipe ↑ to lock',
                       style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  )
+                else if (_isLocked)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.lock_rounded, color: Colors.red, size: 16),
+                        const SizedBox(width: 6),
+                        const Text('Locked — tap ■ to stop',
+                            style: TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.arrow_upward_rounded, color: Colors.white60, size: 16),
+                        const SizedBox(width: 4),
+                        const Text('Swipe up to lock',
+                            style: TextStyle(color: Colors.white60, fontSize: 13)),
+                      ],
                     ),
                   ),
 
                 // Shutter button
                 Center(
                   child: GestureDetector(
-                    onTap: _isRecording ? null : _takePhoto,
-                    onLongPressStart: (_isRecording || _isProcessing) ? null : (_) => _startVideo(),
-                    onLongPressEnd: _isRecording ? (_) => _stopVideo() : null,
+                    onTap: _isLocked
+                        ? _stopVideo
+                        : (_isRecording ? null : _takePhoto),
+                    onLongPressStart: (_isRecording || _isProcessing)
+                        ? null
+                        : (_) => _startVideo(),
+                    onLongPressMoveUpdate: _isRecording && !_isLocked
+                        ? (details) {
+                            if (details.offsetFromOrigin.dy < _lockThreshold) {
+                              setState(() => _isLocked = true);
+                              HapticFeedback.heavyImpact();
+                            }
+                          }
+                        : null,
+                    onLongPressEnd: (_isRecording && !_isLocked)
+                        ? (_) => _stopVideo()
+                        : null,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       width: _isRecording ? 72 : 80,
@@ -244,9 +288,11 @@ class _SnapCameraScreenState extends State<SnapCameraScreen> with WidgetsBinding
                               padding: EdgeInsets.all(20),
                               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
-                          : _isRecording
+                          : _isLocked
                               ? const Icon(Icons.stop_rounded, color: Colors.red, size: 36)
-                              : const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 36),
+                              : _isRecording
+                                  ? const Icon(Icons.stop_rounded, color: Colors.red, size: 36)
+                                  : const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 36),
                     ),
                   ),
                 ),
