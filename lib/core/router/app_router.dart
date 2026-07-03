@@ -84,9 +84,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Signed in but Firestore hasn't confirmed couple status yet — wait.
       if (!coupleLoaded) return null;
 
-      // Couple data loaded — now we know for certain.
-      if (!isPaired) return onAuth ? null : '/pair';
-      if (onAuth) return '/room';
+      // /pair is only reached via explicit context.go('/pair') after signup.
+      // Once pairing is complete, bounce away. Never auto-redirect here.
+      if (isPaired && onAuth) return '/room';
+
+      // Signed-in users on /auth always go to room.
+      if (state.matchedLocation.startsWith('/auth')) return '/room';
       return null;
     },
     routes: [
