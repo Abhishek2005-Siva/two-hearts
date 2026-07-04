@@ -34,6 +34,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     with TickerProviderStateMixin {
   final List<_HeartParticle> _hearts = [];
   String? _lastSignalId; // dedup — never show same signal twice
+  StreamSubscription? _signalsSub;
 
   // Partner mood overlay
   MoodType? _partnerMoodToShow;
@@ -90,7 +91,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final coupleId = ref.read(coupleIdProvider);
       if (coupleId == null) return;
-      ref.read(firestoreServiceProvider).watchSignals(coupleId).listen((snap) {
+      _signalsSub =
+          ref.read(firestoreServiceProvider).watchSignals(coupleId).listen((snap) {
         if (!mounted) return;
         if (snap.docs.isNotEmpty) {
           final doc = snap.docs.first;
@@ -402,6 +404,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
 
   @override
   void dispose() {
+    _signalsSub?.cancel();
     for (final h in _hearts) {
       h.ctrl.dispose();
     }

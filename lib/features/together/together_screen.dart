@@ -19,6 +19,8 @@ class TogetherScreen extends ConsumerWidget {
     final letters = ref.watch(lettersProvider).valueOrNull ?? [];
     final bucket = ref.watch(bucketListProvider).valueOrNull ?? [];
     final journal = ref.watch(journalProvider).valueOrNull ?? [];
+    final cinema = ref.watch(cinemaSessionProvider).valueOrNull;
+    final nowShowing = (cinema?['title'] as String?)?.trim();
 
     final unlockedLetters = letters.where((l) => l.isUnlocked && !l.opened).length;
     final bucketDone = bucket.where((b) => b.status == BucketStatus.done).length;
@@ -81,6 +83,17 @@ class TogetherScreen extends ConsumerWidget {
                       accent: accent,
                       onTap: () => context.push('/together/bucket'),
                     ).animate().fadeIn(delay: 160.ms).slideX(begin: -0.05),
+                    const SizedBox(height: 14),
+                    _TogetherTile(
+                      emoji: '🍿',
+                      title: 'Movie Night',
+                      subtitle: cinema != null
+                          ? 'Now showing${nowShowing != null && nowShowing.isNotEmpty ? ': $nowShowing' : ''} — join in! 🎬'
+                          : 'Watch a movie together, perfectly in sync',
+                      badge: cinema != null ? 'LIVE' : null,
+                      accent: accent,
+                      onTap: () => context.push('/cinema'),
+                    ).animate().fadeIn(delay: 240.ms).slideX(begin: -0.05),
                     const SizedBox(height: 14),
                     _TogetherTile(
                       emoji: '🎮',

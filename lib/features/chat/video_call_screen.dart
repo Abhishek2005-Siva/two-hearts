@@ -6,21 +6,41 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-const _iceConfig = {
-  'iceServers': [
-    {'urls': 'stun:stun.l.google.com:19302'},
-    {'urls': 'stun:stun1.l.google.com:19302'},
-    {
-      'urls': [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp',
-      ],
-      'username': 'openrelayproject',
-      'credential': 'openrelayproject',
-    },
-  ]
-};
+const _fallbackIceServers = [
+  {'urls': 'stun:stun.l.google.com:19302'},
+  {'urls': 'stun:stun1.l.google.com:19302'},
+  {'urls': 'stun:stun2.l.google.com:19302'},
+  {'urls': 'stun:stun.cloudflare.com:3478'},
+];
+
+/// Builds the ICE config. TURN credentials (needed when both phones are on
+/// different carrier-grade-NAT networks) are read from Firestore
+/// `config/webrtc` — fields: `turnUrls` (list), `turnUsername`,
+/// `turnCredential`. Drop free-tier creds from metered.ca / Cloudflare Calls
+/// in there and every installed app picks them up without a rebuild.
+Future<Map<String, dynamic>> _buildIceConfig() async {
+  final servers = List<Map<String, dynamic>>.from(_fallbackIceServers);
+  try {
+    final doc = await FirebaseFirestore.instance
+        .collection('config')
+        .doc('webrtc')
+        .get()
+        .timeout(const Duration(seconds: 5));
+    final data = doc.data();
+    final urls = (data?['turnUrls'] as List?)?.cast<String>();
+    final user = data?['turnUsername'] as String?;
+    final cred = data?['turnCredential'] as String?;
+    if (urls != null && urls.isNotEmpty && user != null && cred != null) {
+      servers.add({'urls': urls, 'username': user, 'credential': cred});
+    }
+  } catch (_) {
+    // Offline or missing doc — STUN-only still works on most networks.
+  }
+  return {'iceServers': servers, 'sdpSemantics': 'unified-plan'};
+}
+
+const _ringTimeout = Duration(seconds: 45);
+const _offerTimeout = Duration(seconds: 20);
 
 class VideoCallScreen extends StatefulWidget {
   final String coupleId;
@@ -54,6 +74,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   String? _error;
 
   Timer? _timer;
+  Timer? _ringTimer;
   int _seconds = 0;
 
   StreamSubscription? _answerSub;
@@ -83,6 +104,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   void dispose() {
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     _timer?.cancel();
+    _ringTimer?.cancel();
     _answerSub?.cancel();
     _calleeCandSub?.cancel();
     _callerCandSub?.cancel();
@@ -119,7 +141,13 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     if (_disposed || !mounted) return;
     setState(() => _localRenderer.srcObject = _localStream);
 
-    _pc = await createPeerConnection(_iceConfig);
+    // Route audio to the loudspeaker — video calls through the earpiece
+    // sound broken to users.
+    try {
+      await Helper.setSpeakerphoneOn(true);
+    } catch (_) {}
+
+    _pc = await createPeerConnection(await _buildIceConfig());
 
     for (final track in _localStream!.getTracks()) {
       await _pc!.addTrack(track, _localStream!);
@@ -138,11 +166,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
     _pc!.onTrack = (event) {
       if (event.streams.isNotEmpty && mounted) {
+        _ringTimer?.cancel();
         setState(() {
           _remoteRenderer.srcObject = event.streams[0];
           _connected = true;
         });
-        _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
           if (mounted) setState(() => _seconds++);
         });
       }
@@ -186,6 +215,15 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       'callerId': FirebaseAuth.instance.currentUser!.uid,
       'createdAt': FieldValue.serverTimestamp(),
       'offer': {'sdp': offer.sdp, 'type': offer.type},
+    });
+
+    // Give up after 45s of unanswered ringing.
+    _ringTimer = Timer(_ringTimeout, () {
+      if (_connected || _disposed || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${widget.partnerName ?? 'Your person'} didn\'t answer')),
+      );
+      _hangUp();
     });
 
     _answerSub = _callDoc.snapshots().listen((snap) async {
@@ -232,12 +270,20 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         }
       });
       data = await completer.future.timeout(
-        const Duration(seconds: 15),
+        _offerTimeout,
         onTimeout: () { sub?.cancel(); return null; },
       );
     }
 
-    if (data?['offer'] == null || _disposed) return;
+    if (_disposed) return;
+    if (data?['offer'] == null) {
+      // Caller vanished before sending an offer — don't sit on
+      // "Connecting…" forever.
+      if (mounted) {
+        setState(() => _error = 'Call could not be connected.\nAsk them to call again.');
+      }
+      return;
+    }
 
     await _pc!.setRemoteDescription(RTCSessionDescription(
       data!['offer']['sdp'] as String,
@@ -273,12 +319,18 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     }
     _disposed = true;
     _timer?.cancel();
+    _ringTimer?.cancel();
     _answerSub?.cancel();
     _calleeCandSub?.cancel();
     _callerCandSub?.cancel();
     _statusSub?.cancel();
     if (notify) {
       try { await _callDoc.update({'status': 'ended'}); } catch (_) {}
+    }
+    // Best-effort cleanup of stale ICE candidates so Firestore doesn't
+    // accumulate junk under every finished call.
+    if (widget.isCaller) {
+      _cleanupCallDoc();
     }
     final stream = _localStream;
     _localStream = null;
@@ -288,6 +340,19 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _pc = null;
     await pc?.close();
     if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _cleanupCallDoc() async {
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      for (final col in ['callerCandidates', 'calleeCandidates']) {
+        final docs = await _callDoc.collection(col).get();
+        for (final d in docs.docs) {
+          batch.delete(d.reference);
+        }
+      }
+      await batch.commit();
+    } catch (_) {}
   }
 
   void _toggleMic() {

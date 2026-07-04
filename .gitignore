@@ -48,3 +48,4 @@ app.*.map.json
 android/app/google-services.json
 assets/config/service_account.json
 functions/node_modules/
+/android/.kotlin/

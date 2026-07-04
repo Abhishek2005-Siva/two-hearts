@@ -85,6 +85,23 @@ class _TwoHeartsAppState extends ConsumerState<TwoHeartsApp> {
     _saveFcmToken();
     // Refresh token if it rotates
     FirebaseMessaging.instance.onTokenRefresh.listen((_) => _saveFcmToken());
+
+    // Deep-link when the user taps a push notification: calls land on
+    // /chat (the incoming-call dialog takes over), movie nights on /cinema.
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+    FirebaseMessaging.instance.getInitialMessage().then((m) {
+      if (m != null) {
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _handleNotificationTap(m));
+      }
+    });
+  }
+
+  void _handleNotificationTap(RemoteMessage message) {
+    final route = message.data['route'];
+    if (route is String && route.startsWith('/')) {
+      ref.read(routerProvider).go(route);
+    }
   }
 
   Future<void> _saveFcmToken() async {

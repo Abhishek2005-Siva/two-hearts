@@ -107,51 +107,56 @@ class _RichContentEditorState extends State<RichContentEditor> {
 
   // ── Add image / video ────────────────────────────────────────────────────
 
-  Future<void> _addImageBlock() async {
-    final picker = ImagePicker();
-    final xf = await picker.pickImage(source: ImageSource.gallery);
-    if (xf == null) return;
-    final id = DateTime.now().microsecondsSinceEpoch.toString();
-    // Add placeholder block first
-    final placeholder = ContentBlock(
-      id: id,
-      type: BlockType.image,
-      mediaUrl: null,
-    );
-    _addBlock(placeholder);
-    try {
-      final bytes = await xf.readAsBytes();
-      final url = await CloudinaryService.uploadImage(bytes);
-      _updateBlock(placeholder.copyWith(mediaUrl: url));
-    } catch (e) {
-      _removeBlock(id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image upload failed: $e')),
-        );
-      }
-    }
+  static const _videoExtensions = {
+    'mp4', 'mov', 'avi', 'mkv', 'webm', '3gp', 'm4v', 'mpeg', 'mpg', 'wmv',
+  };
+
+  bool _isVideoFile(XFile xf) {
+    final mime = xf.mimeType;
+    if (mime != null) return mime.startsWith('video/');
+    final ext = xf.path.split('.').last.toLowerCase();
+    return _videoExtensions.contains(ext);
   }
 
-  Future<void> _addVideoBlock() async {
+  /// Single picker for photos AND videos.
+  Future<void> _addMediaBlock() async {
     final picker = ImagePicker();
-    final xf = await picker.pickVideo(source: ImageSource.gallery);
+    final XFile? xf;
+    try {
+      xf = await picker.pickMedia();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open gallery: $e')),
+        );
+      }
+      return;
+    }
     if (xf == null) return;
+
+    final isVideo = _isVideoFile(xf);
     final id = DateTime.now().microsecondsSinceEpoch.toString();
+    // Add placeholder block first so the user sees upload progress
     final placeholder = ContentBlock(
       id: id,
-      type: BlockType.video,
+      type: isVideo ? BlockType.video : BlockType.image,
       mediaUrl: null,
     );
     _addBlock(placeholder);
     try {
-      final url = await CloudinaryService.uploadVideo(File(xf.path));
+      final String url;
+      if (isVideo) {
+        url = await CloudinaryService.uploadVideo(File(xf.path));
+      } else {
+        final bytes = await xf.readAsBytes();
+        url = await CloudinaryService.uploadImage(bytes);
+      }
       _updateBlock(placeholder.copyWith(mediaUrl: url));
     } catch (e) {
       _removeBlock(id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Video upload failed: $e')),
+          SnackBar(content: Text('Upload failed: $e')),
         );
       }
     }
@@ -274,8 +279,7 @@ class _RichContentEditorState extends State<RichContentEditor> {
           onAddText: () => _addTextBlock(),
           onAddHeading: () => _addTextBlock(size: TextSize.heading),
           onAddVoice: _startVoiceRecording,
-          onAddImage: _addImageBlock,
-          onAddVideo: _addVideoBlock,
+          onAddMedia: _addMediaBlock,
           onAddLink: _addLinkBlock,
         ),
       ],
@@ -757,8 +761,7 @@ class _BlockToolbar extends StatelessWidget {
   final VoidCallback onAddText;
   final VoidCallback onAddHeading;
   final VoidCallback onAddVoice;
-  final VoidCallback onAddImage;
-  final VoidCallback onAddVideo;
+  final VoidCallback onAddMedia;
   final VoidCallback onAddLink;
 
   const _BlockToolbar({
@@ -766,8 +769,7 @@ class _BlockToolbar extends StatelessWidget {
     required this.onAddText,
     required this.onAddHeading,
     required this.onAddVoice,
-    required this.onAddImage,
-    required this.onAddVideo,
+    required this.onAddMedia,
     required this.onAddLink,
   });
 
@@ -792,9 +794,7 @@ class _BlockToolbar extends StatelessWidget {
             const SizedBox(width: 4),
             _ToolBtn(icon: Icons.mic_rounded, tooltip: 'Voice', color: iconColor, onTap: onAddVoice),
             const SizedBox(width: 4),
-            _ToolBtn(icon: Icons.photo_rounded, tooltip: 'Image', color: iconColor, onTap: onAddImage),
-            const SizedBox(width: 4),
-            _ToolBtn(icon: Icons.videocam_rounded, tooltip: 'Video', color: iconColor, onTap: onAddVideo),
+            _ToolBtn(icon: Icons.perm_media_rounded, tooltip: 'Photo / Video', color: iconColor, onTap: onAddMedia),
             const SizedBox(width: 4),
             _ToolBtn(icon: Icons.link_rounded, tooltip: 'Link', color: iconColor, onTap: onAddLink),
           ],

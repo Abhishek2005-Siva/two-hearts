@@ -608,27 +608,76 @@ class _BookCardState extends State<_BookCard> {
                         const SizedBox(height: 12),
                       ],
                       if (widget.book.pdfUrl != null) ...[
-                        OutlinedButton.icon(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              fullscreenDialog: true,
-                              builder: (_) => PdfViewerScreen(
-                                url: widget.book.pdfUrl!,
-                                title: widget.book.title,
+                        Builder(builder: (context) {
+                          final myUid =
+                              FirebaseAuth.instance.currentUser?.uid;
+                          final mine = widget.book.progressOf(myUid);
+                          final partnerEntry = widget.book.progress.entries
+                              .where((e) => e.key != myUid)
+                              .toList();
+                          final theirs = partnerEntry.isNotEmpty
+                              ? partnerEntry.first.value
+                              : null;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (mine != null || theirs != null) ...[
+                                Row(
+                                  children: [
+                                    const Icon(Icons.menu_book_rounded,
+                                        size: 14,
+                                        color: AppColors.textMuted),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        [
+                                          if (mine != null)
+                                            'You: page ${mine.page + 1}'
+                                            '${mine.totalPages > 0 ? '/${mine.totalPages}' : ''}',
+                                          if (theirs != null)
+                                            '${partner?.displayName.split(' ').first ?? 'Partner'}: '
+                                            'page ${theirs.page + 1}'
+                                            '${theirs.totalPages > 0 ? '/${theirs.totalPages}' : ''}',
+                                        ].join('  ·  '),
+                                        style: const TextStyle(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 12),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                              OutlinedButton.icon(
+                                onPressed: () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    fullscreenDialog: true,
+                                    builder: (_) => PdfViewerScreen(
+                                      url: widget.book.pdfUrl!,
+                                      title: widget.book.title,
+                                      bookId: widget.book.id,
+                                    ),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.picture_as_pdf_rounded,
+                                    size: 18, color: AppColors.rose),
+                                label: Text(
+                                    mine != null && mine.page > 0
+                                        ? 'Continue reading (p. ${mine.page + 1})'
+                                        : 'Read in-app',
+                                    style: const TextStyle(
+                                        color: AppColors.rose)),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(
+                                      color: AppColors.rose, width: 0.8),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(12)),
+                                ),
                               ),
-                            ),
-                          ),
-                          icon: const Icon(Icons.picture_as_pdf_rounded,
-                              size: 18, color: AppColors.rose),
-                          label: const Text('Read in-app',
-                              style: TextStyle(color: AppColors.rose)),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(
-                                color: AppColors.rose, width: 0.8),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ),
-                        ),
+                            ],
+                          );
+                        }),
                         const SizedBox(height: 10),
                       ],
                       GradientButton(

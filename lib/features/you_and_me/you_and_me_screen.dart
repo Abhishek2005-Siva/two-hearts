@@ -10,6 +10,7 @@ import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
+import '../../shared/widgets/fullscreen_image_viewer.dart';
 
 class YouAndMeScreen extends ConsumerWidget {
   const YouAndMeScreen({super.key});
@@ -354,8 +355,9 @@ class _AppearanceSection extends ConsumerWidget {
           Switch(
             value: isDark,
             onChanged: (val) {
-              ref.read(themeModeProvider.notifier).state =
-                  val ? ThemeMode.dark : ThemeMode.light;
+              ref
+                  .read(themeModeProvider.notifier)
+                  .set(val ? ThemeMode.dark : ThemeMode.light);
             },
             activeThumbColor: accent,
           ),
@@ -614,7 +616,14 @@ class _ProfilePicSectionState extends ConsumerState<_ProfilePicSection> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: _uploading ? null : _pickAndUpload,
+            // Tap the picture to view it fullscreen; use the edit badge or
+            // "Change Photo" button to replace it.
+            onTap: _uploading
+                ? null
+                : myUser?.avatarUrl != null
+                    ? () => FullscreenImageViewer.open(
+                        context, myUser!.avatarUrl!)
+                    : _pickAndUpload,
             child: Stack(
               children: [
                 CircleAvatar(

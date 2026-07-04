@@ -610,6 +610,31 @@ class PlacePin {
 
 // ──────────────── Book Wish ────────────────
 
+/// Per-user reading position inside a book PDF.
+class BookProgress {
+  final int page; // 0-based page index
+  final int totalPages;
+  final DateTime updatedAt;
+
+  const BookProgress({
+    required this.page,
+    required this.totalPages,
+    required this.updatedAt,
+  });
+
+  factory BookProgress.fromMap(Map<String, dynamic> m) => BookProgress(
+        page: (m['page'] ?? 0) as int,
+        totalPages: (m['totalPages'] ?? 0) as int,
+        updatedAt: (m['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      );
+
+  Map<String, dynamic> toMap() => {
+        'page': page,
+        'totalPages': totalPages,
+        'updatedAt': Timestamp.fromDate(updatedAt),
+      };
+}
+
 class BookWish {
   final String id;
   final String title;
@@ -621,6 +646,9 @@ class BookWish {
   final String addedBy;
   final DateTime addedAt;
 
+  /// uid → last reading position (both partners tracked independently)
+  final Map<String, BookProgress> progress;
+
   const BookWish({
     required this.id,
     required this.title,
@@ -631,10 +659,12 @@ class BookWish {
     this.read = false,
     required this.addedBy,
     required this.addedAt,
+    this.progress = const {},
   });
 
   factory BookWish.fromDoc(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
+    final progressRaw = d['progress'] as Map<String, dynamic>? ?? {};
     return BookWish(
       id: doc.id,
       title: d['title'] ?? '',
@@ -645,8 +675,12 @@ class BookWish {
       read: d['read'] ?? false,
       addedBy: d['addedBy'] ?? '',
       addedAt: (d['addedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      progress: progressRaw.map((uid, v) =>
+          MapEntry(uid, BookProgress.fromMap(v as Map<String, dynamic>))),
     );
   }
+
+  BookProgress? progressOf(String? uid) => uid == null ? null : progress[uid];
 
   Map<String, dynamic> toMap() => {
         'title': title,
@@ -657,6 +691,43 @@ class BookWish {
         'read': read,
         'addedBy': addedBy,
         'addedAt': Timestamp.fromDate(addedAt),
+        if (progress.isNotEmpty)
+          'progress': progress.map((uid, p) => MapEntry(uid, p.toMap())),
+      };
+}
+
+/// A note pinned to a specific page of a book, visible to both partners.
+class BookNote {
+  final String id;
+  final int page; // 0-based page index
+  final String authorId;
+  final String text;
+  final DateTime createdAt;
+
+  const BookNote({
+    required this.id,
+    required this.page,
+    required this.authorId,
+    required this.text,
+    required this.createdAt,
+  });
+
+  factory BookNote.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return BookNote(
+      id: doc.id,
+      page: (d['page'] ?? 0) as int,
+      authorId: d['authorId'] ?? '',
+      text: d['text'] ?? '',
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'page': page,
+        'authorId': authorId,
+        'text': text,
+        'createdAt': Timestamp.fromDate(createdAt),
       };
 }
 

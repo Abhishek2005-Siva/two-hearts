@@ -105,7 +105,8 @@ class JournalScreen extends ConsumerWidget {
 // Shelf board BOTTOM edges (fractional from screen top, where books rest).
 const _kShelfFractions = [0.38, 0.60, 0.82];
 // Extra upward nudge so books sit slightly higher on each shelf board.
-const _kShelfUpShift = 22.0;
+// ~38 logical px per cm; raised by 2 cm (76 px) on request.
+const _kShelfUpShift = 98.0;
 // Tallest possible book; container must be >= this.
 const _kBookContainerHeight = 150.0;
 const _kShelfLeft = 0.08;

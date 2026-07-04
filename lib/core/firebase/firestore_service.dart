@@ -160,6 +160,24 @@ class FirestoreService {
     return full.split(' ').first;
   }
 
+  /// Pushes a high-priority "incoming video call" notification so the
+  /// partner hears about the call even when the app is backgrounded.
+  Future<void> notifyIncomingCall(String coupleId, String callId) async {
+    final token = await _partnerToken(coupleId);
+    final name = await _myFirstName();
+    await FcmService.send(
+      recipientToken: token,
+      title: '📹 $name is calling you',
+      body: 'Open Two Hearts to answer',
+      data: {
+        'type': 'videoCall',
+        'coupleId': coupleId,
+        'callId': callId,
+        'route': '/chat',
+      },
+    );
+  }
+
   // ── Messages ──────────────────────────────────────────────────────────────
 
   Future<void> sendMessage(String coupleId, MessageModel msg) async {
@@ -800,6 +818,61 @@ class FirestoreService {
       .doc(bookId)
       .update({'read': read});
 
+  Stream<BookWish?> watchBook(String coupleId, String bookId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('books')
+      .doc(bookId)
+      .snapshots()
+      .map((d) => d.exists ? BookWish.fromDoc(d) : null);
+
+  /// Saves the current user's reading position on the book doc.
+  Future<void> updateBookProgress(
+          String coupleId, String bookId, int page, int totalPages) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('books')
+          .doc(bookId)
+          .update({
+        'progress.$_uid': BookProgress(
+          page: page,
+          totalPages: totalPages,
+          updatedAt: DateTime.now(),
+        ).toMap(),
+      });
+
+  // ── Book page notes ───────────────────────────────────────────────────────
+
+  Stream<List<BookNote>> watchBookNotes(String coupleId, String bookId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('books')
+      .doc(bookId)
+      .collection('notes')
+      .orderBy('createdAt', descending: false)
+      .snapshots()
+      .map((s) => s.docs.map(BookNote.fromDoc).toList());
+
+  Future<void> addBookNote(String coupleId, String bookId, BookNote note) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('books')
+      .doc(bookId)
+      .collection('notes')
+      .doc(note.id)
+      .set(note.toMap());
+
+  Future<void> deleteBookNote(String coupleId, String bookId, String noteId) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('books')
+          .doc(bookId)
+          .collection('notes')
+          .doc(noteId)
+          .delete();
+
   // ── FCM token ─────────────────────────────────────────────────────────────
 
   Future<void> saveFCMToken(String token) => _db
@@ -811,6 +884,77 @@ class FirestoreService {
     if (q.docs.isEmpty) return null;
     return q.docs.first.data()['email'] as String?;
   }
+
+  // ── Cinema (Watch Together) ───────────────────────────────────────────────
+
+  DocumentReference<Map<String, dynamic>> _cinemaDoc(String coupleId) =>
+      _db.collection('couples').doc(coupleId).collection('cinema').doc('session');
+
+  Stream<Map<String, dynamic>?> watchCinemaSession(String coupleId) =>
+      _cinemaDoc(coupleId).snapshots().map((s) => s.data());
+
+  Future<void> startCinemaSession(
+      String coupleId, String videoUrl, String title) async {
+    await _cinemaDoc(coupleId).set({
+      'videoUrl': videoUrl,
+      'title': title,
+      'startedBy': _uid,
+      'isPlaying': false,
+      'positionMs': 0,
+      'updatedBy': _uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'startedAt': FieldValue.serverTimestamp(),
+      'watching': {_uid: Timestamp.now()},
+    });
+    final token = await _partnerToken(coupleId);
+    final name = await _myFirstName();
+    await FcmService.send(
+      recipientToken: token,
+      title: '🍿 $name started a movie night',
+      body: title.isEmpty ? 'Come watch together ♡' : 'Now showing: $title ♡',
+      data: {'type': 'cinema', 'coupleId': coupleId, 'route': '/cinema'},
+    );
+  }
+
+  Future<void> updateCinemaPlayback(String coupleId,
+          {required bool isPlaying, required int positionMs}) =>
+      _cinemaDoc(coupleId).update({
+        'isPlaying': isPlaying,
+        'positionMs': positionMs,
+        'updatedBy': _uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+  Future<void> cinemaHeartbeat(String coupleId) =>
+      _cinemaDoc(coupleId).update({'watching.$_uid': Timestamp.now()});
+
+  Future<void> leaveCinema(String coupleId) =>
+      _cinemaDoc(coupleId).update({'watching.$_uid': FieldValue.delete()});
+
+  Future<void> endCinemaSession(String coupleId) async {
+    final reactions = await _cinemaDoc(coupleId).collection('reactions').get();
+    final batch = _db.batch();
+    for (final d in reactions.docs) {
+      batch.delete(d.reference);
+    }
+    batch.delete(_cinemaDoc(coupleId));
+    await batch.commit();
+  }
+
+  Future<void> sendCinemaReaction(String coupleId, String emoji) =>
+      _cinemaDoc(coupleId).collection('reactions').add({
+        'emoji': emoji,
+        'uid': _uid,
+        'sentAt': FieldValue.serverTimestamp(),
+      });
+
+  Stream<List<Map<String, dynamic>>> watchCinemaReactions(String coupleId) =>
+      _cinemaDoc(coupleId)
+          .collection('reactions')
+          .orderBy('sentAt', descending: true)
+          .limit(12)
+          .snapshots()
+          .map((s) => s.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
   // ── Avatar ────────────────────────────────────────────────────────────────
 

@@ -21,6 +21,7 @@ import '../../features/together/bucket_list_screen.dart';
 import '../../features/avatar/avatar_creator_screen.dart';
 import '../../features/places/places_screen.dart';
 import '../../features/books/book_wishlist_screen.dart';
+import '../../features/cinema/cinema_screen.dart';
 import '../firebase/models.dart';
 import '../providers/providers.dart';
 import '../shell/main_shell.dart';
@@ -101,6 +102,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
+      // Fullscreen — outside the shell so the bottom nav never overlaps the movie.
+      GoRoute(path: '/cinema', builder: (_, _) => const CinemaScreen()),
       ShellRoute(
         builder: (context, state, child) => MainShell(child: child),
         routes: [

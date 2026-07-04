@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:vibration/vibration.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../../features/chat/video_call_screen.dart';
@@ -185,10 +186,21 @@ class _IncomingCallDialogState extends State<_IncomingCallDialog>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
+    _startRinging();
+  }
+
+  Future<void> _startRinging() async {
+    if (await Vibration.hasVibrator()) {
+      // ring-ring … pause … repeats while the dialog is up
+      Vibration.vibrate(
+        pattern: [0, 400, 200, 400, 1200, 400, 200, 400, 1200, 400, 200, 400],
+      );
+    }
   }
 
   @override
   void dispose() {
+    Vibration.cancel();
     _pulse.dispose();
     super.dispose();
   }

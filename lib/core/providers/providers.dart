@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../firebase/firestore_service.dart';
 import '../firebase/models.dart';
 
@@ -239,9 +240,37 @@ final incomingCallProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   });
 });
 
-// ── Theme Mode ───────────────────────────────────────────────────────────
+// ── Cinema (Watch Together) ──────────────────────────────────────────────
 
-final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.dark);
+final cinemaSessionProvider = StreamProvider<Map<String, dynamic>?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return Stream.value(null);
+  return ref.read(firestoreServiceProvider).watchCinemaSession(coupleId);
+});
+
+// ── Theme Mode (persisted across restarts) ───────────────────────────────
+
+final themeModeProvider =
+    NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+
+class ThemeModeNotifier extends Notifier<ThemeMode> {
+  static const _prefsKey = 'theme_mode';
+
+  @override
+  ThemeMode build() {
+    SharedPreferences.getInstance().then((prefs) {
+      final saved = prefs.getString(_prefsKey);
+      if (saved == 'light') state = ThemeMode.light;
+    });
+    return ThemeMode.dark;
+  }
+
+  void set(ThemeMode mode) {
+    state = mode;
+    SharedPreferences.getInstance().then((prefs) =>
+        prefs.setString(_prefsKey, mode == ThemeMode.light ? 'light' : 'dark'));
+  }
+}
 
 // ── Scribble ─────────────────────────────────────────────────────────────
 

@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'package:http/http.dart' as http;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
@@ -22,6 +20,7 @@ import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
+import '../../shared/widgets/fullscreen_image_viewer.dart';
 
 // ── Background enum ───────────────────────────────────────────────────────
 
@@ -174,34 +173,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  Future<void> _sendGif(String gifUrl) async {
+  /// Handles GIFs/stickers/images inserted from the keyboard (e.g. the GIF
+  /// tab in Gboard). Uploads the bytes and sends them as an image message.
+  Future<void> _sendInsertedContent(KeyboardInsertedContent content) async {
+    final bytes = content.data;
+    if (bytes == null || bytes.isEmpty) return;
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
-    await ref.read(firestoreServiceProvider).sendMessage(
-      coupleId,
-      MessageModel(
-        id: const Uuid().v4(),
-        senderId: authUser.uid,
-        content: gifUrl,
-        type: MessageType.image,
-        sentAt: DateTime.now(),
-      ),
-    );
-  }
-
-  void _showGifPicker() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _GifPickerSheet(
-        onSelect: (url) {
-          Navigator.pop(context);
-          _sendGif(url);
-        },
-      ),
-    );
+    setState(() => _sending = true);
+    HapticFeedback.lightImpact();
+    try {
+      final url = await CloudinaryService.uploadImage(bytes, folder: 'gifs');
+      await ref.read(firestoreServiceProvider).sendMessage(
+        coupleId,
+        MessageModel(
+          id: const Uuid().v4(),
+          senderId: authUser.uid,
+          content: url,
+          type: MessageType.image,
+          sentAt: DateTime.now(),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send GIF: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   Future<void> _sendVoice(String path, int durationSeconds) async {
@@ -618,7 +620,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onSnap: _sendSnap,
               onToggleWhisper: () =>
                   setState(() => _whisperMode = !_whisperMode),
-              onGifTap: _showGifPicker,
+              onInsertContent: _sendInsertedContent,
               onSendVoice: _sendVoice,
             ),
           ],
@@ -635,6 +637,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     final callId = '${DateTime.now().millisecondsSinceEpoch}';
     final partnerName = ref.read(partnerUserProvider).valueOrNull?.displayName;
+
+    // Fire-and-forget push so the partner's phone rings even if the app
+    // is backgrounded.
+    ref.read(firestoreServiceProvider).notifyIncomingCall(coupleId, callId);
 
     await Navigator.of(context).push(MaterialPageRoute(
       fullscreenDialog: true,
@@ -683,9 +689,13 @@ class _ChatAppBar extends StatelessWidget {
           children: [
             const SizedBox(width: 12),
             if (partner?.avatarUrl != null)
-              CircleAvatar(
-                  radius: 18,
-                  backgroundImage: NetworkImage(partner!.avatarUrl!))
+              GestureDetector(
+                onTap: () =>
+                    FullscreenImageViewer.open(context, partner!.avatarUrl!),
+                child: CircleAvatar(
+                    radius: 18,
+                    backgroundImage: NetworkImage(partner!.avatarUrl!)),
+              )
             else
               CircleAvatar(
                 radius: 18,
@@ -962,7 +972,7 @@ class _ChatInput extends StatefulWidget {
   final VoidCallback onSend;
   final VoidCallback onSnap;
   final VoidCallback onToggleWhisper;
-  final VoidCallback onGifTap;
+  final Future<void> Function(KeyboardInsertedContent content) onInsertContent;
   final Future<void> Function(String path, int durationSeconds) onSendVoice;
 
   const _ChatInput({
@@ -973,7 +983,7 @@ class _ChatInput extends StatefulWidget {
     required this.onSend,
     required this.onSnap,
     required this.onToggleWhisper,
-    required this.onGifTap,
+    required this.onInsertContent,
     required this.onSendVoice,
   });
 
@@ -1190,22 +1200,6 @@ class _ChatInputState extends State<_ChatInput> {
                 color: AppColors.textSecondary, size: 22),
           ),
         ),
-        const SizedBox(width: 6),
-        GestureDetector(
-          onTap: widget.onGifTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            decoration: BoxDecoration(
-                color: AppColors.bgCard,
-                borderRadius: BorderRadius.circular(12)),
-            child: const Text('GIF',
-                style: TextStyle(
-                    color: AppColors.rose,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5)),
-          ),
-        ),
         const SizedBox(width: 8),
         Expanded(
           child: Container(
@@ -1240,6 +1234,13 @@ class _ChatInputState extends State<_ChatInput> {
               onSubmitted: (_) => widget.onSend(),
               maxLines: 4,
               minLines: 1,
+              // Lets the keyboard's GIF/sticker picker insert media directly
+              contentInsertionConfiguration: ContentInsertionConfiguration(
+                allowedMimeTypes: const [
+                  'image/gif', 'image/png', 'image/jpeg', 'image/webp',
+                ],
+                onContentInserted: (content) => widget.onInsertContent(content),
+              ),
             ),
           ),
         ),
@@ -1635,7 +1636,95 @@ class _MessageBubbleState extends State<_MessageBubble> {
     if (msg.isSnap) return _snap(context);
     if (msg.isWhisper) return _whisper(context);
     if (msg.type == MessageType.voice) return _voice(context);
+    if (msg.type == MessageType.image || msg.type == MessageType.video) {
+      return _media(context);
+    }
     return _text(context);
+  }
+
+  /// Inline media bubble for GIFs, images and videos sent in chat.
+  Widget _media(BuildContext context) {
+    final isVideo = msg.type == MessageType.video;
+    final bubble = GestureDetector(
+      onLongPress: () => _reactSheet(context),
+      onDoubleTap: widget.onDoubleTap,
+      onTap: () => isVideo
+          ? _openVideoPlayer(context, msg.content)
+          : _openFullscreen(context, msg.content),
+      child: Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.62),
+          child: Column(
+            crossAxisAlignment:
+                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: isVideo
+                    ? Container(
+                        width: 200,
+                        height: 200,
+                        color: Colors.black87,
+                        child: const Center(
+                          child: Icon(Icons.play_circle_outline_rounded,
+                              color: Colors.white, size: 52),
+                        ),
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: msg.content,
+                        fit: BoxFit.cover,
+                        placeholder: (_, _) => Container(
+                          width: 200,
+                          height: 160,
+                          color: AppColors.bgCard,
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                                color: AppColors.rose, strokeWidth: 2),
+                          ),
+                        ),
+                        errorWidget: (_, _, _) => Container(
+                          width: 200,
+                          height: 160,
+                          color: AppColors.bgCard,
+                          child: const Center(
+                            child: Icon(Icons.broken_image_outlined,
+                                color: AppColors.textMuted, size: 32),
+                          ),
+                        ),
+                      ),
+              ),
+              if (msg.reactionEmoji != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(msg.reactionEmoji!,
+                      style: const TextStyle(fontSize: 16)),
+                ),
+              if (isMe && msg.readByPartner)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.done_all_rounded,
+                          size: 12, color: accent.withValues(alpha: 0.8)),
+                      const SizedBox(width: 3),
+                      Text('Seen',
+                          style: TextStyle(
+                              color: accent.withValues(alpha: 0.8),
+                              fontSize: 10)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ).animate().fadeIn(duration: 200.ms);
+
+    return _swipeWrapper(context, bubble);
   }
 
   Widget _swipeWrapper(BuildContext context, Widget child) {
@@ -2407,158 +2496,3 @@ class _FullscreenVideoViewState extends State<_FullscreenVideoView> {
   }
 }
 
-// ── GIF Picker Sheet ──────────────────────────────────────────────────────
-
-class _GifPickerSheet extends StatefulWidget {
-  final void Function(String url) onSelect;
-  const _GifPickerSheet({required this.onSelect});
-
-  @override
-  State<_GifPickerSheet> createState() => _GifPickerSheetState();
-}
-
-class _GifPickerSheetState extends State<_GifPickerSheet> {
-  // Replace with your Tenor v2 API key from https://tenor.com/developer/dashboard
-  static const _tenorKey = 'LIVDSRZULELA';
-  static const _baseUrl = 'https://tenor.googleapis.com/v2';
-
-  final _searchCtrl = TextEditingController();
-  List<String> _urls = [];
-  bool _loading = true;
-  Timer? _debounce;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetch('love');
-    _searchCtrl.addListener(_onSearch);
-  }
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  void _onSearch() {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () {
-      final q = _searchCtrl.text.trim();
-      _fetch(q.isEmpty ? 'love' : q);
-    });
-  }
-
-  Future<void> _fetch(String query) async {
-    if (!mounted) return;
-    setState(() => _loading = true);
-    try {
-      final uri = Uri.parse(
-          '$_baseUrl/search?key=$_tenorKey&q=${Uri.encodeComponent(query)}&limit=30&media_filter=tinygif');
-      final resp = await http.get(uri);
-      if (!mounted) return;
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final results = (data['results'] as List?) ?? [];
-        final urls = results
-            .map((r) =>
-                (r['media_formats']?['tinygif']?['url'] as String?) ?? '')
-            .where((u) => u.isNotEmpty)
-            .toList();
-        setState(() {
-          _urls = urls;
-          _loading = false;
-        });
-      } else {
-        setState(() {
-          _urls = [];
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _urls = [];
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.65,
-      decoration: const BoxDecoration(
-        color: AppColors.bgMid,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-                color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2)),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: TextField(
-              controller: _searchCtrl,
-              autofocus: true,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Search GIFs…',
-                hintStyle: const TextStyle(color: AppColors.textMuted),
-                prefixIcon: const Icon(Icons.search_rounded,
-                    color: AppColors.textMuted, size: 20),
-                filled: true,
-                fillColor: AppColors.bgCard,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.rose))
-                : _urls.isEmpty
-                    ? const Center(
-                        child: Text('No GIFs found',
-                            style: TextStyle(color: AppColors.textMuted)))
-                    : GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                          childAspectRatio: 1.4,
-                        ),
-                        itemCount: _urls.length,
-                        itemBuilder: (ctx, i) => GestureDetector(
-                          onTap: () => widget.onSelect(_urls[i]),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: CachedNetworkImage(
-                              imageUrl: _urls[i],
-                              fit: BoxFit.cover,
-                              placeholder: (_, _) =>
-                                  Container(color: AppColors.bgCard),
-                              errorWidget: (_, _, _) =>
-                                  Container(color: AppColors.bgCard),
-                            ),
-                          ),
-                        ),
-                      ),
-          ),
-        ],
-      ),
-    );
-  }
-}

@@ -198,6 +198,19 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
       ));
       return;
     }
+    // Don't send while photos/videos are still uploading — they'd be lost.
+    final uploading = _blocks.any((b) =>
+        (b.type == BlockType.image ||
+            b.type == BlockType.video ||
+            b.type == BlockType.voice) &&
+        b.mediaUrl == null);
+    if (uploading) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Media is still uploading — one moment…'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     if (_mode == _UnlockMode.custom && _customDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Please pick a date for the letter to unlock'),
