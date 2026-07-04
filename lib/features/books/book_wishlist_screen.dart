@@ -671,8 +671,8 @@ class _BookCover extends StatelessWidget {
           width: 56,
           height: 80,
           fit: BoxFit.cover,
-          errorWidget: (_, __, e) => _Spine(color: spine, title: book.title),
-          placeholder: (_, __) => _Spine(color: spine, title: book.title),
+          errorWidget: (_, _, e) => _Spine(color: spine, title: book.title),
+          placeholder: (_, _) => _Spine(color: spine, title: book.title),
         ),
       );
     }

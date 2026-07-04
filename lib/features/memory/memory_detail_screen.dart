@@ -105,8 +105,8 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                       child: CachedNetworkImage(
                         imageUrl: memory.imageUrl,
                         fit: BoxFit.contain,
-                        placeholder: (_, __) => Container(color: Colors.black),
-                        errorWidget: (_, __, ___) => Container(
+                        placeholder: (_, _) => Container(color: Colors.black),
+                        errorWidget: (_, _, _) => Container(
                           color: Colors.black,
                           child: const Center(
                             child: Icon(Icons.broken_image_outlined,

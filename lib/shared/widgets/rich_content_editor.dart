@@ -610,7 +610,7 @@ class _ImageBlockEditor extends StatelessWidget {
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: 200,
-                    placeholder: (_, __) => Container(
+                    placeholder: (_, _) => Container(
                       height: 200,
                       color: Colors.white10,
                       child: const Center(

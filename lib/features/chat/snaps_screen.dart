@@ -106,9 +106,9 @@ class SnapsScreen extends ConsumerWidget {
       context,
       PageRouteBuilder(
         opaque: true,
-        pageBuilder: (_, __, ___) =>
+        pageBuilder: (_, _, _) =>
             _FullscreenGallery(images: images, initialIndex: initialIndex),
-        transitionsBuilder: (_, anim, __, child) =>
+        transitionsBuilder: (_, anim, _, child) =>
             FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 180),
       ),
@@ -166,9 +166,9 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
                   child: CachedNetworkImage(
                     imageUrl: msg.content,
                     fit: BoxFit.contain,
-                    placeholder: (_, __) =>
+                    placeholder: (_, _) =>
                         const Center(child: CircularProgressIndicator(color: Colors.white38)),
-                    errorWidget: (_, __, ___) => const Center(
+                    errorWidget: (_, _, _) => const Center(
                       child: Icon(Icons.broken_image_outlined,
                           color: Colors.white38, size: 48),
                     ),

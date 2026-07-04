@@ -357,7 +357,7 @@ class _AppearanceSection extends ConsumerWidget {
               ref.read(themeModeProvider.notifier).state =
                   val ? ThemeMode.dark : ThemeMode.light;
             },
-            activeColor: accent,
+            activeThumbColor: accent,
           ),
         ],
       ),

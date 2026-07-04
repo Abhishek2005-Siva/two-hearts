@@ -98,7 +98,7 @@ class FirestoreService {
           {String? customUrl}) =>
       _db.collection('couples').doc(coupleId).update({
         'chatBackground': backgroundName,
-        if (customUrl != null) 'chatBackgroundUrl': customUrl,
+        'chatBackgroundUrl': ?customUrl,
         if (customUrl == null) 'chatBackgroundUrl': FieldValue.delete(),
       });
 
@@ -259,8 +259,8 @@ class FirestoreService {
     await _db.collection('couples').doc(coupleId).collection('signals').add({
       'type': 'thinkingOfYou',
       'fromUid': _uid,
-      if (toUid != null) 'toUid': toUid,
-      if (message != null) 'message': message,
+      'toUid': ?toUid,
+      'message': ?message,
       'sentAt': FieldValue.serverTimestamp(),
     });
     final token = toUid != null
@@ -294,7 +294,7 @@ class FirestoreService {
     await _db.collection('couples').doc(coupleId).collection('signals').add({
       'type': type,
       'fromUid': _uid,
-      if (message != null) 'message': message,
+      'message': ?message,
       'sentAt': FieldValue.serverTimestamp(),
     });
     final token = await _partnerToken(coupleId);
@@ -363,7 +363,7 @@ class FirestoreService {
         'uidB': null,
         'entryB': null,
         'bothSubmitted': false,
-        if (title != null) 'title': title,
+        'title': ?title,
       });
     } else {
       final d = doc.data() as Map<String, dynamic>;

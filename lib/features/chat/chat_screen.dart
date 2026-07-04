@@ -1021,11 +1021,13 @@ class _ChatInputState extends State<_ChatInput> {
     _recordPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.aac';
     await _recorder.startRecorder(toFile: _recordPath, codec: Codec.aacADTS);
     HapticFeedback.mediumImpact();
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _isRecording = true;
       _recordDuration = Duration.zero;
       _dragOffsetX = 0;
     });
+    }
     _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _recordDuration += const Duration(seconds: 1));
     });
@@ -1036,11 +1038,13 @@ class _ChatInputState extends State<_ChatInput> {
     await _recorder.stopRecorder();
     final path = _recordPath;
     final durationSecs = _recordDuration.inSeconds;
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _isRecording = false;
       _recordDuration = Duration.zero;
       _dragOffsetX = 0;
     });
+    }
     if (path == null || durationSecs < 1) return;
     if (!mounted) return;
     // Show preview sheet — user can listen before deciding to send
@@ -1068,11 +1072,13 @@ class _ChatInputState extends State<_ChatInput> {
     _recordTimer?.cancel();
     await _recorder.stopRecorder();
     HapticFeedback.lightImpact();
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _isRecording = false;
       _recordDuration = Duration.zero;
       _dragOffsetX = 0;
     });
+    }
   }
 
   String _formatDuration(Duration d) {
@@ -1465,7 +1471,7 @@ class _TypingDotsState extends State<_TypingDots>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _ctrl,
-      builder: (_, __) {
+      builder: (_, _) {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: List.generate(3, (i) {

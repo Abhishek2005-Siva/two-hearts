@@ -370,10 +370,9 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                         emoji: '💙',
                         label: 'Open When…',
                         subtitle: _mode == _UnlockMode.openWhen
-                            ? _openWhenEmotions.firstWhere(
+                            ? '${_openWhenEmotions.firstWhere(
                                 (e) => e.$2 == _openWhenEmotion,
-                                orElse: () => _openWhenEmotions.last).$1 +
-                                ' $_openWhenEmotion'
+                                orElse: () => _openWhenEmotions.last).$1} $_openWhenEmotion'
                             : 'Pick an emotion — unlocks any time',
                         selected: _mode == _UnlockMode.openWhen,
                         accent: accent,
@@ -386,7 +385,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: _openWhenEmotions.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 8),
+                            separatorBuilder: (_, _) => const SizedBox(width: 8),
                             itemBuilder: (_, i) {
                               final e = _openWhenEmotions[i];
                               final selected = _openWhenEmotion == e.$2;
