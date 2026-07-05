@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -403,6 +404,12 @@ class _CollectionsRow extends ConsumerWidget {
     return palette[name.hashCode.abs() % palette.length];
   }
 
+  // Deterministic cute sticker per collection name
+  String _collectionEmoji(String name) {
+    const stickers = ['🧸', '🌈', '🍓', '⭐', '🦋', '🌻', '🍰', '🐣', '🫧', '🌙'];
+    return stickers[name.hashCode.abs() % stickers.length];
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final collectionsAsync = ref.watch(photoCollectionsProvider);
@@ -526,27 +533,60 @@ class _CollectionsRow extends ConsumerWidget {
                 final color = _collectionColor(col.name);
                 final count = counts[col.id] ?? 0;
                 return GestureDetector(
-                  onTap: () => onSelect(isActive ? null : col.id),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    onSelect(isActive ? null : col.id);
+                  },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    width: 90,
+                    curve: Curves.easeOutBack,
+                    width: 92,
                     margin: const EdgeInsets.only(right: 10, bottom: 4),
                     padding: const EdgeInsets.all(10),
+                    transform: Matrix4.identity()
+                      ..scaleByDouble(isActive ? 1.04 : 1.0,
+                          isActive ? 1.04 : 1.0, 1.0, 1.0),
+                    transformAlignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: isActive
-                          ? color.withValues(alpha: 0.25)
-                          : AppColors.bgCard,
-                      borderRadius: BorderRadius.circular(14),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: isActive
+                            ? [
+                                color.withValues(alpha: 0.35),
+                                color.withValues(alpha: 0.15)
+                              ]
+                            : [
+                                color.withValues(alpha: 0.12),
+                                AppColors.bgCard
+                              ],
+                      ),
+                      borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: isActive ? color : AppColors.divider,
+                        color: isActive
+                            ? color
+                            : color.withValues(alpha: 0.25),
                         width: isActive ? 1.5 : 0.5,
                       ),
+                      boxShadow: isActive
+                          ? [
+                              BoxShadow(
+                                  color: color.withValues(alpha: 0.35),
+                                  blurRadius: 10)
+                            ]
+                          : null,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.folder_rounded,
-                            color: color, size: 22),
+                        Row(
+                          children: [
+                            Icon(Icons.folder_rounded, color: color, size: 20),
+                            const SizedBox(width: 3),
+                            Text(_collectionEmoji(col.name),
+                                style: const TextStyle(fontSize: 13)),
+                          ],
+                        ),
                         const Spacer(),
                         Text(
                           col.name,
@@ -560,10 +600,10 @@ class _CollectionsRow extends ConsumerWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text('$count',
+                        Text(count == 1 ? '1 memory' : '$count memories',
                             style: const TextStyle(
                                 color: AppColors.textMuted,
-                                fontSize: 10)),
+                                fontSize: 9.5)),
                       ],
                     ),
                   ),
@@ -576,23 +616,32 @@ class _CollectionsRow extends ConsumerWidget {
                     : () => _showNewCollectionDialog(
                         context, ref, coupleId, accent),
                 child: Container(
-                  width: 80,
+                  width: 84,
                   margin: const EdgeInsets.only(right: 10, bottom: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.bgCard,
-                    borderRadius: BorderRadius.circular(14),
+                    color: accent.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(18),
                     border: Border.all(
-                        color: AppColors.divider, width: 0.5),
+                        color: accent.withValues(alpha: 0.35), width: 1),
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.add_rounded,
-                          color: accent, size: 22),
-                      const SizedBox(height: 4),
-                      Text('New',
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child:
+                            Icon(Icons.add_rounded, color: accent, size: 18),
+                      ),
+                      const SizedBox(height: 5),
+                      Text('New album',
                           style: TextStyle(
-                              color: accent, fontSize: 11)),
+                              color: accent,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),

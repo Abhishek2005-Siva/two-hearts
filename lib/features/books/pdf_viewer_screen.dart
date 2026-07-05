@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
@@ -328,6 +330,13 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
             ),
           );
         }
+        final me = ref.watch(currentUserProvider).valueOrNull;
+        final pageNotes = _notesOnCurrentPage;
+        // Whose face to show on the popup — prefer the partner's note.
+        final popupNote = pageNotes.isEmpty
+            ? null
+            : pageNotes.firstWhere((n) => n.authorId != _uid,
+                orElse: () => pageNotes.first);
         return Stack(
           children: [
             PDFView(
@@ -358,6 +367,81 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
                 }
               },
             ),
+            // Tap zones: left third = previous page, right third = next page
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: MediaQuery.of(context).size.width * 0.25,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _currentPage > 0
+                    ? () => _pdfCtrl?.setPage(_currentPage - 1)
+                    : null,
+              ),
+            ),
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: MediaQuery.of(context).size.width * 0.25,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _totalPages > 0 && _currentPage < _totalPages - 1
+                    ? () => _pdfCtrl?.setPage(_currentPage + 1)
+                    : null,
+              ),
+            ),
+            // Note popup: a little face peeks from the side when this page
+            // has a note. Tap it to read.
+            if (popupNote != null)
+              Positioned(
+                right: 10,
+                top: MediaQuery.of(context).size.height * 0.3,
+                child: GestureDetector(
+                  onTap: _showNotesSheet,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A2E),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFFE8896A), width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFE8896A)
+                              .withValues(alpha: 0.5),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: Builder(builder: (context) {
+                      final isMine = popupNote.authorId == _uid;
+                      final author = isMine ? me : partner;
+                      return author?.avatarUrl != null
+                          ? CircleAvatar(
+                              radius: 20,
+                              backgroundImage: CachedNetworkImageProvider(
+                                  author!.avatarUrl!))
+                          : CircleAvatar(
+                              radius: 20,
+                              backgroundColor: const Color(0xFFE8896A)
+                                  .withValues(alpha: 0.25),
+                              child: const Text('💌',
+                                  style: TextStyle(fontSize: 16)),
+                            );
+                    }),
+                  )
+                      .animate(key: ValueKey('note-$_currentPage'))
+                      .scale(
+                          begin: Offset.zero,
+                          end: const Offset(1, 1),
+                          duration: 400.ms,
+                          curve: Curves.elasticOut)
+                      .then()
+                      .shake(hz: 3, rotation: 0.04, duration: 500.ms),
+                ),
+              ),
             // Partner reading position chip
             if (partnerProgress != null &&
                 partnerProgress.totalPages > 0 &&

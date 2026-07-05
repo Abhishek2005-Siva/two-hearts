@@ -1101,11 +1101,93 @@ class _SettingsSheet extends ConsumerStatefulWidget {
 
 class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
   bool _notificationsEnabled = true;
+  final _nicknameCtrl = TextEditingController();
+  bool _nicknameSaving = false;
+  bool _nicknameInited = false;
+
+  // Wild little things to fire at your partner, one tap each 😈
+  static const _wildIdeas = [
+    ('😈', 'Dare them', [
+      'I dare you to send me your best selfie in the next 5 minutes 😈',
+      'Dare: voice note of you singing our song. Now. No excuses 🎤',
+      'I dare you to tell me a secret you\'ve never told me 👀',
+      'Dare: describe our first kiss in exactly 5 words 💋',
+    ]),
+    ('🔥', 'Flirt attack', [
+      'Just so you know, I\'d absolutely swipe right on you again 🔥',
+      'Warning: currently thinking about your smile. Productivity: 0%',
+      'You + me + next visit = trouble 😏',
+      'Reminder: you\'re the best-looking person in my phone 🔥',
+    ]),
+    ('💐', 'Compliment bomb', [
+      'You make my whole day better just by existing 💐',
+      'Someone as cute as you should be illegal, honestly',
+      'Your laugh is my favourite sound in the world ♡',
+      'I brag about you to everyone. Everyone. 💐',
+    ]),
+    ('🍕', 'Random question', [
+      'Quick! Pizza or biryani for our first dinner together? 🍕',
+      'If we could teleport anywhere right now — where? ✈️',
+      'Rate my cuteness 1-10. Choose wisely 😌',
+      'What are you wearing… on your feet? Socks check 🧦',
+    ]),
+  ];
 
   @override
   void initState() {
     super.initState();
     _loadNotificationPref();
+  }
+
+  @override
+  void dispose() {
+    _nicknameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveNickname() async {
+    final nick = _nicknameCtrl.text.trim();
+    setState(() => _nicknameSaving = true);
+    try {
+      await ref.read(firestoreServiceProvider).updateUser({'nickname': nick});
+      if (mounted) {
+        HapticFeedback.lightImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(nick.isEmpty
+                ? 'Nickname cleared'
+                : 'You\'re now "$nick" ♡'),
+            backgroundColor: AppColors.bgCard,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _nicknameSaving = false);
+    }
+  }
+
+  Future<void> _sendWildIdea(List<String> pool) async {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
+    final msg = pool[math.Random().nextInt(pool.length)];
+    HapticFeedback.mediumImpact();
+    await ref
+        .read(firestoreServiceProvider)
+        .sendThinkingOfYou(coupleId, message: msg);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sent: "$msg"'),
+          backgroundColor: AppColors.bgCard,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   Future<void> _loadNotificationPref() async {
@@ -1131,6 +1213,11 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final couple = ref.watch(coupleProvider).valueOrNull;
+    final me = ref.watch(currentUserProvider).valueOrNull;
+    if (!_nicknameInited && me != null) {
+      _nicknameCtrl.text = me.nickname ?? '';
+      _nicknameInited = true;
+    }
     return Container(
       padding: EdgeInsets.fromLTRB(
           24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
@@ -1138,7 +1225,8 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
         color: AppColors.bgMid,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1154,6 +1242,152 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
           const SizedBox(height: 20),
           Text('Preferences',
               style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+
+          // Nickname — how you appear in chat & their notifications
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.divider, width: 0.5),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Text('💕', style: TextStyle(fontSize: 16)),
+                    SizedBox(width: 8),
+                    Text('Your nickname',
+                        style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                    'What your partner sees in chat & notifications',
+                    style:
+                        TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _nicknameCtrl,
+                        maxLength: 20,
+                        style: const TextStyle(
+                            color: AppColors.textPrimary, fontSize: 14),
+                        decoration: InputDecoration(
+                          counterText: '',
+                          hintText: 'e.g. Bubu, Cutie, Chikoo…',
+                          hintStyle: const TextStyle(
+                              color: AppColors.textMuted, fontSize: 13),
+                          filled: true,
+                          fillColor: AppColors.bgMid,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _nicknameSaving ? null : _saveNickname,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.rose.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: AppColors.rose.withValues(alpha: 0.4)),
+                        ),
+                        child: _nicknameSaving
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: AppColors.rose))
+                            : const Text('Save',
+                                style: TextStyle(
+                                    color: AppColors.rose,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Wild ideas — one-tap mischief
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.divider, width: 0.5),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Text('🎁', style: TextStyle(fontSize: 16)),
+                    SizedBox(width: 8),
+                    Text('Wild ideas',
+                        style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text('One tap → a surprise lands on their phone',
+                    style:
+                        TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _wildIdeas.map((idea) {
+                    return GestureDetector(
+                      onTap: () => _sendWildIdea(idea.$3),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.bgMid,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: AppColors.divider, width: 0.5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(idea.$1,
+                                style: const TextStyle(fontSize: 14)),
+                            const SizedBox(width: 6),
+                            Text(idea.$2,
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1256,6 +1490,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

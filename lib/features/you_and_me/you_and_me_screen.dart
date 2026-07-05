@@ -1,11 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../core/firebase/firestore_service.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -71,14 +69,10 @@ class YouAndMeScreen extends ConsumerWidget {
                       const SizedBox(height: 20),
                     ],
 
-                    // Compatibility score
-                    _CompatibilityCard(accent: accent, ref: ref)
-                        .animate().fadeIn(delay: 50.ms),
-                    const SizedBox(height: 20),
-
-                    // Partner pairing
-                    const _PartnerCodeSection()
-                        .animate().fadeIn(delay: 100.ms),
+                    // Once you're connected, you're connected — forever ♡
+                    if (partner != null)
+                      _ForeverCard(partner: partner, accent: accent)
+                          .animate().fadeIn(delay: 50.ms),
                   ]),
                 ),
               ),
@@ -91,223 +85,64 @@ class YouAndMeScreen extends ConsumerWidget {
 
 }
 
-// ── Partner Code Section ──────────────────────────────────────────────────
+// ── Forever Card — you two are locked in ♡ ────────────────────────────────
 
-class _PartnerCodeSection extends StatefulWidget {
-  const _PartnerCodeSection();
-
-  @override
-  State<_PartnerCodeSection> createState() => _PartnerCodeSectionState();
-}
-
-class _PartnerCodeSectionState extends State<_PartnerCodeSection> {
-  final _codeCtrl = TextEditingController();
-  String? _generatedCode;
-  bool _showEnter = false;
-  bool _loading = false;
-  String? _error;
-  bool _success = false;
-
-  @override
-  void dispose() {
-    _codeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _generate() async {
-    setState(() { _loading = true; _error = null; });
-    try {
-      final code = await FirestoreService().createInviteCode();
-      setState(() => _generatedCode = code);
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _redeem() async {
-    final code = _codeCtrl.text.trim().toUpperCase();
-    if (code.length != 6) {
-      setState(() => _error = 'Enter the 6-character code');
-      return;
-    }
-    setState(() { _loading = true; _error = null; });
-    try {
-      final couple = await FirestoreService().redeemInviteCode(code);
-      if (couple == null) {
-        setState(() => _error = 'Code not found or already used.');
-      } else {
-        setState(() { _success = true; _showEnter = false; });
-      }
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
+class _ForeverCard extends StatelessWidget {
+  final UserModel partner;
+  final Color accent;
+  const _ForeverCard({required this.partner, required this.accent});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.bgCard,
+        gradient: LinearGradient(
+          colors: [
+            accent.withValues(alpha: 0.15),
+            AppColors.coral.withValues(alpha: 0.08),
+          ],
+        ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.divider, width: 0.5),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          const Text('Connect with partner',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          const Text('Generate a code or enter your partner\'s code',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-          const SizedBox(height: 16),
-
-          if (_success) ...[
-            const Row(
+          if (partner.avatarUrl != null)
+            CircleAvatar(
+                radius: 22,
+                backgroundImage:
+                    CachedNetworkImageProvider(partner.avatarUrl!))
+          else
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: accent.withValues(alpha: 0.2),
+              child: Text(
+                partner.displayLabel.isNotEmpty
+                    ? partner.displayLabel[0].toUpperCase()
+                    : '♡',
+                style: TextStyle(
+                    color: accent, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.favorite_rounded, color: AppColors.rose, size: 18),
-                SizedBox(width: 8),
-                Text('Connected! ♡', style: TextStyle(color: AppColors.rose, fontWeight: FontWeight.w600)),
+                Text('Connected with ${partner.displayLabel}',
+                    style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                const Text('Two hearts, one bond — forever ♡',
+                    style: TextStyle(
+                        color: AppColors.textSecondary, fontSize: 12)),
               ],
             ),
-          ] else if (_generatedCode != null) ...[
-            // Show generated code
-            Center(
-              child: Column(
-                children: [
-                  const Text('Share this code with your partner',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: _generatedCode!));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Code copied!'),
-                          backgroundColor: AppColors.bgCard,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: AppColors.rose.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.rose.withValues(alpha: 0.4)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _generatedCode!,
-                            style: const TextStyle(
-                              fontSize: 28, fontWeight: FontWeight.bold,
-                              letterSpacing: 8, color: AppColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          const Icon(Icons.copy_rounded, color: AppColors.textMuted, size: 18),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(width: 8, height: 8,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose)),
-                      SizedBox(width: 8),
-                      Text('Waiting for partner…',
-                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ] else if (_showEnter) ...[
-            // Enter partner code
-            TextField(
-              controller: _codeCtrl,
-              textCapitalization: TextCapitalization.characters,
-              maxLength: 6,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 24, letterSpacing: 8,
-                fontWeight: FontWeight.bold, color: AppColors.textPrimary,
-              ),
-              decoration: const InputDecoration(counterText: '', hintText: '······'),
-              onSubmitted: (_) => _redeem(),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _redeem,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.rose,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: _loading
-                    ? const SizedBox(width: 18, height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Connect ♡', style: TextStyle(fontWeight: FontWeight.w600)),
-              ),
-            ),
-            TextButton(
-              onPressed: () => setState(() { _showEnter = false; _error = null; }),
-              child: const Text('Back', style: TextStyle(color: AppColors.textMuted)),
-            ),
-          ] else ...[
-            // Choice buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _loading ? null : _generate,
-                    icon: _loading
-                        ? const SizedBox(width: 14, height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))
-                        : const Icon(Icons.add_link_rounded, size: 16),
-                    label: const Text('Generate'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.rose,
-                      side: BorderSide(color: AppColors.rose.withValues(alpha: 0.5)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => setState(() { _showEnter = true; _error = null; }),
-                    icon: const Icon(Icons.vpn_key_rounded, size: 16),
-                    label: const Text('Enter Code'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.coral,
-                      side: BorderSide(color: AppColors.coral.withValues(alpha: 0.5)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
-          ],
+          ),
+          const Text('🔒', style: TextStyle(fontSize: 20)),
         ],
       ),
     );
@@ -458,95 +293,6 @@ class _MoodBubble extends StatelessWidget {
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary)),
       ],
-    );
-  }
-}
-
-// ── Compatibility Card ────────────────────────────────────────────────────
-
-class _CompatibilityCard extends ConsumerWidget {
-  final Color accent;
-  final WidgetRef ref;
-  const _CompatibilityCard({required this.accent, required this.ref});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final statsAsync = ref.watch(compatibilityStatsProvider);
-
-    return GlassCard(
-      child: statsAsync.when(
-        loading: () => const Center(child: SizedBox(height: 60,
-            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))),
-        error: (_, _) => const SizedBox.shrink(),
-        data: (stats) {
-          final total = stats['total'] ?? 0;
-          final matched = stats['matched'] ?? 0;
-          final pct = total == 0 ? 0.0 : matched / total;
-          final pctInt = (pct * 100).round();
-
-          String label;
-          String emoji;
-          if (total == 0) {
-            label = 'Play Would You Rather to see your score!';
-            emoji = '🎯';
-          } else if (pctInt >= 80) {
-            label = 'You two are basically the same person 💕';
-            emoji = '💞';
-          } else if (pctInt >= 60) {
-            label = 'Beautifully compatible ✨';
-            emoji = '✨';
-          } else if (pctInt >= 40) {
-            label = 'Wonderfully different — opposites attract!';
-            emoji = '🤝';
-          } else {
-            label = 'You keep each other interesting 😄';
-            emoji = '🌟';
-          }
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(emoji, style: const TextStyle(fontSize: 28)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Compatibility Score',
-                            style: TextStyle(fontSize: 11, color: accent,
-                                fontWeight: FontWeight.w600, letterSpacing: 0.5)),
-                        const SizedBox(height: 2),
-                        Text(label, style: const TextStyle(
-                            fontSize: 13, color: AppColors.textSecondary, height: 1.3)),
-                      ],
-                    ),
-                  ),
-                  if (total > 0)
-                    Text('$pctInt%', style: TextStyle(
-                        fontSize: 28, fontWeight: FontWeight.w800, color: accent)),
-                ],
-              ),
-              if (total > 0) ...[
-                const SizedBox(height: 14),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    value: pct,
-                    minHeight: 8,
-                    backgroundColor: AppColors.divider,
-                    valueColor: AlwaysStoppedAnimation(accent),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text('Matched $matched of $total questions',
-                    style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
-              ],
-            ],
-          );
-        },
-      ),
     );
   }
 }

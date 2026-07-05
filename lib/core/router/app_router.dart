@@ -15,6 +15,7 @@ import '../../features/together/letter_compose_screen.dart';
 import '../../features/together/journal_screen.dart';
 import '../../features/memory/memory_detail_screen.dart';
 import '../../features/games/games_screen.dart';
+import '../../features/games/date_ideas_screen.dart';
 import '../../features/chat/snaps_screen.dart';
 import '../../features/memory/photo_booth_screen.dart';
 import '../../features/together/bucket_list_screen.dart';
@@ -46,9 +47,11 @@ class _RouterNotifier extends ChangeNotifier {
     ref.listen<AsyncValue<CoupleModel?>>(coupleProvider, (_, next) {
       if (next is AsyncLoading) return; // still fetching — don't decide yet
       _coupleLoaded = true;
-      // Paired = has a couple doc at all. Once a user generates OR enters a
-      // code the doc exists; we never send them back to /pair after that.
-      final paired = next.valueOrNull != null;
+      // Paired = the couple actually has BOTH members. Having a partner is
+      // mandatory — generating a code alone keeps you on the pairing screen
+      // until your person joins.
+      final couple = next.valueOrNull;
+      final paired = couple != null && couple.members.length >= 2;
       if (paired != _isPaired) {
         _isPaired = paired;
       }
@@ -85,12 +88,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Signed in but Firestore hasn't confirmed couple status yet — wait.
       if (!coupleLoaded) return null;
 
-      // /pair is only reached via explicit context.go('/pair') after signup.
-      // Once pairing is complete, bounce away. Never auto-redirect here.
-      if (isPaired && onAuth) return '/room';
+      // Pairing is mandatory: a signed-in user without a partner can only
+      // be on /pair (or /onboarding) until they generate or enter a code.
+      if (!isPaired) {
+        final onPairFlow = state.matchedLocation.startsWith('/pair') ||
+            state.matchedLocation.startsWith('/onboarding');
+        return onPairFlow ? null : '/pair';
+      }
 
-      // Signed-in users on /auth always go to room.
-      if (state.matchedLocation.startsWith('/auth')) return '/room';
+      // Once pairing is complete, bounce away from auth/pair screens.
+      if (isPaired && onAuth) return '/room';
       return null;
     },
     routes: [
@@ -126,6 +133,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path: '/you', builder: (_, _) => const YouAndMeScreen()),
           GoRoute(path: '/games', builder: (_, _) => const GamesScreen()),
+          GoRoute(path: '/dates', builder: (_, _) => const DateIdeasScreen()),
           GoRoute(path: '/snaps', builder: (_, _) => const SnapsScreen()),
           GoRoute(path: '/photo_booth', builder: (_, _) => const PhotoBoothScreen()),
           GoRoute(path: '/together/bucket', builder: (_, _) => const BucketListScreen()),

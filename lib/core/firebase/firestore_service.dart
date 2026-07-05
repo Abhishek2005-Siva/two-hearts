@@ -154,11 +154,18 @@ class FirestoreService {
     return userDoc.data()?['fcmToken'] as String?;
   }
 
+  /// The name the partner sees in notifications — nickname first ♡
   Future<String> _myFirstName() async {
     final doc = await _db.collection('users').doc(_uid).get();
+    final nickname = doc.data()?['nickname'] as String?;
+    if (nickname != null && nickname.isNotEmpty) return nickname;
     final full = (doc.data()?['displayName'] as String?) ?? 'Your partner';
     return full.split(' ').first;
   }
+
+  /// Picks a random line so notifications never feel copy-pasted.
+  static String _anyOf(List<String> options) =>
+      options[Random().nextInt(options.length)];
 
   /// Pushes a high-priority "incoming video call" notification so the
   /// partner hears about the call even when the app is backgrounded.
@@ -167,8 +174,16 @@ class FirestoreService {
     final name = await _myFirstName();
     await FcmService.send(
       recipientToken: token,
-      title: '📹 $name is calling you',
-      body: 'Open Two Hearts to answer',
+      title: _anyOf([
+        '📹 $name wants to see your face!',
+        '📹 Incoming cuteness — $name is calling',
+        '📹 Psst… $name misses your voice',
+      ]),
+      body: _anyOf([
+        'Quick, they\'re waiting on the other side ♡',
+        'Pick up pick up pick up! 🥺',
+        'Your favourite person is on the line ♡',
+      ]),
       data: {
         'type': 'videoCall',
         'coupleId': coupleId,
@@ -187,13 +202,41 @@ class FirestoreService {
         .collection('messages')
         .doc(msg.id)
         .set(msg.toMap());
-    if (msg.isSnap) return; // snaps are ephemeral, skip notification
     final token = await _partnerToken(coupleId);
     final name = await _myFirstName();
+    if (msg.isSnap) {
+      // Snaps stay secret — tease, never spoil.
+      await FcmService.send(
+        recipientToken: token,
+        title: _anyOf([
+          '👻 $name sent a snap!',
+          '👀 A snap from $name just landed',
+          '📸 $name caught a moment for you',
+        ]),
+        body: _anyOf([
+          'It disappears in 24h — peek quick!',
+          'No spoilers… open it before it\'s gone ♡',
+          'Blink and you\'ll miss it 👀',
+        ]),
+        data: {'type': 'message', 'coupleId': coupleId, 'route': '/chat'},
+      );
+      return;
+    }
     final body = switch (msg.type) {
-      MessageType.image => '$name sent a photo 📷',
-      MessageType.video => '$name sent a video 🎥',
-      _ => msg.content.isNotEmpty ? msg.content : '$name sent a message',
+      MessageType.image => _anyOf([
+          '📷 A photo, just for your eyes ♡',
+          '📷 $name sent you a little something to look at',
+          '🖼️ New photo! Bet it makes you smile',
+        ]),
+      MessageType.video => _anyOf([
+          '🎥 $name sent a video — press play ♡',
+          '🎬 A tiny movie starring your favourite person',
+        ]),
+      MessageType.voice => _anyOf([
+          '🎙️ $name\'s voice is waiting for you ♡',
+          '🎧 A voice note — headphones on!',
+        ]),
+      _ => msg.content.isNotEmpty ? msg.content : '$name sent a message ♡',
     };
     await FcmService.send(
       recipientToken: token,
@@ -257,8 +300,12 @@ class FirestoreService {
     final moodName = mood.name;
     await FcmService.send(
       recipientToken: token,
-      title: '$name is feeling $moodName $emoji',
-      body: 'Check in on them ♡',
+      title: '$emoji $name is feeling $moodName',
+      body: _anyOf([
+        'Mood update from your person — go check in ♡',
+        'Their little heart just changed colour. Peek! $emoji',
+        'A feeling was shared with you. Handle with care ♡',
+      ]),
       data: {'type': 'mood', 'coupleId': coupleId, 'route': '/room'},
     );
   }
@@ -287,8 +334,17 @@ class FirestoreService {
     final name = await _myFirstName();
     await FcmService.send(
       recipientToken: token,
-      title: '♡ $name is thinking of you',
-      body: message ?? 'A little love from your person ♡',
+      title: _anyOf([
+        '💭 $name is thinking of you',
+        '💘 You just crossed $name\'s mind',
+        '🫶 $name sent their heart your way',
+      ]),
+      body: message ??
+          _anyOf([
+            'No reason. Just you. ♡',
+            'Somewhere out there, someone smiled thinking of you',
+            'Tiny love delivery — sign here: ♡',
+          ]),
       data: {'type': 'signal', 'coupleId': coupleId, 'route': '/room'},
     );
   }
@@ -318,10 +374,40 @@ class FirestoreService {
     final token = await _partnerToken(coupleId);
     final name = await _myFirstName();
     final (title, body) = switch (type) {
-      'goodMorning' => ('☀️ Good morning from $name', 'They wished you a beautiful morning ♡'),
-      'goodNight'   => ('🌙 Good night from $name', 'Sweet dreams — they\'re thinking of you ♡'),
-      'gratitude'   => ('🙏 $name is grateful for you', 'They wanted you to know ♡'),
-      _             => ('♡ $name is thinking of you', message ?? 'A little love from your person ♡'),
+      'goodMorning' => (
+          _anyOf([
+            '☀️ Rise and shine, says $name',
+            '🌅 $name beat the sun to say hi',
+            '☀️ Morning delivery from $name',
+          ]),
+          _anyOf([
+            'First thought of their day? You. ♡',
+            'Have the softest, luckiest day today ♡',
+            'They\'re starting the day with you in mind',
+          ])),
+      'goodNight' => (
+          _anyOf([
+            '🌙 $name says goodnight',
+            '✨ Sleepy wishes from $name',
+            '🌙 $name tucked a goodnight into your pocket',
+          ]),
+          _anyOf([
+            'Dream of them — they\'ll dream of you ♡',
+            'Last thought of their day: you. Always you.',
+            'Sweet dreams, from your favourite human ♡',
+          ])),
+      'gratitude' => (
+          _anyOf([
+            '🙏 $name is grateful for you',
+            '🌸 $name counted their blessings — you\'re #1',
+          ]),
+          _anyOf([
+            'They just wanted you to know ♡',
+            'Being loved like this? Lucky you ♡',
+          ])),
+      _ => (
+          '💌 $name is thinking of you',
+          message ?? 'A little love from your person ♡'),
     };
     await FcmService.send(
       recipientToken: token,
@@ -333,12 +419,35 @@ class FirestoreService {
 
   // ── Letters ───────────────────────────────────────────────────────────────
 
-  Future<void> sendLetter(String coupleId, LetterModel letter) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('letters')
-      .doc(letter.id)
-      .set(letter.toMap());
+  Future<void> sendLetter(String coupleId, LetterModel letter) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('letters')
+        .doc(letter.id)
+        .set(letter.toMap());
+    final token = await _partnerToken(coupleId);
+    final name = await _myFirstName();
+    final locked = !letter.isUnlocked;
+    await FcmService.send(
+      recipientToken: token,
+      title: _anyOf([
+        '💌 A sealed letter from $name',
+        '✉️ $name wrote you something',
+        '💌 Mail\'s here! From: $name. To: you.',
+      ]),
+      body: locked
+          ? _anyOf([
+              'It\'s locked for now… the wait makes it sweeter 🔐',
+              'No peeking yet — it opens when the time is right ⏳',
+            ])
+          : _anyOf([
+              'It\'s ready to open. Go on, we\'ll wait ♡',
+              'Words written just for you are waiting 💗',
+            ]),
+      data: {'type': 'letter', 'coupleId': coupleId, 'route': '/together'},
+    );
+  }
 
   // Returns only letters the current user received (not authored) that are unlocked.
   // Locked letters are completely hidden from the receiver.
@@ -756,6 +865,77 @@ class FirestoreService {
         .delete();
   }
 
+  // ── Rock Paper Scissors ───────────────────────────────────────────────────
+
+  DocumentReference<Map<String, dynamic>> _rpsRef(String coupleId) =>
+      _db.collection('couples').doc(coupleId).collection('rps').doc('current');
+
+  Stream<Map<String, dynamic>?> watchRps(String coupleId) =>
+      _rpsRef(coupleId).snapshots().map((d) => d.exists ? d.data() : null);
+
+  Future<void> pickRps(String coupleId, String choice) =>
+      _rpsRef(coupleId).set({'picks.$_uid': choice},
+          SetOptions(mergeFields: ['picks.$_uid']));
+
+  /// Applies the round result to the scores and clears picks for the next
+  /// round. Safe to call from either side — runs in a transaction.
+  Future<void> nextRpsRound(String coupleId) =>
+      _db.runTransaction((tx) async {
+        final snap = await tx.get(_rpsRef(coupleId));
+        final data = snap.data() ?? {};
+        final picks = Map<String, String>.from(data['picks'] ?? {});
+        if (picks.length < 2) return; // already advanced by the partner
+        final scores = Map<String, int>.from(data['scores'] ?? {});
+        const beats = {'rock': 'scissors', 'paper': 'rock', 'scissors': 'paper'};
+        final uids = picks.keys.toList();
+        final a = uids[0], b = uids[1];
+        if (picks[a] != picks[b]) {
+          final winner = beats[picks[a]] == picks[b] ? a : b;
+          scores[winner] = (scores[winner] ?? 0) + 1;
+        }
+        tx.set(_rpsRef(coupleId), {
+          'picks': {},
+          'scores': scores,
+          'round': (data['round'] ?? 1) + 1,
+        });
+      });
+
+  Future<void> resetRps(String coupleId) => _rpsRef(coupleId).delete();
+
+  // ── Thumb Kiss (touch the same spot, feel the buzz) ───────────────────────
+
+  DocumentReference<Map<String, dynamic>> _touchRef(String coupleId) =>
+      _db.collection('couples').doc(coupleId).collection('rps').doc('touch');
+
+  Stream<Map<String, dynamic>?> watchTouch(String coupleId) =>
+      _touchRef(coupleId).snapshots().map((d) => d.exists ? d.data() : null);
+
+  /// Heartbeat while the user is holding their thumb on the kiss pad.
+  Future<void> setTouching(String coupleId, bool touching) =>
+      _touchRef(coupleId).set(
+        {'touch_$_uid': touching ? Timestamp.now() : null},
+        SetOptions(merge: true),
+      );
+
+  // ── Guess Me (how well do you know each other?) ───────────────────────────
+
+  DocumentReference<Map<String, dynamic>> _guessMeRef(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('guessMe')
+      .doc(_todayKey());
+
+  Stream<Map<String, dynamic>?> watchGuessMe(String coupleId) =>
+      _guessMeRef(coupleId).snapshots().map((d) => d.exists ? d.data() : null);
+
+  /// Each partner submits their own truth and a guess about the other.
+  Future<void> submitGuessMe(
+          String coupleId, String selfAnswer, String guess) =>
+      _guessMeRef(coupleId).set({
+        'self.$_uid': selfAnswer,
+        'guess.$_uid': guess,
+      }, SetOptions(mergeFields: ['self.$_uid', 'guess.$_uid']));
+
   // ── Places ────────────────────────────────────────────────────────────────
 
   Stream<List<PlacePin>> watchPlaces(String coupleId) => _db
@@ -910,8 +1090,17 @@ class FirestoreService {
     final name = await _myFirstName();
     await FcmService.send(
       recipientToken: token,
-      title: '🍿 $name started a movie night',
-      body: title.isEmpty ? 'Come watch together ♡' : 'Now showing: $title ♡',
+      title: _anyOf([
+        '🍿 $name is saving you a seat',
+        '🎬 Movie night! $name pressed play',
+        '🍿 Popcorn\'s (virtually) ready — $name is waiting',
+      ]),
+      body: title.isEmpty
+          ? _anyOf([
+              'Come watch together, same second, same scene ♡',
+              'Best seat in the house is next to them 🎟️',
+            ])
+          : 'Now showing: $title — hurry in! 🎟️',
       data: {'type': 'cinema', 'coupleId': coupleId, 'route': '/cinema'},
     );
   }

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:confetti/confetti.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -138,14 +140,39 @@ const _truthPrompts = [
   'What does feeling truly loved feel like to you?',
 ];
 
-// ── Date Wheel idea groups ────────────────────────────────────────────────
-const _kDefaultGroups = {
-  'Romantic 🌹': ['Candlelit dinner at home', 'Sunset picnic', 'Star gazing', 'Dance in the kitchen', 'Write love letters', 'Couples massage', 'Cook a new recipe together', 'Watch the sunrise'],
-  'Adventure 🏕️': ['Hiking trail', 'Road trip', 'Try a new sport', 'Camping overnight', 'Escape room', 'Rock climbing', 'Kayaking', 'Explore a new city'],
-  'Cozy 🛋️': ['Movie marathon', 'Board game night', 'Bake together', 'Build a blanket fort', 'Read books together', 'Puzzle night', 'Indoor picnic', 'Watch old photos'],
-  'Foodie 🍜': ['Try a new restaurant', 'Street food tour', 'Cook a 3-course meal', 'Sushi making class', 'Brunch date', 'Ice cream tasting', 'Wine/mocktail tasting', 'Recreate a memory meal'],
-  'Creative 🎨': ['Paint together', 'Take photos around the city', 'Make a scrapbook', 'Learn a dance', 'Write a short story together', 'DIY craft project', 'Pottery class', 'Make a playlist for each other'],
-};
+// ── Guess Me questions (how well do you know each other?) ─────────────────
+const _guessMeQuestions = [
+  'What would I order at a café right now?',
+  'What song can I not stop playing lately?',
+  'What tiny thing instantly makes my day better?',
+  'What would I grab first in a house fire (after you)?',
+  'What food could I eat every single day?',
+  'What is my most-used emoji?',
+  'What do I do when I can\'t sleep?',
+  'What movie could I quote start to finish?',
+  'What would I do with a totally free Saturday?',
+  'What is my guilty-pleasure snack?',
+  'What superpower would I pick?',
+  'What am I most likely to lose this week?',
+  'What show would I binge for the third time?',
+  'What is my go-to excuse for being late?',
+  'What would my dream vacation look like?',
+  'What sound or noise do I secretly hate?',
+  'What was my favourite thing about our last call?',
+  'What app do I open first in the morning?',
+  'What would I name a pet if we got one today?',
+  'What childhood cartoon do I still love?',
+  'What is my comfort outfit?',
+  'What weird food combo do I actually enjoy?',
+  'What time do I *actually* fall asleep?',
+  'What would I do if I won the lottery tomorrow?',
+  'What is the one chore I always avoid?',
+  'What smell instantly reminds me of home?',
+  'What is my hidden talent?',
+  'What phrase do I say way too often?',
+  'What would I want for my birthday this year?',
+  'What makes me laugh even on a bad day?',
+];
 
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -166,7 +193,7 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
+    _tabCtrl = TabController(length: 6, vsync: this);
     _confettiCtrl = ConfettiController(duration: const Duration(seconds: 3));
   }
 
@@ -264,6 +291,8 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
                   ),
                   child: TabBar(
                     controller: _tabCtrl,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
                     labelColor: Colors.white,
                     unselectedLabelColor: AppColors.textMuted,
                     labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
@@ -273,10 +302,12 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     tabs: const [
-                      Tab(text: 'WYR'),
-                      Tab(text: 'Truth'),
-                      Tab(text: 'Dates'),
-                      Tab(text: 'Scribble'),
+                      Tab(text: '🎯 WYR'),
+                      Tab(text: '🫙 Truth'),
+                      Tab(text: '🎨 Scribble'),
+                      Tab(text: '✊ RPS'),
+                      Tab(text: '💋 Kiss'),
+                      Tab(text: '💘 Quiz'),
                     ],
                   ),
                 ),
@@ -292,8 +323,8 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
                         coupleId: coupleId,
                         gameAsync: gameAsync,
                         myUid: myUid,
-                        myName: me?.displayName.split(' ').first ?? 'You',
-                        partnerName: partner?.displayName.split(' ').first ?? 'Partner',
+                        myName: me?.displayLabel ?? 'You',
+                        partnerName: partner?.displayLabel ?? 'Partner',
                         initialising: _initialising,
                       ),
 
@@ -302,16 +333,10 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
                         accent: accent,
                         coupleId: coupleId,
                         myUid: myUid,
-                        myName: me?.displayName.split(' ').first ?? 'You',
-                        partnerName: partner?.displayName.split(' ').first ?? 'Partner',
+                        myName: me?.displayLabel ?? 'You',
+                        partnerName: partner?.displayLabel ?? 'Partner',
                         todayPrompt: _truthPrompts[_todayIndex(_truthPrompts.length)],
                         todayKey: _todayKey(),
-                      ),
-
-                      // ── Date Wheel ────────────────────────────────────
-                      _DateWheelTab(
-                        accent: accent,
-                        coupleId: coupleId,
                       ),
 
                       // ── Scribble ──────────────────────────────────────
@@ -319,8 +344,35 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
                         accent: accent,
                         coupleId: coupleId,
                         myUid: myUid,
-                        myName: me?.displayName.split(' ').first ?? 'You',
-                        partnerName: partner?.displayName.split(' ').first ?? 'Partner',
+                        myName: me?.displayLabel ?? 'You',
+                        partnerName: partner?.displayLabel ?? 'Partner',
+                      ),
+
+                      // ── Rock Paper Scissors ───────────────────────────
+                      _RpsTab(
+                        accent: accent,
+                        coupleId: coupleId,
+                        myUid: myUid,
+                        partnerName: partner?.displayLabel ?? 'Partner',
+                      ),
+
+                      // ── Thumb Kiss ────────────────────────────────────
+                      _ThumbKissTab(
+                        accent: accent,
+                        coupleId: coupleId,
+                        myUid: myUid,
+                        partner: partner,
+                      ),
+
+                      // ── Guess Me quiz ─────────────────────────────────
+                      _GuessMeTab(
+                        accent: accent,
+                        coupleId: coupleId,
+                        myUid: myUid,
+                        myName: me?.displayLabel ?? 'You',
+                        partnerName: partner?.displayLabel ?? 'Partner',
+                        todayQuestion:
+                            _guessMeQuestions[_todayIndex(_guessMeQuestions.length)],
                       ),
                     ],
                   ),
@@ -593,426 +645,6 @@ class _TruthReveal extends StatelessWidget {
         const Text('Come back tomorrow for a new question',
             style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
       ],
-    );
-  }
-}
-
-// ── Date Wheel Tab ────────────────────────────────────────────────────────
-
-class _DateWheelTab extends StatefulWidget {
-  final Color accent;
-  final String coupleId;
-  const _DateWheelTab({required this.accent, required this.coupleId});
-
-  @override
-  State<_DateWheelTab> createState() => _DateWheelTabState();
-}
-
-class _DateWheelTabState extends State<_DateWheelTab> {
-  late Map<String, List<String>> _groups;
-  late String _selectedGroup;
-  int _selectedIndex = 0;
-  late FixedExtentScrollController _scrollCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _groups = Map<String, List<String>>.fromEntries(
-      _kDefaultGroups.entries.map(
-        (e) => MapEntry(e.key, List<String>.from(e.value)),
-      ),
-    );
-    _selectedGroup = _groups.keys.first;
-    _scrollCtrl = FixedExtentScrollController();
-  }
-
-  @override
-  void dispose() {
-    _scrollCtrl.dispose();
-    super.dispose();
-  }
-
-  List<String> get _ideas => _groups[_selectedGroup] ?? [];
-
-  void _onGroupTap(String group) {
-    if (group == _selectedGroup) return;
-    setState(() {
-      _selectedGroup = group;
-      _selectedIndex = 0;
-    });
-    _scrollCtrl.jumpToItem(0);
-  }
-
-  Future<void> _spin() async {
-    if (_ideas.isEmpty) return;
-    HapticFeedback.mediumImpact();
-    final target = Random().nextInt(_ideas.length);
-    await _scrollCtrl.animateToItem(
-      target,
-      duration: const Duration(milliseconds: 1500),
-      curve: Curves.easeOut,
-    );
-  }
-
-  void _pickThis() {
-    if (_ideas.isEmpty) return;
-    final idea = _ideas[_selectedIndex];
-    HapticFeedback.heavyImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Locked in: $idea 🎉'),
-        backgroundColor: widget.accent,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  Future<void> _addIdea() async {
-    final ctrl = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Add idea to $_selectedGroup',
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 16)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'Your date idea…',
-            hintStyle: TextStyle(color: AppColors.textMuted),
-            enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: AppColors.divider),
-            ),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: AppColors.rose),
-            ),
-          ),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: Text('Add', style: TextStyle(color: widget.accent,
-                fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    if (result != null && result.isNotEmpty) {
-      setState(() => _groups[_selectedGroup]!.add(result));
-    }
-  }
-
-  void _removeIdea() {
-    if (_ideas.isEmpty) return;
-    final removed = _ideas[_selectedIndex];
-    setState(() {
-      _groups[_selectedGroup]!.removeAt(_selectedIndex);
-      if (_selectedIndex >= _ideas.length && _selectedIndex > 0) {
-        _selectedIndex = _ideas.length - 1;
-      }
-    });
-    if (_ideas.isNotEmpty) {
-      _scrollCtrl.jumpToItem(_selectedIndex);
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Removed "$removed"'),
-        backgroundColor: AppColors.bgCard,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        action: SnackBarAction(
-          label: 'Undo',
-          textColor: widget.accent,
-          onPressed: () {
-            setState(() {
-              _groups[_selectedGroup]!.insert(_selectedIndex, removed);
-            });
-          },
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ideas = _ideas;
-    final selectedIdea = ideas.isNotEmpty ? ideas[_selectedIndex] : '';
-
-    return Column(
-      children: [
-        // Group chips
-        SizedBox(
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: _groups.keys.map((group) {
-              final isSelected = group == _selectedGroup;
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: GestureDetector(
-                  onTap: () => _onGroupTap(group),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      gradient: isSelected
-                          ? LinearGradient(colors: [widget.accent, AppColors.coral])
-                          : null,
-                      color: isSelected ? null : AppColors.bgCard,
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(
-                        color: isSelected ? Colors.transparent : AppColors.divider,
-                        width: 0.5,
-                      ),
-                    ),
-                    child: Text(
-                      group,
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : AppColors.textSecondary,
-                        fontSize: 13,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        // Wheel
-        Expanded(
-          child: ideas.isEmpty
-              ? const Center(
-                  child: Text('No ideas yet. Add one below!',
-                      style: TextStyle(color: AppColors.textMuted)))
-              : ListWheelScrollView.useDelegate(
-                  key: ValueKey(_selectedGroup),
-                  controller: _scrollCtrl,
-                  itemExtent: 52,
-                  perspective: 0.003,
-                  diameterRatio: 2.5,
-                  physics: const FixedExtentScrollPhysics(),
-                  onSelectedItemChanged: (i) => setState(() => _selectedIndex = i),
-                  childDelegate: ListWheelChildBuilderDelegate(
-                    childCount: ideas.length,
-                    builder: (ctx, i) => _IdeaTile(
-                      index: i + 1,
-                      text: ideas[i],
-                      selected: i == _selectedIndex,
-                      accent: widget.accent,
-                    ),
-                  ),
-                ),
-        ),
-
-        // Selected idea highlight
-        if (selectedIdea.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [widget.accent.withValues(alpha: 0.18),
-                      AppColors.coral.withValues(alpha: 0.10)],
-                ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: widget.accent.withValues(alpha: 0.35)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('✦ ', style: TextStyle(color: widget.accent, fontSize: 14)),
-                  Flexible(
-                    child: Text(
-                      selectedIdea,
-                      style: TextStyle(
-                        color: widget.accent,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  Text(' ✦', style: TextStyle(color: widget.accent, fontSize: 14)),
-                ],
-              ),
-            ),
-          ),
-
-        // Action buttons
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: _spin,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [widget.accent, AppColors.coral]),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(
-                          color: widget.accent.withValues(alpha: 0.4),
-                          blurRadius: 10, offset: const Offset(0, 4))],
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text('🎲', style: TextStyle(fontSize: 18)),
-                        SizedBox(width: 8),
-                        Text('Spin', style: TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.w700,
-                            fontSize: 15)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: GestureDetector(
-                  onTap: _pickThis,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.bgCard,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: widget.accent.withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.check_circle_rounded, color: widget.accent, size: 18),
-                        const SizedBox(width: 8),
-                        Text('Pick This', style: TextStyle(
-                            color: widget.accent, fontWeight: FontWeight.w700,
-                            fontSize: 15)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Add / Remove row
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: _addIdea,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppColors.bgCard,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.divider, width: 0.5),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_rounded, color: AppColors.textSecondary, size: 18),
-                        SizedBox(width: 6),
-                        Text('Add Idea', style: TextStyle(
-                            color: AppColors.textSecondary, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: GestureDetector(
-                  onTap: ideas.isEmpty ? null : _removeIdea,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppColors.bgCard,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.divider, width: 0.5),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.close_rounded,
-                            color: ideas.isEmpty
-                                ? AppColors.textMuted
-                                : AppColors.textSecondary,
-                            size: 18),
-                        const SizedBox(width: 6),
-                        Text('Remove',
-                            style: TextStyle(
-                                color: ideas.isEmpty
-                                    ? AppColors.textMuted
-                                    : AppColors.textSecondary,
-                                fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _IdeaTile extends StatelessWidget {
-  final int index;
-  final String text;
-  final bool selected;
-  final Color accent;
-
-  const _IdeaTile({
-    required this.index,
-    required this.text,
-    required this.selected,
-    required this.accent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-      decoration: BoxDecoration(
-        color: selected ? accent.withValues(alpha: 0.2) : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        border: selected
-            ? Border.all(color: accent.withValues(alpha: 0.5))
-            : null,
-      ),
-      child: Text(
-        '$index. $text',
-        style: TextStyle(
-          color: selected ? accent : AppColors.textMuted,
-          fontSize: selected ? 16 : 13,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-        ),
-        textAlign: TextAlign.center,
-        overflow: TextOverflow.ellipsis,
-      ),
     );
   }
 }
@@ -1755,4 +1387,693 @@ class _CanvasPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CanvasPainter old) => true;
+}
+
+// ── Rock Paper Scissors Tab ───────────────────────────────────────────────
+
+const _rpsEmoji = {'rock': '✊', 'paper': '✋', 'scissors': '✌️'};
+
+class _RpsTab extends ConsumerStatefulWidget {
+  final Color accent;
+  final String coupleId;
+  final String myUid;
+  final String partnerName;
+
+  const _RpsTab({
+    required this.accent,
+    required this.coupleId,
+    required this.myUid,
+    required this.partnerName,
+  });
+
+  @override
+  ConsumerState<_RpsTab> createState() => _RpsTabState();
+}
+
+class _RpsTabState extends ConsumerState<_RpsTab> {
+  @override
+  Widget build(BuildContext context) {
+    final fs = ref.watch(firestoreServiceProvider);
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: fs.watchRps(widget.coupleId),
+      builder: (context, snap) {
+        final data = snap.data ?? {};
+        final picks = Map<String, String>.from(data['picks'] ?? {});
+        final scores = Map<String, dynamic>.from(data['scores'] ?? {});
+        final myPick = picks[widget.myUid];
+        final partnerPicked = picks.keys.any((k) => k != widget.myUid);
+        final bothPicked = myPick != null && partnerPicked;
+        final myScore = (scores[widget.myUid] ?? 0) as int;
+        final partnerScore = scores.entries
+            .where((e) => e.key != widget.myUid)
+            .fold<int>(0, (_, e) => (e.value as num).toInt());
+
+        String? partnerPick;
+        if (bothPicked) {
+          partnerPick =
+              picks.entries.firstWhere((e) => e.key != widget.myUid).value;
+        }
+        String resultText = '';
+        String resultEmoji = '🤝';
+        if (bothPicked) {
+          if (myPick == partnerPick) {
+            resultText = 'It\'s a tie! Great minds…';
+            resultEmoji = '🤝';
+          } else {
+            const beats = {
+              'rock': 'scissors',
+              'paper': 'rock',
+              'scissors': 'paper'
+            };
+            final iWin = beats[myPick] == partnerPick;
+            resultText = iWin
+                ? 'You win this round! 🏆'
+                : '${widget.partnerName} takes it! 👑';
+            resultEmoji = iWin ? '🎉' : '😤';
+          }
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+          child: Column(
+            children: [
+              _SectionHeader(
+                emoji: '✊',
+                title: 'Rock · Paper · Scissors',
+                subtitle: 'The classic — settle any argument, any distance.',
+                accent: widget.accent,
+              ),
+              const SizedBox(height: 16),
+
+              // Scoreboard
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.bgCard,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.divider, width: 0.5),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Column(children: [
+                      Text('You',
+                          style: TextStyle(
+                              color: widget.accent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                      Text('$myScore',
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold)),
+                    ]),
+                    const Text('⚡', style: TextStyle(fontSize: 22)),
+                    Column(children: [
+                      Text(widget.partnerName,
+                          style: const TextStyle(
+                              color: AppColors.coral,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                      Text('$partnerScore',
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold)),
+                    ]),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              if (!bothPicked) ...[
+                Text(
+                  myPick == null
+                      ? 'Pick your weapon!'
+                      : 'Locked in! Waiting for ${widget.partnerName}…',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: _rpsEmoji.entries.map((e) {
+                    final selected = myPick == e.key;
+                    return GestureDetector(
+                      onTap: myPick == null
+                          ? () {
+                              HapticFeedback.mediumImpact();
+                              ref
+                                  .read(firestoreServiceProvider)
+                                  .pickRps(widget.coupleId, e.key);
+                            }
+                          : null,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 92,
+                        height: 92,
+                        decoration: BoxDecoration(
+                          gradient: selected
+                              ? LinearGradient(colors: [
+                                  widget.accent,
+                                  AppColors.coral
+                                ])
+                              : null,
+                          color: selected ? null : AppColors.bgCard,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: selected
+                                ? Colors.transparent
+                                : myPick != null
+                                    ? AppColors.divider.withValues(alpha: 0.3)
+                                    : AppColors.divider,
+                          ),
+                          boxShadow: selected
+                              ? [
+                                  BoxShadow(
+                                      color: widget.accent
+                                          .withValues(alpha: 0.5),
+                                      blurRadius: 16)
+                                ]
+                              : null,
+                        ),
+                        child: Center(
+                          child: Text(e.value,
+                              style: TextStyle(
+                                  fontSize: selected ? 42 : 34,
+                                  color: myPick != null && !selected
+                                      ? AppColors.textMuted
+                                      : null)),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ] else ...[
+                // Reveal!
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [
+                      widget.accent.withValues(alpha: 0.18),
+                      AppColors.bgCard
+                    ]),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                        color: widget.accent.withValues(alpha: 0.35)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Column(children: [
+                            Text(_rpsEmoji[myPick] ?? '❔',
+                                style: const TextStyle(fontSize: 56)),
+                            const SizedBox(height: 6),
+                            const Text('You',
+                                style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12)),
+                          ]),
+                          const Text('VS',
+                              style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold)),
+                          Column(children: [
+                            Text(_rpsEmoji[partnerPick] ?? '❔',
+                                style: const TextStyle(fontSize: 56)),
+                            const SizedBox(height: 6),
+                            Text(widget.partnerName,
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12)),
+                          ]),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(resultEmoji, style: const TextStyle(fontSize: 34)),
+                      const SizedBox(height: 6),
+                      Text(resultText,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ).animate().scale(
+                    begin: const Offset(0.9, 0.9),
+                    curve: Curves.easeOutBack,
+                    duration: 300.ms),
+                const SizedBox(height: 16),
+                GradientButton(
+                  label: 'Next round ✊✋✌️',
+                  onTap: () => ref
+                      .read(firestoreServiceProvider)
+                      .nextRpsRound(widget.coupleId),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Thumb Kiss Tab ────────────────────────────────────────────────────────
+
+class _ThumbKissTab extends ConsumerStatefulWidget {
+  final Color accent;
+  final String coupleId;
+  final String myUid;
+  final UserModel? partner;
+
+  const _ThumbKissTab({
+    required this.accent,
+    required this.coupleId,
+    required this.myUid,
+    required this.partner,
+  });
+
+  @override
+  ConsumerState<_ThumbKissTab> createState() => _ThumbKissTabState();
+}
+
+class _ThumbKissTabState extends ConsumerState<_ThumbKissTab> {
+  bool _iAmTouching = false;
+  Timer? _heartbeat;
+  bool _wasKissing = false;
+
+  @override
+  void dispose() {
+    _heartbeat?.cancel();
+    if (_iAmTouching) {
+      ref.read(firestoreServiceProvider).setTouching(widget.coupleId, false);
+    }
+    super.dispose();
+  }
+
+  void _startTouch() {
+    setState(() => _iAmTouching = true);
+    HapticFeedback.lightImpact();
+    final fs = ref.read(firestoreServiceProvider);
+    fs.setTouching(widget.coupleId, true);
+    // Refresh the timestamp so "touching" stays fresh while held.
+    _heartbeat = Timer.periodic(const Duration(seconds: 2), (_) {
+      fs.setTouching(widget.coupleId, true);
+    });
+  }
+
+  void _endTouch() {
+    _heartbeat?.cancel();
+    setState(() => _iAmTouching = false);
+    ref.read(firestoreServiceProvider).setTouching(widget.coupleId, false);
+  }
+
+  bool _isFresh(dynamic ts) {
+    if (ts == null) return false;
+    final t = (ts as Timestamp).toDate();
+    return DateTime.now().difference(t).inSeconds < 6;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fs = ref.watch(firestoreServiceProvider);
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: fs.watchTouch(widget.coupleId),
+      builder: (context, snap) {
+        final data = snap.data ?? {};
+        bool partnerTouching = false;
+        for (final e in data.entries) {
+          if (e.key.startsWith('touch_') &&
+              e.key != 'touch_${widget.myUid}' &&
+              _isFresh(e.value)) {
+            partnerTouching = true;
+          }
+        }
+        final kissing = _iAmTouching && partnerTouching;
+        if (kissing && !_wasKissing) {
+          HapticFeedback.heavyImpact();
+        }
+        _wasKissing = kissing;
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            children: [
+              _SectionHeader(
+                emoji: '💋',
+                title: 'Thumb Kiss',
+                subtitle:
+                    'Both hold the heart at the same time — feel the buzz.',
+                accent: widget.accent,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                kissing
+                    ? 'You\'re touching right now!! 💞'
+                    : _iAmTouching
+                        ? 'Holding… waiting for ${widget.partner?.displayLabel ?? 'them'} 🥺'
+                        : partnerTouching
+                            ? '${widget.partner?.displayLabel ?? 'They'} is holding — join them!'
+                            : 'Press and hold the heart together ♡',
+                style: TextStyle(
+                  color: kissing ? widget.accent : AppColors.textSecondary,
+                  fontSize: 14,
+                  fontWeight: kissing ? FontWeight.w700 : FontWeight.normal,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTapDown: (_) => _startTouch(),
+                onTapUp: (_) => _endTouch(),
+                onTapCancel: _endTouch,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  width: kissing ? 230 : 190,
+                  height: kissing ? 230 : 190,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: kissing
+                          ? [
+                              widget.accent,
+                              AppColors.coral.withValues(alpha: 0.8)
+                            ]
+                          : _iAmTouching || partnerTouching
+                              ? [
+                                  widget.accent.withValues(alpha: 0.55),
+                                  AppColors.bgCard
+                                ]
+                              : [
+                                  widget.accent.withValues(alpha: 0.25),
+                                  AppColors.bgCard
+                                ],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: widget.accent
+                            .withValues(alpha: kissing ? 0.7 : 0.25),
+                        blurRadius: kissing ? 60 : 24,
+                        spreadRadius: kissing ? 10 : 2,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      kissing ? '💞' : '🤍',
+                      style: TextStyle(fontSize: kissing ? 84 : 64),
+                    ),
+                  ),
+                )
+                    .animate(
+                        target: kissing || _iAmTouching || partnerTouching
+                            ? 1
+                            : 0,
+                        onPlay: (c) => c.repeat(reverse: true))
+                    .scale(
+                        begin: const Offset(1, 1),
+                        end: const Offset(1.06, 1.06),
+                        duration: 500.ms,
+                        curve: Curves.easeInOut),
+              ),
+              const Spacer(),
+              const Text(
+                'Tip: hop on a call and thumb-kiss goodnight 🌙',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Guess Me Tab ──────────────────────────────────────────────────────────
+
+class _GuessMeTab extends ConsumerStatefulWidget {
+  final Color accent;
+  final String coupleId;
+  final String myUid;
+  final String myName;
+  final String partnerName;
+  final String todayQuestion;
+
+  const _GuessMeTab({
+    required this.accent,
+    required this.coupleId,
+    required this.myUid,
+    required this.myName,
+    required this.partnerName,
+    required this.todayQuestion,
+  });
+
+  @override
+  ConsumerState<_GuessMeTab> createState() => _GuessMeTabState();
+}
+
+class _GuessMeTabState extends ConsumerState<_GuessMeTab> {
+  final _selfCtrl = TextEditingController();
+  final _guessCtrl = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _selfCtrl.dispose();
+    _guessCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final self = _selfCtrl.text.trim();
+    final guess = _guessCtrl.text.trim();
+    if (self.isEmpty || guess.isEmpty) return;
+    setState(() => _submitting = true);
+    HapticFeedback.mediumImpact();
+    try {
+      await ref
+          .read(firestoreServiceProvider)
+          .submitGuessMe(widget.coupleId, self, guess);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fs = ref.watch(firestoreServiceProvider);
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: fs.watchGuessMe(widget.coupleId),
+      builder: (context, snap) {
+        final data = snap.data ?? {};
+        final selfAnswers = Map<String, dynamic>.from(data['self'] ?? {});
+        final guesses = Map<String, dynamic>.from(data['guess'] ?? {});
+        final iSubmitted = selfAnswers.containsKey(widget.myUid);
+        final partnerUid = selfAnswers.keys
+            .where((k) => k != widget.myUid)
+            .followedBy(guesses.keys.where((k) => k != widget.myUid))
+            .firstOrNull;
+        final partnerSubmitted =
+            partnerUid != null && selfAnswers.containsKey(partnerUid);
+        final bothDone = iSubmitted && partnerSubmitted;
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+          child: Column(
+            children: [
+              _SectionHeader(
+                emoji: '💘',
+                title: 'Guess Me',
+                subtitle:
+                    'Answer for yourself, guess for them. How well do you really know each other?',
+                accent: widget.accent,
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [
+                    widget.accent.withValues(alpha: 0.15),
+                    AppColors.bgCard
+                  ]),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                      color: widget.accent.withValues(alpha: 0.3)),
+                ),
+                child: Column(children: [
+                  Text('Today\'s question',
+                      style: TextStyle(
+                          color: widget.accent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1)),
+                  const SizedBox(height: 12),
+                  Text(widget.todayQuestion,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 17,
+                          height: 1.4,
+                          fontWeight: FontWeight.w500)),
+                ]),
+              ),
+              const SizedBox(height: 20),
+
+              if (!bothDone) ...[
+                if (!iSubmitted) ...[
+                  _GuessMeField(
+                      label: '✍️ Your own honest answer',
+                      hint: 'The truth about you…',
+                      ctrl: _selfCtrl),
+                  const SizedBox(height: 12),
+                  _GuessMeField(
+                      label: '🔮 Your guess for ${widget.partnerName}',
+                      hint: 'What will they say?',
+                      ctrl: _guessCtrl),
+                  const SizedBox(height: 16),
+                  GradientButton(
+                      label: 'Lock in both 💘',
+                      onTap: _submit,
+                      loading: _submitting),
+                ] else
+                  _StatusCard(
+                      message:
+                          'Locked in! Waiting for ${widget.partnerName} to answer…',
+                      emoji: '⏳',
+                      accent: widget.accent),
+              ] else ...[
+                // Reveal
+                _GuessMeReveal(
+                  title: 'Your guess about ${widget.partnerName}',
+                  guess: (guesses[widget.myUid] ?? '—') as String,
+                  truth: (selfAnswers[partnerUid] ?? '—') as String,
+                  accent: widget.accent,
+                ),
+                const SizedBox(height: 14),
+                _GuessMeReveal(
+                  title: '${widget.partnerName}\'s guess about you',
+                  guess: (guesses[partnerUid] ?? '—') as String,
+                  truth: (selfAnswers[widget.myUid] ?? '—') as String,
+                  accent: AppColors.coral,
+                ),
+                const SizedBox(height: 12),
+                const Text('New question tomorrow ♡',
+                    style:
+                        TextStyle(fontSize: 12, color: AppColors.textMuted)),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _GuessMeField extends StatelessWidget {
+  final String label;
+  final String hint;
+  final TextEditingController ctrl;
+  const _GuessMeField(
+      {required this.label, required this.hint, required this.ctrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.bgCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.divider),
+          ),
+          child: TextField(
+            controller: ctrl,
+            maxLines: 2,
+            minLines: 1,
+            style:
+                const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(color: AppColors.textMuted),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.all(14),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GuessMeReveal extends StatelessWidget {
+  final String title;
+  final String guess;
+  final String truth;
+  final Color accent;
+
+  const _GuessMeReveal({
+    required this.title,
+    required this.guess,
+    required this.truth,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+            colors: [accent.withValues(alpha: 0.14), AppColors.bgCard]),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: TextStyle(
+                  color: accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4)),
+          const SizedBox(height: 10),
+          Row(children: [
+            const Text('🔮 ', style: TextStyle(fontSize: 14)),
+            Expanded(
+                child: Text('Guess: $guess',
+                    style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                        height: 1.4))),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            const Text('💡 ', style: TextStyle(fontSize: 14)),
+            Expanded(
+                child: Text('Truth: $truth',
+                    style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600))),
+          ]),
+        ],
+      ),
+    ).animate().fadeIn().slideY(begin: 0.05);
+  }
 }

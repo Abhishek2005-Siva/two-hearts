@@ -12,6 +12,7 @@ class UserModel {
   final DateTime? birthday;
   final String? gender;
   final String? username;
+  final String? nickname;
   final AvatarConfig? avatarConfig;
 
   const UserModel({
@@ -23,8 +24,15 @@ class UserModel {
     this.birthday,
     this.gender,
     this.username,
+    this.nickname,
     this.avatarConfig,
   });
+
+  /// The name shown around the app: the couple nickname if set,
+  /// otherwise the first name.
+  String get displayLabel => nickname?.isNotEmpty == true
+      ? nickname!
+      : displayName.split(' ').first;
 
   factory UserModel.fromDoc(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
@@ -38,6 +46,7 @@ class UserModel {
       birthday: (d['birthday'] as Timestamp?)?.toDate(),
       gender: d['gender'],
       username: d['username'],
+      nickname: d['nickname'],
       avatarConfig: avatarMap != null ? AvatarConfig.fromMap(avatarMap) : null,
     );
   }
@@ -50,6 +59,7 @@ class UserModel {
         'birthday': birthday != null ? Timestamp.fromDate(birthday!) : null,
         if (gender != null) 'gender': gender,
         if (username != null) 'username': username,
+        if (nickname != null) 'nickname': nickname,
         if (avatarConfig != null) 'avatarConfig': avatarConfig!.toMap(),
       };
 
@@ -59,6 +69,7 @@ class UserModel {
     String? coupleId,
     DateTime? birthday,
     String? gender,
+    String? nickname,
     AvatarConfig? avatarConfig,
   }) =>
       UserModel(
@@ -69,6 +80,7 @@ class UserModel {
         coupleId: coupleId ?? this.coupleId,
         birthday: birthday ?? this.birthday,
         gender: gender ?? this.gender,
+        nickname: nickname ?? this.nickname,
         avatarConfig: avatarConfig ?? this.avatarConfig,
       );
 

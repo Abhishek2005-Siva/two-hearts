@@ -98,10 +98,18 @@ class TogetherScreen extends ConsumerWidget {
                     _TogetherTile(
                       emoji: '🎮',
                       title: 'Games',
-                      subtitle: 'Would You Rather, Truth Jar, Scribble & more',
+                      subtitle: 'WYR, Truth Jar, Scribble, RPS, Thumb Kiss & more',
                       accent: accent,
                       onTap: () => context.push('/games'),
                     ).animate().fadeIn(delay: 320.ms).slideX(begin: -0.05),
+                    const SizedBox(height: 14),
+                    _TogetherTile(
+                      emoji: '💡',
+                      title: 'Date Idea',
+                      subtitle: 'Spin the wheel — let fate plan your next date',
+                      accent: accent,
+                      onTap: () => context.push('/dates'),
+                    ).animate().fadeIn(delay: 360.ms).slideX(begin: -0.05),
                     const SizedBox(height: 14),
                     _TogetherTile(
                       emoji: '📍',
@@ -169,7 +177,7 @@ class _TogetherTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return SquishyTap(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(20),

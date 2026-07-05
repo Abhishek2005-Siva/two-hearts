@@ -27,6 +27,7 @@ import '../../shared/widgets/fullscreen_image_viewer.dart';
 enum ChatBackground {
   dark,
   bg1, bg2, bg3, bg4, bg5, bg6, bg7, bg8, bg9, bg10,
+  bg11, bg12, bg13, bg14, bg15, bg16,
 }
 
 const _chatBgAssets = {
@@ -40,6 +41,13 @@ const _chatBgAssets = {
   ChatBackground.bg8:  'assets/images/chat_bg8.jpeg',
   ChatBackground.bg9:  'assets/images/chat_bg9.jpg',
   ChatBackground.bg10: 'assets/images/chat_bg10.jpeg',
+  // LDR-themed: same moon, paper planes, constellations, sunset calls…
+  ChatBackground.bg11: 'assets/images/chat_bg11.png',
+  ChatBackground.bg12: 'assets/images/chat_bg12.png',
+  ChatBackground.bg13: 'assets/images/chat_bg13.png',
+  ChatBackground.bg14: 'assets/images/chat_bg14.png',
+  ChatBackground.bg15: 'assets/images/chat_bg15.png',
+  ChatBackground.bg16: 'assets/images/chat_bg16.png',
 };
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -488,6 +496,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   }
                   // reverse:true with original ascending list → newest at bottom
                   final reversed = filtered.reversed.toList();
+                  // Only the most recent of my messages they've read shows
+                  // "Seen" — WhatsApp style, not on every bubble.
+                  String? lastSeenId;
+                  for (final m in reversed) {
+                    if (m.senderId == uid && m.readByPartner) {
+                      lastSeenId = m.id;
+                      break;
+                    }
+                  }
                   return ListView.builder(
                     controller: _scrollController,
                     reverse: true,
@@ -507,6 +524,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             msg: msg,
                             isMe: msg.senderId == uid,
                             accent: accent,
+                            showSeen: msg.id == lastSeenId,
                             hasWallpaper: background != ChatBackground.dark || customBgUrl != null,
                             onReact: (emoji) {
                               HapticFeedback.selectionClick();
@@ -592,24 +610,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ],
                 ),
               ),
-            // Typing indicator — shown directly above the input box
+            // Typing indicator — the partner's little face pops up and
+            // bounces while they type ♡
             if (isTyping)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Row(
-                  children: [
-                    Text(
-                      '${partner?.displayName.split(' ').first ?? 'Partner'} is typing',
-                      style: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const _TypingDots(),
-                  ],
-                ),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
+                child: _TypingPeek(partner: partner, accent: accent),
               ),
             _ChatInput(
               controller: _controller,
@@ -718,12 +724,42 @@ class _ChatAppBar extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      partner?.displayName.split(' ').first ?? 'Partner',
-                      style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            partner?.displayLabel ?? 'Partner',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        // Always-visible presence dot: green online, grey off
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          width: 9,
+                          height: 9,
+                          margin: const EdgeInsets.only(left: 6),
+                          decoration: BoxDecoration(
+                            color: partnerOnline
+                                ? const Color(0xFF4CAF50)
+                                : AppColors.textMuted.withValues(alpha: 0.6),
+                            shape: BoxShape.circle,
+                            boxShadow: partnerOnline
+                                ? [
+                                    BoxShadow(
+                                        color: const Color(0xFF4CAF50)
+                                            .withValues(alpha: 0.6),
+                                        blurRadius: 6)
+                                  ]
+                                : null,
+                          ),
+                        ),
+                      ],
                     ),
                     if (isTyping)
                       Text('typing…',
@@ -731,20 +767,13 @@ class _ChatAppBar extends StatelessWidget {
                               color: accent,
                               fontSize: 11,
                               fontStyle: FontStyle.italic))
-                    else if (partnerOnline)
-                      Row(children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          margin: const EdgeInsets.only(right: 4),
-                          decoration: const BoxDecoration(
-                              color: Color(0xFF4CAF50),
-                              shape: BoxShape.circle),
-                        ),
-                        const Text('online',
-                            style: TextStyle(
-                                color: Color(0xFF4CAF50), fontSize: 11)),
-                      ]),
+                    else
+                      Text(partnerOnline ? 'online' : 'offline',
+                          style: TextStyle(
+                              color: partnerOnline
+                                  ? const Color(0xFF4CAF50)
+                                  : AppColors.textMuted,
+                              fontSize: 11)),
                   ],
                 ),
               ),
@@ -790,6 +819,8 @@ class _BackgroundPickerSheet extends StatelessWidget {
   });
 
   static final _imageOptions = [
+    ChatBackground.bg11, ChatBackground.bg12, ChatBackground.bg13,
+    ChatBackground.bg14, ChatBackground.bg15, ChatBackground.bg16,
     ChatBackground.bg1,  ChatBackground.bg2,  ChatBackground.bg3,
     ChatBackground.bg4,  ChatBackground.bg5,  ChatBackground.bg6,
     ChatBackground.bg7,  ChatBackground.bg8,  ChatBackground.bg9,
@@ -1441,6 +1472,102 @@ class _VoicePreviewSheetState extends State<_VoicePreviewSheet> {
   }
 }
 
+// ── Typing peek — partner avatar pops up while they type ─────────────────
+
+class _TypingPeek extends StatefulWidget {
+  final UserModel? partner;
+  final Color accent;
+  const _TypingPeek({required this.partner, required this.accent});
+
+  @override
+  State<_TypingPeek> createState() => _TypingPeekState();
+}
+
+class _TypingPeekState extends State<_TypingPeek>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _bounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+    _bounce = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final partner = widget.partner;
+    return Row(
+      children: [
+        // Bouncing little face
+        AnimatedBuilder(
+          animation: _bounce,
+          builder: (_, child) => Transform.translate(
+            offset: Offset(0, -3 * _bounce.value),
+            child: child,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(1.5),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: widget.accent.withValues(alpha: 0.7), width: 1.5),
+            ),
+            child: partner?.avatarUrl != null
+                ? CircleAvatar(
+                    radius: 12,
+                    backgroundImage:
+                        CachedNetworkImageProvider(partner!.avatarUrl!))
+                : CircleAvatar(
+                    radius: 12,
+                    backgroundColor: widget.accent.withValues(alpha: 0.25),
+                    child: Text(
+                      partner?.displayLabel.isNotEmpty == true
+                          ? partner!.displayLabel[0].toUpperCase()
+                          : '♡',
+                      style: TextStyle(
+                          color: widget.accent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Tiny speech bubble with the dots
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: AppColors.bgCard,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(4),
+              topRight: Radius.circular(12),
+              bottomLeft: Radius.circular(12),
+              bottomRight: Radius.circular(12),
+            ),
+            border: Border.all(color: AppColors.divider, width: 0.5),
+          ),
+          child: const _TypingDots(),
+        ),
+      ],
+    ).animate().fadeIn(duration: 150.ms).scale(
+        begin: const Offset(0.8, 0.8),
+        alignment: Alignment.bottomLeft,
+        duration: 200.ms,
+        curve: Curves.easeOutBack);
+  }
+}
+
 // ── Typing Dots ───────────────────────────────────────────────────────────
 
 class _TypingDots extends StatefulWidget {
@@ -1602,6 +1729,7 @@ class _MessageBubble extends StatefulWidget {
   final bool isMe;
   final Color accent;
   final bool hasWallpaper;
+  final bool showSeen;
   final void Function(String) onReact;
   final VoidCallback? onDelete;
   final VoidCallback onReply;
@@ -1612,6 +1740,7 @@ class _MessageBubble extends StatefulWidget {
     required this.isMe,
     required this.accent,
     required this.hasWallpaper,
+    this.showSeen = false,
     required this.onReact,
     required this.onReply,
     this.onDelete,
@@ -1702,7 +1831,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   child: Text(msg.reactionEmoji!,
                       style: const TextStyle(fontSize: 16)),
                 ),
-              if (isMe && msg.readByPartner)
+              if (isMe && widget.showSeen)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Row(
@@ -1836,7 +1965,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   child: Text(msg.reactionEmoji!,
                       style: const TextStyle(fontSize: 16)),
                 ),
-              if (isMe && msg.readByPartner)
+              if (isMe && widget.showSeen)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Row(

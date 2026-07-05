@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
@@ -34,14 +35,17 @@ class AppColors {
 class AppTheme {
   static ThemeData get darkTheme => build(AppColors.defaultAccent);
 
+  // "Light" mode is a soft dusk variant of the romantic theme: noticeably
+  // brighter than dark mode, but its text stays light so it keeps proper
+  // contrast against the app's plum surfaces and gradients.
   static ThemeData get lightTheme {
     const accent = AppColors.defaultAccent;
-    const bgColor = Color(0xFFFAF6F2);
-    const cardColor = Color(0xFFFFFFFF);
-    const textPrimary = Color(0xFF1A1A2E);
-    const textSecondary = Color(0xFF5C5C7A);
-    const textMuted = Color(0xFF9999AA);
-    const dividerColor = Color(0xFFE8E0F0);
+    const bgColor = Color(0xFF3A2338);
+    const cardColor = Color(0xFF4A2E46);
+    const textPrimary = Color(0xFFFFF4F8);
+    const textSecondary = Color(0xFFD8B8C6);
+    const textMuted = Color(0xFFA98597);
+    const dividerColor = Color(0xFF5C3A55);
 
     return ThemeData(
       useMaterial3: true,
@@ -139,7 +143,7 @@ class AppTheme {
         ),
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
@@ -152,7 +156,7 @@ class AppTheme {
       ),
       dividerTheme: const DividerThemeData(color: dividerColor, space: 1, thickness: 0.5),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-        backgroundColor: Colors.white,
+        backgroundColor: cardColor,
         selectedItemColor: accent,
         unselectedItemColor: textMuted,
       ),
@@ -286,8 +290,8 @@ const List<Map<String, dynamic>> kCoupleAccents = [
   {'name': 'Gold', 'color': Color(0xFFFFD166)},
 ];
 
-// Reusable gradient button
-class GradientButton extends StatelessWidget {
+// Reusable gradient button — squishes like jelly when pressed 🍮
+class GradientButton extends StatefulWidget {
   final String label;
   final VoidCallback? onTap;
   final bool loading;
@@ -302,42 +306,148 @@ class GradientButton extends StatelessWidget {
   });
 
   @override
+  State<GradientButton> createState() => _GradientButtonState();
+}
+
+class _GradientButtonState extends State<GradientButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    // Press → shrink; release → overshoot back like jelly.
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+          tween: Tween(begin: 1.0, end: 0.93)
+              .chain(CurveTween(curve: Curves.easeOut)),
+          weight: 25),
+      TweenSequenceItem(
+          tween: Tween(begin: 0.93, end: 1.0)
+              .chain(CurveTween(curve: Curves.elasticOut)),
+          weight: 75),
+    ]).animate(_ctrl);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    if (widget.loading || widget.onTap == null) return;
+    HapticFeedback.lightImpact();
+    _ctrl.forward(from: 0);
+    widget.onTap!();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
     return GestureDetector(
-      onTap: loading ? null : onTap,
-      child: Container(
-        width: width,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [accent, AppColors.coral],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: accent.withValues(alpha: 0.4),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+      onTap: _handleTap,
+      child: ScaleTransition(
+        scale: _scale,
+        child: Container(
+          width: widget.width,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [accent, AppColors.coral],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
             ),
-          ],
-        ),
-        child: Center(
-          child: loading
-              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : Text(
-                  label,
-                  style: GoogleFonts.lato(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.4),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Center(
+            child: widget.loading
+                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Text(
+                    widget.label,
+                    style: GoogleFonts.lato(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                ),
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Wrap ANY widget to give it the playful squish-on-tap feel.
+class SquishyTap extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  const SquishyTap({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.onLongPress,
+  });
+
+  @override
+  State<SquishyTap> createState() => _SquishyTapState();
+}
+
+class _SquishyTapState extends State<SquishyTap>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 300));
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+          tween: Tween(begin: 1.0, end: 0.95)
+              .chain(CurveTween(curve: Curves.easeOut)),
+          weight: 30),
+      TweenSequenceItem(
+          tween: Tween(begin: 0.95, end: 1.0)
+              .chain(CurveTween(curve: Curves.elasticOut)),
+          weight: 70),
+    ]).animate(_ctrl);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap == null
+          ? null
+          : () {
+              HapticFeedback.selectionClick();
+              _ctrl.forward(from: 0);
+              widget.onTap!();
+            },
+      onLongPress: widget.onLongPress,
+      child: ScaleTransition(scale: _scale, child: widget.child),
     );
   }
 }
