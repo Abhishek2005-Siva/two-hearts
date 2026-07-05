@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/delight/delight.dart';
 import '../../core/firebase/models.dart';
 import '../../core/globals.dart';
 import '../../core/providers/providers.dart';
@@ -160,7 +161,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     final coupleId = ref.read(coupleIdProvider);
     final partner = ref.read(partnerUserProvider).valueOrNull;
     if (coupleId == null) return;
-    HapticFeedback.mediumImpact();
+    DelightHaptics.heartbeat();
     _spawnHearts(6);
     await ref.read(firestoreServiceProvider).sendThinkingOfYou(
       coupleId,
@@ -469,6 +470,43 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
             },
           ),
 
+          // 2b. Ambient seasonal particles (petals, rain, diyas…)
+          const SeasonalDrift(),
+
+          // 2c. Easter eggs — decorative only, pure charm, no navigation.
+          // Tap the fairy lights → they sparkle. Tap the rug → hidden heart.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: size.height * 0.09,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                DelightHaptics.soft();
+                FloatingStickers.burst(
+                  context,
+                  stickers: const ['✨', '⭐'],
+                  count: 5,
+                  origin: Offset(size.width / 2, size.height * 0.08),
+                );
+              },
+            ),
+          ),
+          Positioned(
+            left: size.width * 0.25,
+            top: size.height * 0.78,
+            width: size.width * 0.5,
+            height: size.height * 0.1,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                DelightHaptics.soft();
+                _spawnHeart(0.5);
+              },
+            ),
+          ),
+
           // 2. Main UI layout
           SafeArea(
             child: Column(
@@ -754,7 +792,7 @@ class _ThinkingOfYouPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return SquishyTap(
       onTap: onTap,
       child: Container(
         padding:
@@ -1409,6 +1447,103 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                   value: _notificationsEnabled,
                   onChanged: _toggleNotifications,
                   activeThumbColor: AppColors.rose,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Calm Mode — quiets the mascot, seasonal particles & ambient glow
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.divider, width: 0.5),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.spa_outlined,
+                    color: AppColors.textMuted, size: 20),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Calm mode',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                      Text('Quiet the little animations',
+                          style: TextStyle(
+                              color: AppColors.textMuted, fontSize: 11)),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: ref.watch(calmModeProvider),
+                  onChanged: (v) =>
+                      ref.read(calmModeProvider.notifier).set(v),
+                  activeThumbColor: AppColors.rose,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Companion buddy — the little friend living at the screen edge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.divider, width: 0.5),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Text('🐾', style: TextStyle(fontSize: 16)),
+                    SizedBox(width: 8),
+                    Text('Your little buddy',
+                        style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text('It naps, peeks and celebrates with you',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  children: kMascotPets.map((pet) {
+                    final selected = ref.watch(mascotPetProvider) == pet;
+                    return GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        ref.read(mascotPetProvider.notifier).set(pet);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? AppColors.rose.withValues(alpha: 0.18)
+                              : AppColors.bgMid,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selected
+                                ? AppColors.rose
+                                : AppColors.divider,
+                            width: selected ? 1.5 : 0.5,
+                          ),
+                        ),
+                        child: Text(pet,
+                            style: TextStyle(fontSize: selected ? 24 : 20)),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ],
             ),

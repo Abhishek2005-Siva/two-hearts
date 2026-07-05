@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:vibration/vibration.dart';
+import '../delight/mascot.dart';
+import '../delight/presence_layer.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../../features/chat/video_call_screen.dart';
@@ -99,7 +101,13 @@ class _MainShellState extends ConsumerState<MainShell> {
     );
 
     return Scaffold(
-      body: widget.child,
+      body: Stack(
+        children: [
+          widget.child,
+          const PresenceLayer(),
+          const MascotOverlay(),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: AppColors.bgMid,

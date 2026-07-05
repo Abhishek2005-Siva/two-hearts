@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
 import '../../core/models/content_block.dart';
+import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/rich_content_editor.dart';
@@ -248,7 +249,12 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
           createdAt: DateTime.now(),
         ),
       );
-      if (mounted) context.go('/together');
+      if (mounted) {
+        // The letter seals and flies away 💌
+        DelightHaptics.crack();
+        FlyAway.play(context, '💌');
+        context.go('/together');
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }

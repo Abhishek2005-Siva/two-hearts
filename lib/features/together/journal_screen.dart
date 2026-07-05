@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/models/content_block.dart';
+import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
 import '../../core/firebase/models.dart';
 import '../../core/theme/app_theme.dart';
@@ -598,6 +599,10 @@ class _BookViewState extends ConsumerState<_BookView> {
           _editing = false;
           _saving = false;
         });
+        // Today's page is written ✍️
+        DelightHaptics.soft();
+        FloatingStickers.burst(context,
+            stickers: const ['✨', '📖'], count: 5);
       }
     } catch (e) {
       if (mounted && !silent) {

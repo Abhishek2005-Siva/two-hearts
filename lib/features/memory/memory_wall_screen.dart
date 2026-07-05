@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/firebase/models.dart';
+import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
@@ -81,6 +82,12 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
             ),
           );
         }
+      }
+      if (mounted) {
+        // A new memory joins the wall — petals & a polaroid drift up.
+        DelightHaptics.thud();
+        FloatingStickers.burst(context,
+            stickers: const ['🌸', '✨', '📸'], count: 7);
       }
     } finally {
       if (mounted) setState(() => _uploading = false);

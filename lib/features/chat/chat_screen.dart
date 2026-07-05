@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
@@ -16,6 +17,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'snap_camera_screen.dart';
 import 'package:video_player/video_player.dart';
+import '../../core/delight/delight.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -69,6 +71,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scheduledDeletes = <String>{};
   MessageModel? _replyingTo;
 
+  // Character reactions — track reaction changes so the partner's avatar can
+  // "perform" the emotion when they react to a message.
+  final Map<String, String?> _knownReactions = {};
+  bool _reactionsSeeded = false;
+  final Set<String> _myRecentReactions = {};
+
   @override
   void initState() {
     super.initState();
@@ -98,6 +106,57 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (unread.isNotEmpty) {
       ref.read(firestoreServiceProvider).markMessagesRead(coupleId, unread).ignore();
     }
+  }
+
+  // ── Character reactions ──────────────────────────────────────────────
+  // Instead of a plain sticker, the reacting person's avatar briefly
+  // "performs" the emotion (hug, laugh-shake, rain cloud, jump), then a
+  // small marker stays on the bubble.
+
+  void _noteMyReaction(String msgId) {
+    _myRecentReactions.add(msgId);
+    Future.delayed(const Duration(seconds: 5),
+        () => _myRecentReactions.remove(msgId));
+  }
+
+  void _trackReactionChanges(List<MessageModel> msgs) {
+    if (!_reactionsSeeded) {
+      for (final m in msgs) {
+        _knownReactions[m.id] = m.reactionEmoji;
+      }
+      _reactionsSeeded = true;
+      return;
+    }
+    for (final m in msgs) {
+      final prev = _knownReactions[m.id];
+      if (prev == m.reactionEmoji) continue;
+      _knownReactions[m.id] = m.reactionEmoji;
+      final e = m.reactionEmoji;
+      // A reaction appeared that I didn't just place → partner performed it.
+      if (e != null && e.isNotEmpty && !_myRecentReactions.contains(m.id)) {
+        _performReaction(e, byPartner: true);
+      }
+    }
+  }
+
+  void _performReaction(String emoji, {required bool byPartner}) {
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    final avatarUrl = byPartner
+        ? ref.read(partnerUserProvider).valueOrNull?.avatarUrl
+        : ref.read(currentUserProvider).valueOrNull?.avatarUrl;
+    final accent = ref.read(accentColorProvider);
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _ReactionPerformance(
+        emoji: emoji,
+        avatarUrl: avatarUrl,
+        alignLeft: byPartner,
+        accent: accent,
+        onDone: () => entry.remove(),
+      ),
+    );
+    overlay.insert(entry);
   }
 
   Future<void> _send() async {
@@ -146,7 +205,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (result == null || !mounted) return;
 
     setState(() => _sending = true);
-    HapticFeedback.mediumImpact();
+    DelightHaptics.thud(); // snap landed — soft thud signature
+    FlyAway.play(context, '👻');
     try {
       if (result.type == SnapCameraResult.photo) {
         final bytes = await File(result.path).readAsBytes();
@@ -348,6 +408,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     ref.listen(messagesProvider, (_, next) {
       if (next.valueOrNull != null) _markRead();
+      final list = next.valueOrNull;
+      if (list != null) _trackReactionChanges(List<MessageModel>.from(list));
       if (coupleId != null) {
         for (final msg in next.valueOrNull ?? []) {
           if (msg.isWhisper && msg.readByPartner && msg.senderId != uid) {
@@ -529,6 +591,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             onReact: (emoji) {
                               HapticFeedback.selectionClick();
                               if (coupleId == null) return;
+                              _noteMyReaction(msg.id);
+                              _knownReactions[msg.id] = emoji;
+                              if (emoji.isNotEmpty) {
+                                _performReaction(emoji, byPartner: false);
+                              }
                               ref
                                   .read(firestoreServiceProvider)
                                   .reactToMessage(coupleId, msg.id, emoji)
@@ -546,6 +613,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             onDoubleTap: coupleId == null ? null : () {
                               final isLiked = msg.reactionEmoji == '❤️';
                               HapticFeedback.lightImpact();
+                              _noteMyReaction(msg.id);
+                              _knownReactions[msg.id] = isLiked ? '' : '❤️';
+                              if (!isLiked) {
+                                _performReaction('❤️', byPartner: false);
+                              }
                               ref
                                   .read(firestoreServiceProvider)
                                   .reactToMessage(coupleId, msg.id, isLiked ? '' : '❤️')
@@ -2625,3 +2697,194 @@ class _FullscreenVideoViewState extends State<_FullscreenVideoView> {
   }
 }
 
+
+// ── Character reaction performance ───────────────────────────────────────
+// The reacting person's avatar pops in near the bottom of the chat and
+// acts out the emotion for ~1.6 s: love hugs with rising hearts, laughter
+// shakes, sadness gets a little rain cloud, surprise jumps back.
+
+class _ReactionPerformance extends StatefulWidget {
+  final String emoji;
+  final String? avatarUrl;
+  final bool alignLeft; // partner performs on the left, me on the right
+  final Color accent;
+  final VoidCallback onDone;
+
+  const _ReactionPerformance({
+    required this.emoji,
+    required this.avatarUrl,
+    required this.alignLeft,
+    required this.accent,
+    required this.onDone,
+  });
+
+  @override
+  State<_ReactionPerformance> createState() => _ReactionPerformanceState();
+}
+
+enum _ReactionMood { love, laugh, sad, shock, pop }
+
+class _ReactionPerformanceState extends State<_ReactionPerformance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  _ReactionMood get _mood {
+    const love = ['❤️', '😍', '🥰', '💕', '😘', '💖', '💗', '♥️'];
+    const laugh = ['😂', '🤣', '😆', '😹', '💀'];
+    const sad = ['😢', '😭', '🥺', '💔', '😞'];
+    const shock = ['😮', '😱', '😳', '🤯', '😲'];
+    if (love.contains(widget.emoji)) return _ReactionMood.love;
+    if (laugh.contains(widget.emoji)) return _ReactionMood.laugh;
+    if (sad.contains(widget.emoji)) return _ReactionMood.sad;
+    if (shock.contains(widget.emoji)) return _ReactionMood.shock;
+    return _ReactionMood.pop;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1700))
+      ..forward().whenComplete(widget.onDone);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mood = _mood;
+    return Positioned(
+      bottom: 118,
+      left: widget.alignLeft ? 24 : null,
+      right: widget.alignLeft ? null : 24,
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, _) {
+            final t = _ctrl.value;
+            final appear = Curves.easeOutBack
+                .transform((t / 0.2).clamp(0.0, 1.0));
+            final fade =
+                t > 0.8 ? ((1 - t) / 0.2).clamp(0.0, 1.0) : 1.0;
+
+            double dy = 0, angle = 0, scale = 1;
+            switch (mood) {
+              case _ReactionMood.love:
+                dy = -math.sin(t * 3 * math.pi).abs() * 10;
+                break;
+              case _ReactionMood.laugh:
+                angle = math.sin(t * 10 * math.pi) * 0.16;
+                break;
+              case _ReactionMood.sad:
+                dy = 6 * Curves.easeOut.transform(t);
+                angle = 0.08;
+                break;
+              case _ReactionMood.shock:
+                dy = -18 * math.sin((t.clamp(0.0, 0.5) / 0.5) * math.pi);
+                scale = 1 + 0.15 * math.sin((t.clamp(0.0, 0.5) / 0.5) * math.pi);
+                break;
+              case _ReactionMood.pop:
+                break;
+            }
+
+            return Opacity(
+              opacity: fade,
+              child: Transform.scale(
+                scale: appear * scale,
+                child: SizedBox(
+                  width: 84,
+                  height: 96,
+                  child: Stack(
+                    alignment: Alignment.bottomCenter,
+                    clipBehavior: Clip.none,
+                    children: [
+                      // Rising hearts for love
+                      if (mood == _ReactionMood.love)
+                        ...List.generate(3, (i) {
+                          final ht = ((t - 0.15 * i) / 0.7).clamp(0.0, 1.0);
+                          return Positioned(
+                            bottom: 40 + 46 * ht,
+                            left: 12.0 + i * 26,
+                            child: Opacity(
+                              opacity: (1 - ht) * fade,
+                              child: const Text('💗',
+                                  style: TextStyle(fontSize: 14)),
+                            ),
+                          );
+                        }),
+                      // Rain cloud for sad
+                      if (mood == _ReactionMood.sad)
+                        Positioned(
+                          top: -6,
+                          child: Opacity(
+                            opacity: fade,
+                            child: const Text('🌧️',
+                                style: TextStyle(fontSize: 20)),
+                          ),
+                        ),
+                      Transform.translate(
+                        offset: Offset(0, dy),
+                        child: Transform.rotate(
+                          angle: angle,
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: widget.accent, width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: widget.accent
+                                      .withValues(alpha: 0.4),
+                                  blurRadius: 14,
+                                ),
+                              ],
+                              color: AppColors.bgCardLight,
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: widget.avatarUrl != null &&
+                                    widget.avatarUrl!.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: widget.avatarUrl!,
+                                    fit: BoxFit.cover)
+                                : const Center(
+                                    child: Text('🙂',
+                                        style: TextStyle(fontSize: 26))),
+                          ),
+                        ),
+                      ),
+                      // The emotion badge riding along
+                      Positioned(
+                        bottom: -2,
+                        right: 6,
+                        child: Transform.translate(
+                          offset: Offset(0, dy),
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: AppColors.bgCard,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: AppColors.divider, width: 0.5),
+                            ),
+                            child: Text(widget.emoji,
+                                style: const TextStyle(fontSize: 14)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}

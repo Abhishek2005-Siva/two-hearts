@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
+import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -245,7 +246,11 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen> {
                       style: TextStyle(color: AppColors.textPrimary)),
                   onTap: () async {
                     Navigator.pop(sheetCtx);
-                    HapticFeedback.lightImpact();
+                    DelightHaptics.thud();
+                    if (mounted) {
+                      FloatingStickers.burst(this.context,
+                          stickers: const ['🎉', '⭐', '🎊'], count: 8);
+                    }
                     setState(() => _throwingId = item.id);
                     await Future.delayed(const Duration(milliseconds: 500));
                     await ref.read(firestoreServiceProvider).updateBucketStatus(
