@@ -1453,7 +1453,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
           ),
           const SizedBox(height: 12),
 
-          // Calm Mode — quiets the mascot, seasonal particles & ambient glow
+          // Calm Mode — quiets seasonal particles, sticker bursts & ambient glow
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             decoration: BoxDecoration(
@@ -1484,66 +1484,6 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                   onChanged: (v) =>
                       ref.read(calmModeProvider.notifier).set(v),
                   activeThumbColor: AppColors.rose,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Companion buddy — the little friend living at the screen edge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: AppColors.bgCard,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.divider, width: 0.5),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Text('🐾', style: TextStyle(fontSize: 16)),
-                    SizedBox(width: 8),
-                    Text('Your little buddy',
-                        style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                const Text('It naps, peeks and celebrates with you',
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  children: kMascotPets.map((pet) {
-                    final selected = ref.watch(mascotPetProvider) == pet;
-                    return GestureDetector(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        ref.read(mascotPetProvider.notifier).set(pet);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? AppColors.rose.withValues(alpha: 0.18)
-                              : AppColors.bgMid,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: selected
-                                ? AppColors.rose
-                                : AppColors.divider,
-                            width: selected ? 1.5 : 0.5,
-                          ),
-                        ),
-                        child: Text(pet,
-                            style: TextStyle(fontSize: selected ? 24 : 20)),
-                      ),
-                    );
-                  }).toList(),
                 ),
               ],
             ),

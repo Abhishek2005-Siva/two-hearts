@@ -34,31 +34,6 @@ class CalmModeNotifier extends Notifier<bool> {
   }
 }
 
-// ── Companion mascot choice (persisted) ───────────────────────────────────
-
-const kMascotPets = ['🐱', '🐰', '👻', '🦊', '🐼', '🦆'];
-
-final mascotPetProvider =
-    NotifierProvider<MascotPetNotifier, String>(MascotPetNotifier.new);
-
-class MascotPetNotifier extends Notifier<String> {
-  static const _key = 'mascot_pet';
-
-  @override
-  String build() {
-    SharedPreferences.getInstance().then((prefs) {
-      final saved = prefs.getString(_key);
-      if (saved != null && saved != state) state = saved;
-    });
-    return kMascotPets.first;
-  }
-
-  void set(String pet) {
-    state = pet;
-    SharedPreferences.getInstance().then((p) => p.setString(_key, pet));
-  }
-}
-
 // ── Haptic identity ───────────────────────────────────────────────────────
 // Each meaningful event has its own touch signature, so the app can be
 // "read" through the hand alone.
