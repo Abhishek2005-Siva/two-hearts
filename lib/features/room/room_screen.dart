@@ -1190,20 +1190,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
     setState(() => _nicknameSaving = true);
     try {
       await ref.read(firestoreServiceProvider).updateUser({'nickname': nick});
-      if (mounted) {
-        HapticFeedback.lightImpact();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(nick.isEmpty
-                ? 'Nickname cleared'
-                : 'You\'re now "$nick" ♡'),
-            backgroundColor: AppColors.bgCard,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
+      if (mounted) HapticFeedback.lightImpact();
     } finally {
       if (mounted) setState(() => _nicknameSaving = false);
     }
@@ -1224,6 +1211,65 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
     await ref
         .read(firestoreServiceProvider)
         .sendGift(coupleId, toUid: partnerUid, message: msg);
+  }
+
+  Future<void> _sendCustomWildIdea() async {
+    final coupleId = ref.read(coupleIdProvider);
+    final partnerUid = ref.read(partnerUserProvider).valueOrNull?.uid;
+    if (coupleId == null || partnerUid == null) return;
+    final ctrl = TextEditingController();
+    final message = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('✍️ Your own surprise',
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 200,
+          maxLines: 3,
+          minLines: 1,
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: 'Write something only they should read…',
+            hintStyle:
+                const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            counterStyle:
+                const TextStyle(color: AppColors.textMuted, fontSize: 10),
+            filled: true,
+            fillColor: AppColors.bgMid,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogCtx, ctrl.text.trim()),
+            child: const Text('Wrap it up 🎁',
+                style: TextStyle(
+                    color: AppColors.rose, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (message == null || message.isEmpty || !mounted) return;
+    HapticFeedback.mediumImpact();
+    FloatingStickers.burst(context, stickers: const ['🎁', '🎀'], count: 5);
+    await ref
+        .read(firestoreServiceProvider)
+        .sendGift(coupleId, toUid: partnerUid, message: message);
   }
 
   Future<void> _loadNotificationPref() async {
@@ -1393,33 +1439,62 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: _wildIdeas.map((idea) {
-                    return GestureDetector(
-                      onTap: () => _sendWildIdea(idea.$3),
+                  children: [
+                    ..._wildIdeas.map((idea) {
+                      return GestureDetector(
+                        onTap: () => _sendWildIdea(idea.$3),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.bgMid,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: AppColors.divider, width: 0.5),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(idea.$1,
+                                  style: const TextStyle(fontSize: 14)),
+                              const SizedBox(width: 6),
+                              Text(idea.$2,
+                                  style: const TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 13)),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    // Write your own — wrapped and delivered the same way
+                    GestureDetector(
+                      onTap: _sendCustomWildIdea,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: AppColors.bgMid,
+                          color: AppColors.rose.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                              color: AppColors.divider, width: 0.5),
+                              color: AppColors.rose.withValues(alpha: 0.45),
+                              width: 0.8),
                         ),
-                        child: Row(
+                        child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(idea.$1,
-                                style: const TextStyle(fontSize: 14)),
-                            const SizedBox(width: 6),
-                            Text(idea.$2,
-                                style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 13)),
+                            Text('✍️', style: TextStyle(fontSize: 14)),
+                            SizedBox(width: 6),
+                            Text('Your own words',
+                                style: TextStyle(
+                                    color: AppColors.rose,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
-                    );
-                  }).toList(),
+                    ),
+                  ],
                 ),
               ],
             ),

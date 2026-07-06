@@ -779,9 +779,80 @@ class FirestoreService {
         return DateTime.now().difference(t).inSeconds < 8;
       });
 
+  // ── Game start notifications ──────────────────────────────────────────────
+  // Whenever one side makes the first move in a game, the partner gets a
+  // nudge. Cooldown per game so repeated taps (or the kiss heartbeat)
+  // don't spam their phone.
+
+  static final Map<String, DateTime> _lastGameNotify = {};
+
+  Future<void> notifyGameStart(String coupleId, String game) async {
+    final now = DateTime.now();
+    final key = '$coupleId/$game';
+    final last = _lastGameNotify[key];
+    if (last != null && now.difference(last) < const Duration(minutes: 10)) {
+      return;
+    }
+    _lastGameNotify[key] = now;
+    final token = await _partnerToken(coupleId);
+    final name = await _myFirstName();
+    final (title, body) = switch (game) {
+      'wyr' => (
+          '🎯 $name made their pick!',
+          _anyOf([
+            'Would You Rather is waiting — what do YOU choose?',
+            'Answer today\'s question and see if you match ♡',
+          ])
+        ),
+      'truth' => (
+          '🫙 $name dropped a truth in the jar',
+          _anyOf([
+            'Add yours to unlock what they wrote 👀',
+            'One secret in, one to go — your move!',
+          ])
+        ),
+      'scribble' => (
+          '🎨 $name is drawing something for you',
+          _anyOf([
+            'Come watch the masterpiece and guess it!',
+            'Live art in progress — can you tell what it is?',
+          ])
+        ),
+      'rps' => (
+          '✊ $name threw down a challenge!',
+          _anyOf([
+            'Rock, paper, scissors — settle it right now',
+            'They\'ve locked in. Don\'t leave them hanging ✋✌️',
+          ])
+        ),
+      'kiss' => (
+          '💋 $name is holding the kiss heart…',
+          _anyOf([
+            'Hold it together and feel the buzz 💞',
+            'Quick — they\'re waiting for your thumb!',
+          ])
+        ),
+      'guessMe' => (
+          '💘 $name answered Guess Me',
+          _anyOf([
+            'Can you read their mind? Lock in your guess!',
+            'They think they know you… prove them right ♡',
+          ])
+        ),
+      _ => ('🎮 $name started a game!', 'Come play together ♡'),
+    };
+    await FcmService.send(
+      recipientToken: token,
+      title: title,
+      body: body,
+      data: {'type': 'game', 'coupleId': coupleId, 'route': '/games'},
+    );
+  }
+
   // ── Truth Jar game ────────────────────────────────────────────────────────
 
   Future<void> submitTruth(String coupleId, String date, String answer) async {
+    notifyGameStart(coupleId, 'truth').ignore();
     final ref = _db.collection('couples').doc(coupleId).collection('truths').doc(date);
     final doc = await ref.get();
     if (!doc.exists) {
@@ -850,12 +921,15 @@ class FirestoreService {
       .doc(game.date)
       .set(game.toMap());
 
-  Future<void> pickGameOption(String coupleId, String date, String option) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('games')
-      .doc(date)
-      .update({'picks.$_uid': option});
+  Future<void> pickGameOption(String coupleId, String date, String option) {
+    notifyGameStart(coupleId, 'wyr').ignore();
+    return _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('games')
+        .doc(date)
+        .update({'picks.$_uid': option});
+  }
 
   Stream<GameRound?> watchTodayGame(String coupleId) {
     final today = _todayKey();
@@ -879,6 +953,7 @@ class FirestoreService {
   }
 
   Future<void> startScribble(String coupleId, String word, String drawerId) {
+    notifyGameStart(coupleId, 'scribble').ignore();
     final key = _todayKey();
     return _db.collection('couples').doc(coupleId)
         .collection('scribble').doc(key)
@@ -948,13 +1023,15 @@ class FirestoreService {
   Stream<Map<String, dynamic>?> watchRps(String coupleId) =>
       _rpsRef(coupleId).snapshots().map((d) => d.exists ? d.data() : null);
 
-  Future<void> pickRps(String coupleId, String choice) =>
-      // Nested map + merge — dotted keys inside set() are NOT treated as
-      // paths (that only works in update()), so 'picks.$uid' never landed
-      // where the UI reads it.
-      _rpsRef(coupleId).set({
-        'picks': {_uid: choice}
-      }, SetOptions(merge: true));
+  Future<void> pickRps(String coupleId, String choice) {
+    notifyGameStart(coupleId, 'rps').ignore();
+    // Nested map + merge — dotted keys inside set() are NOT treated as
+    // paths (that only works in update()), so 'picks.$uid' never landed
+    // where the UI reads it.
+    return _rpsRef(coupleId).set({
+      'picks': {_uid: choice}
+    }, SetOptions(merge: true));
+  }
 
   /// Applies the round result to the scores and clears picks for the next
   /// round. Safe to call from either side — runs in a transaction.
@@ -990,11 +1067,14 @@ class FirestoreService {
       _touchRef(coupleId).snapshots().map((d) => d.exists ? d.data() : null);
 
   /// Heartbeat while the user is holding their thumb on the kiss pad.
-  Future<void> setTouching(String coupleId, bool touching) =>
-      _touchRef(coupleId).set(
-        {'touch_$_uid': touching ? Timestamp.now() : null},
-        SetOptions(merge: true),
-      );
+  Future<void> setTouching(String coupleId, bool touching) {
+    // The 10-min cooldown inside notifyGameStart absorbs the 2 s heartbeat.
+    if (touching) notifyGameStart(coupleId, 'kiss').ignore();
+    return _touchRef(coupleId).set(
+      {'touch_$_uid': touching ? Timestamp.now() : null},
+      SetOptions(merge: true),
+    );
+  }
 
   // ── Guess Me (how well do you know each other?) ───────────────────────────
 
@@ -1009,11 +1089,13 @@ class FirestoreService {
 
   /// Each partner submits their own truth and a guess about the other.
   Future<void> submitGuessMe(
-          String coupleId, String selfAnswer, String guess) =>
-      _guessMeRef(coupleId).set({
-        'self': {_uid: selfAnswer},
-        'guess': {_uid: guess},
-      }, SetOptions(merge: true));
+      String coupleId, String selfAnswer, String guess) {
+    notifyGameStart(coupleId, 'guessMe').ignore();
+    return _guessMeRef(coupleId).set({
+      'self': {_uid: selfAnswer},
+      'guess': {_uid: guess},
+    }, SetOptions(merge: true));
+  }
 
   // ── Places ────────────────────────────────────────────────────────────────
 
