@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/delight/delight.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -1667,9 +1668,14 @@ class _ThumbKissTabState extends ConsumerState<_ThumbKissTab> {
   Timer? _heartbeat;
   bool _wasKissing = false;
 
+  // Hold the kiss for 3 s together → the whole screen floods with hearts.
+  Timer? _bombTimer;
+  bool _bombed = false;
+
   @override
   void dispose() {
     _heartbeat?.cancel();
+    _bombTimer?.cancel();
     if (_iAmTouching) {
       ref.read(firestoreServiceProvider).setTouching(widget.coupleId, false);
     }
@@ -1717,6 +1723,18 @@ class _ThumbKissTabState extends ConsumerState<_ThumbKissTab> {
         final kissing = _iAmTouching && partnerTouching;
         if (kissing && !_wasKissing) {
           HapticFeedback.heavyImpact();
+          // Kiss just started — arm the 3-second heart bombardment.
+          _bombed = false;
+          _bombTimer?.cancel();
+          _bombTimer = Timer(const Duration(seconds: 3), () {
+            if (mounted && _wasKissing && !_bombed) {
+              _bombed = true;
+              DelightHaptics.heartbeat();
+              HeartBombardment.play(context);
+            }
+          });
+        } else if (!kissing && _wasKissing) {
+          _bombTimer?.cancel();
         }
         _wasKissing = kissing;
 

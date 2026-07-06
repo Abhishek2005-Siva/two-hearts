@@ -100,6 +100,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
           final docId = doc.id;
           if (docId == _lastSignalId) return; // already shown this signal
           final data = doc.data() as Map<String, dynamic>;
+          // Gifts are handled by the shell's present-box overlay.
+          if (data['type'] == 'gift') return;
           final uid = FirebaseAuth.instance.currentUser?.uid;
           // Only show if this signal was explicitly sent TO me,
           // or (legacy) it wasn't sent BY me.
@@ -1209,23 +1211,19 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
 
   Future<void> _sendWildIdea(List<String> pool) async {
     final coupleId = ref.read(coupleIdProvider);
-    if (coupleId == null) return;
+    final partnerUid = ref.read(partnerUserProvider).valueOrNull?.uid;
+    if (coupleId == null || partnerUid == null) return;
     final msg = pool[math.Random().nextInt(pool.length)];
     HapticFeedback.mediumImpact();
+    // Lands as a present box on the partner's screen — nothing pops up on
+    // the sender's side beyond this little send confirmation.
+    if (mounted) {
+      FloatingStickers.burst(context,
+          stickers: const ['🎁', '🎀'], count: 5);
+    }
     await ref
         .read(firestoreServiceProvider)
-        .sendThinkingOfYou(coupleId, message: msg);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Sent: "$msg"'),
-          backgroundColor: AppColors.bgCard,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
-    }
+        .sendGift(coupleId, toUid: partnerUid, message: msg);
   }
 
   Future<void> _loadNotificationPref() async {

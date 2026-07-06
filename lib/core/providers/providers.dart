@@ -150,6 +150,52 @@ final partnerOnlineProvider = StreamProvider<bool>((ref) {
   return ref.read(firestoreServiceProvider).watchPartnerOnline(coupleId, partnerUid);
 });
 
+// ── Partner Section (which tab they're in right now) ─────────────────────
+
+final partnerSectionProvider = StreamProvider<String?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final couple = ref.watch(coupleProvider).valueOrNull;
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  if (coupleId == null || couple == null || me == null) {
+    return Stream.value(null);
+  }
+  final partnerUid = couple.partnerUid(me.uid);
+  if (partnerUid.isEmpty) return Stream.value(null);
+  return ref
+      .read(firestoreServiceProvider)
+      .watchPartnerSection(coupleId, partnerUid);
+});
+
+// ── Unread chat messages (for the Chat tab badge) ─────────────────────────
+
+final unreadChatCountProvider = Provider<int>((ref) {
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  final messages = ref.watch(messagesProvider).valueOrNull;
+  if (me == null || messages == null) return 0;
+  return messages
+      .where((m) => m.senderId != me.uid && !m.readByPartner)
+      .length;
+});
+
+// ── Incoming Gift (wild idea present box) ─────────────────────────────────
+
+final incomingGiftProvider = StreamProvider<Map<String, dynamic>?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  if (coupleId == null || me == null) return Stream.value(null);
+  return FirebaseFirestore.instance
+      .collection('couples')
+      .doc(coupleId)
+      .collection('signals')
+      .where('type', isEqualTo: 'gift')
+      .where('toUid', isEqualTo: me.uid)
+      .limit(1)
+      .snapshots()
+      .map((snap) => snap.docs.isEmpty
+          ? null
+          : {'id': snap.docs.first.id, ...snap.docs.first.data()});
+});
+
 // ── Today's Game (Would You Rather) ──────────────────────────────────────
 
 final todayGameProvider = StreamProvider<GameRound?>((ref) {

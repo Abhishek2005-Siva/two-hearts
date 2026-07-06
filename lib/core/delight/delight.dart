@@ -199,6 +199,100 @@ class _StickerParticle {
   });
 }
 
+// ── Heart bombardment ─────────────────────────────────────────────────────
+// The whole screen fills with rising hearts — reserved for big shared
+// moments (a held thumb kiss). Deliberately over the top.
+
+class HeartBombardment {
+  HeartBombardment._();
+
+  static void play(BuildContext context) {
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _HeartRain(onDone: () => entry.remove()),
+    );
+    overlay.insert(entry);
+  }
+}
+
+class _HeartRain extends StatefulWidget {
+  final VoidCallback onDone;
+  const _HeartRain({required this.onDone});
+
+  @override
+  State<_HeartRain> createState() => _HeartRainState();
+}
+
+class _HeartRainState extends State<_HeartRain>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final List<_StickerParticle> _hearts;
+
+  @override
+  void initState() {
+    super.initState();
+    const emojis = ['💗', '💕', '❤️', '💞', '💖', '😘'];
+    final rng = math.Random();
+    _hearts = List.generate(42, (i) {
+      return _StickerParticle(
+        emoji: emojis[i % emojis.length],
+        dx: rng.nextDouble(), // 0–1 horizontal position
+        rise: 0.85 + rng.nextDouble() * 0.5, // speed multiplier
+        spin: (rng.nextDouble() - 0.5) * 1.6,
+        delay: rng.nextDouble() * 0.45,
+        size: 22 + rng.nextDouble() * 26,
+      );
+    });
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2800))
+      ..forward().whenComplete(widget.onDone);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, _) {
+          return Stack(
+            children: _hearts.map((p) {
+              final t =
+                  ((_ctrl.value - p.delay) / (1 - p.delay)).clamp(0.0, 1.0);
+              final y = size.height + 40 -
+                  (size.height + 120) * t * p.rise;
+              final x = p.dx * size.width +
+                  math.sin(t * 5 * math.pi + p.spin * 8) * 22;
+              return Positioned(
+                left: x,
+                top: y,
+                child: Opacity(
+                  opacity: t > 0.75
+                      ? ((1 - t) / 0.25).clamp(0.0, 1.0)
+                      : 1.0,
+                  child: Transform.rotate(
+                    angle: p.spin * t * 2,
+                    child:
+                        Text(p.emoji, style: TextStyle(fontSize: p.size)),
+                  ),
+                ),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    );
+  }
+}
+
 // ── Fly-away morph ────────────────────────────────────────────────────────
 // A signature "the thing left your phone" moment: an emoji grows from the
 // action point, then arcs up and off the screen. Used for sending a letter

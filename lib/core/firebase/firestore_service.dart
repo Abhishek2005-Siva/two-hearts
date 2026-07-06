@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -104,17 +105,61 @@ class FirestoreService {
 
   // ── Presence ──────────────────────────────────────────────────────────────
 
-  Future<void> setPresence(String coupleId) => _db
+  /// Heartbeat — called every ~30 s while the app is in the foreground, and
+  /// on every section (tab) change so the partner sees where we are.
+  Future<void> setPresence(String coupleId, {String? section}) => _db
       .collection('couples').doc(coupleId)
-      .update({'presence.$_uid': FieldValue.serverTimestamp()});
-
-  Stream<bool> watchPartnerOnline(String coupleId, String partnerUid) => _db
-      .collection('couples').doc(coupleId).snapshots()
-      .map((d) {
-        final ts = d.data()?['presence']?[partnerUid];
-        if (ts == null) return false;
-        return DateTime.now().difference((ts as Timestamp).toDate()).inMinutes < 5;
+      .update({
+        'presence.$_uid': FieldValue.serverTimestamp(),
+        'sections.$_uid': ?section,
       });
+
+  /// Called when the app goes to background — makes the partner's "online"
+  /// dot flip off immediately instead of waiting for the timeout.
+  Future<void> clearPresence(String coupleId) => _db
+      .collection('couples').doc(coupleId)
+      .update({
+        'presence.$_uid': FieldValue.delete(),
+        'sections.$_uid': FieldValue.delete(),
+      });
+
+  /// Online = heartbeat within the last 90 s. Re-evaluates on a local timer
+  /// too, so the dot turns off even when no further doc updates arrive.
+  Stream<bool> watchPartnerOnline(String coupleId, String partnerUid) {
+    Timestamp? last;
+    bool compute() =>
+        last != null &&
+        DateTime.now().difference(last!.toDate()).inSeconds < 90;
+    StreamSubscription? sub;
+    Timer? timer;
+    late final StreamController<bool> ctrl;
+    ctrl = StreamController<bool>(
+      onListen: () {
+        sub = _db
+            .collection('couples')
+            .doc(coupleId)
+            .snapshots()
+            .listen((d) {
+          last = d.data()?['presence']?[partnerUid] as Timestamp?;
+          if (!ctrl.isClosed) ctrl.add(compute());
+        });
+        timer = Timer.periodic(const Duration(seconds: 20), (_) {
+          if (!ctrl.isClosed) ctrl.add(compute());
+        });
+      },
+      onCancel: () {
+        sub?.cancel();
+        timer?.cancel();
+      },
+    );
+    return ctrl.stream.distinct();
+  }
+
+  /// Which section (room / chat / memory / together / you) the partner is
+  /// currently in — meaningful only while they're online.
+  Stream<String?> watchPartnerSection(String coupleId, String partnerUid) =>
+      _db.collection('couples').doc(coupleId).snapshots().map(
+          (d) => d.data()?['sections']?[partnerUid] as String?);
 
   // ── Messages ──────────────────────────────────────────────────────────────
 
@@ -345,6 +390,36 @@ class FirestoreService {
             'Somewhere out there, someone smiled thinking of you',
             'Tiny love delivery — sign here: ♡',
           ]),
+      data: {'type': 'signal', 'coupleId': coupleId, 'route': '/room'},
+    );
+  }
+
+  /// A "wild idea" gift — lands on the partner's screen as a present box
+  /// they unwrap into a letter. Never shown on the sender's side.
+  Future<void> sendGift(String coupleId,
+      {required String toUid, required String message}) async {
+    await _db.collection('couples').doc(coupleId).collection('signals').add({
+      'type': 'gift',
+      'fromUid': _uid,
+      'toUid': toUid,
+      'message': message,
+      'sentAt': FieldValue.serverTimestamp(),
+    });
+    final token = (await _db.collection('users').doc(toUid).get())
+        .data()?['fcmToken'] as String?;
+    final name = await _myFirstName();
+    await FcmService.send(
+      recipientToken: token,
+      title: _anyOf([
+        '🎁 $name left you a present!',
+        '🎁 Special delivery from $name',
+        '🎀 Something from $name is waiting…',
+      ]),
+      body: _anyOf([
+        'Open the app to unwrap it ♡',
+        'No peeking — come unwrap it!',
+        'A little surprise, wrapped with love',
+      ]),
       data: {'type': 'signal', 'coupleId': coupleId, 'route': '/room'},
     );
   }
@@ -874,8 +949,12 @@ class FirestoreService {
       _rpsRef(coupleId).snapshots().map((d) => d.exists ? d.data() : null);
 
   Future<void> pickRps(String coupleId, String choice) =>
-      _rpsRef(coupleId).set({'picks.$_uid': choice},
-          SetOptions(mergeFields: ['picks.$_uid']));
+      // Nested map + merge — dotted keys inside set() are NOT treated as
+      // paths (that only works in update()), so 'picks.$uid' never landed
+      // where the UI reads it.
+      _rpsRef(coupleId).set({
+        'picks': {_uid: choice}
+      }, SetOptions(merge: true));
 
   /// Applies the round result to the scores and clears picks for the next
   /// round. Safe to call from either side — runs in a transaction.
@@ -932,9 +1011,9 @@ class FirestoreService {
   Future<void> submitGuessMe(
           String coupleId, String selfAnswer, String guess) =>
       _guessMeRef(coupleId).set({
-        'self.$_uid': selfAnswer,
-        'guess.$_uid': guess,
-      }, SetOptions(mergeFields: ['self.$_uid', 'guess.$_uid']));
+        'self': {_uid: selfAnswer},
+        'guess': {_uid: guess},
+      }, SetOptions(merge: true));
 
   // ── Places ────────────────────────────────────────────────────────────────
 

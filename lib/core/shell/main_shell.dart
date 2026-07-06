@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:vibration/vibration.dart';
+import '../delight/delight.dart';
 import '../delight/presence_layer.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
@@ -16,8 +21,20 @@ class MainShell extends ConsumerStatefulWidget {
   ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends ConsumerState<MainShell> {
+class _MainShellState extends ConsumerState<MainShell>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   bool _dialogShowing = false;
+
+  // Presence heartbeat — writes "I'm online, in this section" every 30 s
+  // and on every tab change; cleared when the app goes to background.
+  Timer? _presenceTimer;
+  String _mySection = 'room';
+
+  // Paw-walk transition when the partner moves between sections.
+  late final AnimationController _pawCtrl;
+  int? _pawFrom;
+  int? _pawTo;
+  String? _lastPartnerSection;
 
   static const _tabs = [
     _Tab(icon: Icons.house_rounded, label: 'Home', path: '/room'),
@@ -27,12 +44,81 @@ class _MainShellState extends ConsumerState<MainShell> {
     _Tab(icon: Icons.settings_rounded, label: 'Settings', path: '/you'),
   ];
 
+  static int? _sectionIndex(String? section) {
+    if (section == null) return null;
+    final i = _tabs.indexWhere((t) => t.path == '/$section');
+    return i == -1 ? null : i;
+  }
+
   int _currentIndex(BuildContext context) {
     final loc = GoRouterState.of(context).matchedLocation;
     for (int i = 0; i < _tabs.length; i++) {
       if (loc.startsWith(_tabs[i].path)) return i;
     }
     return 0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _pawCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1600));
+    _startHeartbeat();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _presenceTimer?.cancel();
+    _pawCtrl.dispose();
+    super.dispose();
+  }
+
+  void _startHeartbeat() {
+    _writePresence();
+    _presenceTimer?.cancel();
+    _presenceTimer = Timer.periodic(
+        const Duration(seconds: 30), (_) => _writePresence());
+  }
+
+  void _writePresence() {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
+    ref
+        .read(firestoreServiceProvider)
+        .setPresence(coupleId, section: _mySection)
+        .ignore();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final coupleId = ref.read(coupleIdProvider);
+    if (state == AppLifecycleState.resumed) {
+      _startHeartbeat();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _presenceTimer?.cancel();
+      if (coupleId != null) {
+        ref.read(firestoreServiceProvider).clearPresence(coupleId).ignore();
+      }
+    }
+  }
+
+  void _onPartnerSectionChanged(String? section, bool online) {
+    if (section == _lastPartnerSection) return;
+    final from = _sectionIndex(_lastPartnerSection);
+    final to = _sectionIndex(section);
+    _lastPartnerSection = section;
+    if (!online || from == null || to == null || from == to) return;
+    if (ref.read(calmModeProvider)) return;
+    setState(() {
+      _pawFrom = from;
+      _pawTo = to;
+    });
+    _pawCtrl.forward(from: 0).whenComplete(() {
+      if (mounted) setState(() => _pawFrom = null);
+    });
   }
 
   void _showIncomingCall(BuildContext context, Map<String, dynamic> call) {
@@ -83,6 +169,26 @@ class _MainShellState extends ConsumerState<MainShell> {
     final accent = ref.watch(accentColorProvider);
     final idx = _currentIndex(context);
 
+    // Keep my presence section in sync with the tab I'm on.
+    final section = _tabs[idx].path.substring(1);
+    if (section != _mySection) {
+      _mySection = section;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _writePresence());
+    }
+
+    final partnerOnline = ref.watch(partnerOnlineProvider).valueOrNull ?? false;
+    final partnerSection = ref.watch(partnerSectionProvider).valueOrNull;
+    final partnerAvatar =
+        ref.watch(partnerUserProvider).valueOrNull?.avatarUrl;
+    final unread = ref.watch(unreadChatCountProvider);
+    final partnerTabIdx =
+        partnerOnline ? _sectionIndex(partnerSection) : null;
+
+    ref.listen<AsyncValue<String?>>(partnerSectionProvider, (_, next) {
+      _onPartnerSectionChanged(next.valueOrNull,
+          ref.read(partnerOnlineProvider).valueOrNull ?? false);
+    });
+
     ref.listen<AsyncValue<Map<String, dynamic>?>>(
       incomingCallProvider,
       (_, next) {
@@ -104,6 +210,7 @@ class _MainShellState extends ConsumerState<MainShell> {
         children: [
           widget.child,
           const PresenceLayer(),
+          const _GiftOverlay(),
         ],
       ),
       bottomNavigationBar: Container(
@@ -113,54 +220,365 @@ class _MainShellState extends ConsumerState<MainShell> {
         ),
         child: SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(_tabs.length, (i) {
-                final selected = idx == i;
-                return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => context.go(_tabs[i].path),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? accent.withValues(alpha: 0.12)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: List.generate(_tabs.length, (i) {
+                    final selected = idx == i;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => context.go(_tabs[i].path),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? accent.withValues(alpha: 0.12)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Icon(
+                                  _tabs[i].icon,
+                                  color: selected
+                                      ? accent
+                                      : AppColors.textMuted,
+                                  size: 22,
+                                ),
+                                // Partner's pfp — shows on the tab they're
+                                // in right now, only while online.
+                                if (partnerTabIdx == i)
+                                  Positioned(
+                                    top: -10,
+                                    right: -12,
+                                    child: _PartnerDot(
+                                        avatarUrl: partnerAvatar,
+                                        accent: accent),
+                                  ),
+                                // Unread badge on the Chat tab: 1…4, then 4+
+                                if (i == 1 && unread > 0)
+                                  Positioned(
+                                    top: -8,
+                                    left: -14,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 5, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.rose,
+                                        borderRadius:
+                                            BorderRadius.circular(9),
+                                      ),
+                                      child: Text(
+                                        unread > 4 ? '4+' : '$unread',
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w800),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _tabs[i].label,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                                color:
+                                    selected ? accent : AppColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+              // Paw prints walking from the partner's old tab to the new one
+              if (_pawFrom != null && _pawTo != null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: _PawWalk(
+                      ctrl: _pawCtrl,
+                      fromIdx: _pawFrom!,
+                      toIdx: _pawTo!,
+                      tabCount: _tabs.length,
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _tabs[i].icon,
-                          color: selected ? accent : AppColors.textMuted,
-                          size: 22,
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          _tabs[i].label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: selected
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                            color: selected ? accent : AppColors.textMuted,
-                          ),
-                        ),
-                      ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Partner presence dot (mini pfp on the tab they're in) ─────────────────
+
+class _PartnerDot extends StatelessWidget {
+  final String? avatarUrl;
+  final Color accent;
+  const _PartnerDot({required this.avatarUrl, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 17,
+      height: 17,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: accent, width: 1.4),
+        color: AppColors.bgCardLight,
+        boxShadow: [
+          BoxShadow(
+              color: accent.withValues(alpha: 0.5), blurRadius: 6),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: avatarUrl != null && avatarUrl!.isNotEmpty
+          ? CachedNetworkImage(imageUrl: avatarUrl!, fit: BoxFit.cover)
+          : const Center(
+              child: Text('🙂', style: TextStyle(fontSize: 9))),
+    );
+  }
+}
+
+// ── Paw walk (partner moved from one section to another) ─────────────────
+
+class _PawWalk extends StatelessWidget {
+  final AnimationController ctrl;
+  final int fromIdx;
+  final int toIdx;
+  final int tabCount;
+
+  const _PawWalk({
+    required this.ctrl,
+    required this.fromIdx,
+    required this.toIdx,
+    required this.tabCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const pawCount = 6;
+    return AnimatedBuilder(
+      animation: ctrl,
+      builder: (context, _) {
+        final t = ctrl.value;
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final x0 = w * (fromIdx + 0.5) / tabCount;
+            final x1 = w * (toIdx + 0.5) / tabCount;
+            final dir = x1 >= x0 ? 1.0 : -1.0;
+            return Stack(
+              clipBehavior: Clip.none,
+              children: List.generate(pawCount, (k) {
+                final f = k / (pawCount - 1);
+                // Each print appears in sequence, then fades as the next lands.
+                final appear = f * 0.55;
+                final local = ((t - appear) / 0.45).clamp(0.0, 1.0);
+                final opacity = local == 0
+                    ? 0.0
+                    : (local < 0.3
+                            ? local / 0.3
+                            : (1 - (local - 0.3) / 0.7)) *
+                        0.45;
+                if (opacity <= 0) return const SizedBox.shrink();
+                final x = x0 + (x1 - x0) * f;
+                // Alternate left/right feet like a real walk.
+                final side = k.isEven ? -7.0 : 7.0;
+                return Positioned(
+                  left: x - 11,
+                  top: 14 + side,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: Transform.rotate(
+                      angle: dir * math.pi / 2,
+                      child: Image.asset(
+                        'assets/images/paw_print.png',
+                        width: 22,
+                        height: 22,
+                      ),
                     ),
                   ),
                 );
               }),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ── Gift overlay (wild idea present box → letter) ─────────────────────────
+
+class _GiftOverlay extends ConsumerStatefulWidget {
+  const _GiftOverlay();
+
+  @override
+  ConsumerState<_GiftOverlay> createState() => _GiftOverlayState();
+}
+
+class _GiftOverlayState extends ConsumerState<_GiftOverlay> {
+  bool _opening = false;
+
+  Future<void> _openGift(Map<String, dynamic> gift) async {
+    if (_opening) return;
+    setState(() => _opening = true);
+    final coupleId = ref.read(coupleIdProvider);
+    final partnerName = ref
+            .read(partnerUserProvider)
+            .valueOrNull
+            ?.displayLabel
+            .split(' ')
+            .first ??
+        'Your person';
+    DelightHaptics.crack();
+    HeartBombardment.play(context);
+    // Consume the signal so it never re-appears.
+    if (coupleId != null) {
+      ref
+          .read(firestoreServiceProvider)
+          .deleteSignal(coupleId, gift['id'] as String)
+          .ignore();
+    }
+    final message = (gift['message'] as String?) ?? '♡';
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.7),
+      builder: (_) => _GiftLetterDialog(
+          message: message, fromName: partnerName),
+    );
+    if (mounted) setState(() => _opening = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gift = ref.watch(incomingGiftProvider).valueOrNull;
+    if (gift == null || _opening) return const SizedBox.shrink();
+
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.55),
+        child: Center(
+          child: GestureDetector(
+            onTap: () => _openGift(gift),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('🎁', style: TextStyle(fontSize: 110))
+                    .animate(onPlay: (c) => c.repeat(reverse: true))
+                    .scale(
+                        begin: const Offset(1, 1),
+                        end: const Offset(1.08, 1.08),
+                        duration: 700.ms,
+                        curve: Curves.easeInOut)
+                    .shake(hz: 2, rotation: 0.03, duration: 1400.ms),
+                const SizedBox(height: 18),
+                const Text(
+                  'A present just for you!',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Tap to unwrap ♡',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+class _GiftLetterDialog extends StatelessWidget {
+  final String message;
+  final String fromName;
+  const _GiftLetterDialog({required this.message, required this.fromName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(26, 30, 26, 24),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF8EE),
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 30,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Center(
+                child: Text('💌', style: TextStyle(fontSize: 34))),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF4A3428),
+                fontSize: 17,
+                height: 1.6,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                '— $fromName ♡',
+                style: const TextStyle(
+                    color: Color(0xFF8A6A50),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Keep it forever ♡',
+                    style: TextStyle(
+                        color: Color(0xFFD4667A),
+                        fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ).animate().scale(
+        begin: const Offset(0.7, 0.7),
+        curve: Curves.easeOutBack,
+        duration: 350.ms);
   }
 }
 
