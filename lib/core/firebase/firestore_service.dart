@@ -49,7 +49,42 @@ class FirestoreService {
     return List.generate(6, (_) => chars[rng.nextInt(chars.length)]).join();
   }
 
+  /// Returns an invite code for this user — reusing any couple they already
+  /// belong to instead of minting a new one on every screen open.
+  ///
+  /// Returns '' when the user turns out to be already paired: that happens
+  /// when the partner redeemed an older code while this user's doc pointed
+  /// at a newer orphaned invite. In that case the coupleId is repaired and
+  /// the router redirects away from the pairing screen on its own.
   Future<String> createInviteCode() async {
+    final mine = await _db
+        .collection('couples')
+        .where('members', arrayContains: _uid)
+        .get();
+
+    QueryDocumentSnapshot<Map<String, dynamic>>? openInvite;
+    for (final d in mine.docs) {
+      final members = List<String>.from(d.data()['members'] ?? []);
+      if (members.length >= 2) {
+        // Already paired — heal the pointer and bail out.
+        await _db.collection('users').doc(_uid).update({'coupleId': d.id});
+        return '';
+      }
+      if ((d.data()['inviteCode'] as String?)?.isNotEmpty == true) {
+        openInvite ??= d;
+      }
+    }
+
+    if (openInvite != null) {
+      // Reuse the existing open invite so the code stays stable across
+      // screen opens and the shared code always matches this user's couple.
+      await _db
+          .collection('users')
+          .doc(_uid)
+          .update({'coupleId': openInvite.id});
+      return openInvite.data()['inviteCode'] as String;
+    }
+
     final code = _generateInviteCode();
     final coupleRef = _db.collection('couples').doc();
     await coupleRef.set({

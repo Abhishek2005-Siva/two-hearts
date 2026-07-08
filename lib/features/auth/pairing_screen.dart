@@ -45,7 +45,11 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     setState(() { _codeLoading = true; });
     try {
       final code = await FirestoreService().createInviteCode();
-      if (mounted) setState(() => _generatedCode = code);
+      // '' means we were already paired all along — the coupleId was just
+      // repaired and the router will redirect away momentarily.
+      if (mounted) {
+        setState(() => _generatedCode = code.isEmpty ? null : code);
+      }
     } catch (e) {
       if (mounted) setState(() => _generatedCode = null);
     } finally {
