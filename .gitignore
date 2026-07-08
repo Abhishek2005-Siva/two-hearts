@@ -49,3 +49,6 @@ android/app/google-services.json
 assets/config/service_account.json
 functions/node_modules/
 /android/.kotlin/
+
+# Android module build output
+android/build/
