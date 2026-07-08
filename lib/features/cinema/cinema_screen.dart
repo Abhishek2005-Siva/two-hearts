@@ -9,11 +9,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
+import 'screen_share_screen.dart';
 
 /// Watch Together — one shared video, play/pause/seek mirrored between the
 /// two phones through Firestore. Whoever touches the controls drives; the
@@ -102,6 +104,33 @@ class _MovieNightLandingState extends ConsumerState<_MovieNightLanding> {
         );
       }
     }
+  }
+
+  Future<void> _startScreenShare() async {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
+    final partnerName = ref
+        .read(partnerUserProvider)
+        .valueOrNull
+        ?.displayName
+        .split(' ')
+        .first;
+    final callId = const Uuid().v4();
+    // Nudge the partner so the incoming prompt fires even in the background.
+    ref
+        .read(firestoreServiceProvider)
+        .notifyScreenShare(coupleId)
+        .ignore();
+    if (!mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => ScreenShareScreen(
+        coupleId: coupleId,
+        isSharer: true,
+        callId: callId,
+        partnerName: partnerName,
+      ),
+    ));
   }
 
   Future<void> _start(String url, String title) async {
@@ -251,6 +280,15 @@ class _MovieNightLandingState extends ConsumerState<_MovieNightLanding> {
                               accent: accent,
                               onTap: _startWithUpload,
                             ).animate().fadeIn(delay: 220.ms).slideX(begin: -0.04),
+                            const SizedBox(height: 14),
+                            _SourceButton(
+                              emoji: '🖥️',
+                              title: 'Share my screen',
+                              subtitle:
+                                  'Mirror your phone live — watch anything together',
+                              accent: accent,
+                              onTap: _startScreenShare,
+                            ).animate().fadeIn(delay: 320.ms).slideX(begin: -0.04),
                             const SizedBox(height: 20),
                             const Text(
                               'Starting a movie sends them a little\n'

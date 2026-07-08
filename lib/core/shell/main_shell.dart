@@ -12,6 +12,7 @@ import '../delight/presence_layer.dart';
 import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../../features/chat/video_call_screen.dart';
+import '../../features/cinema/screen_share_screen.dart';
 
 class MainShell extends ConsumerStatefulWidget {
   final Widget child;
@@ -128,6 +129,7 @@ class _MainShellState extends ConsumerState<MainShell>
     final coupleId = ref.read(coupleIdProvider);
     final partnerName =
         ref.read(partnerUserProvider).valueOrNull?.displayName ?? 'Your Person';
+    final isScreen = call['mode'] == 'screen';
 
     showDialog(
       context: context,
@@ -135,18 +137,26 @@ class _MainShellState extends ConsumerState<MainShell>
       barrierColor: Colors.black.withValues(alpha: 0.75),
       builder: (dialogCtx) => _IncomingCallDialog(
         partnerName: partnerName,
+        isScreenShare: isScreen,
         onAccept: () {
           Navigator.of(dialogCtx).pop();
           _dialogShowing = false;
           if (coupleId == null || !mounted) return;
           Navigator.of(context).push(MaterialPageRoute(
             fullscreenDialog: true,
-            builder: (_) => VideoCallScreen(
-              coupleId: coupleId,
-              callId: call['id'] as String,
-              isCaller: false,
-              partnerName: partnerName,
-            ),
+            builder: (_) => isScreen
+                ? ScreenShareScreen(
+                    coupleId: coupleId,
+                    callId: call['id'] as String,
+                    isSharer: false,
+                    partnerName: partnerName,
+                  )
+                : VideoCallScreen(
+                    coupleId: coupleId,
+                    callId: call['id'] as String,
+                    isCaller: false,
+                    partnerName: partnerName,
+                  ),
           ));
         },
         onDecline: () {
@@ -586,11 +596,13 @@ class _GiftLetterDialog extends StatelessWidget {
 
 class _IncomingCallDialog extends StatefulWidget {
   final String partnerName;
+  final bool isScreenShare;
   final VoidCallback onAccept;
   final VoidCallback onDecline;
 
   const _IncomingCallDialog({
     required this.partnerName,
+    this.isScreenShare = false,
     required this.onAccept,
     required this.onDecline,
   });
@@ -663,14 +675,20 @@ class _IncomingCallDialogState extends State<_IncomingCallDialog>
                     colors: [Color(0xFFE8896A), Color(0xFFD4667A)],
                   ),
                 ),
-                child: const Icon(Icons.videocam_rounded,
-                    color: Colors.white, size: 38),
+                child: Icon(
+                    widget.isScreenShare
+                        ? Icons.screen_share_rounded
+                        : Icons.videocam_rounded,
+                    color: Colors.white,
+                    size: 38),
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Incoming video call',
-              style: TextStyle(
+            Text(
+              widget.isScreenShare
+                  ? 'wants to share their screen'
+                  : 'Incoming video call',
+              style: const TextStyle(
                   color: Colors.white54,
                   fontSize: 12,
                   letterSpacing: 0.8),
@@ -695,8 +713,10 @@ class _IncomingCallDialogState extends State<_IncomingCallDialog>
                   onTap: widget.onDecline,
                 ),
                 _CallBtn(
-                  icon: Icons.videocam_rounded,
-                  label: 'Accept',
+                  icon: widget.isScreenShare
+                      ? Icons.visibility_rounded
+                      : Icons.videocam_rounded,
+                  label: widget.isScreenShare ? 'Watch' : 'Accept',
                   color: const Color(0xFF43A047),
                   onTap: widget.onAccept,
                 ),

@@ -1301,6 +1301,23 @@ class FirestoreService {
     );
   }
 
+  /// Nudges the partner that a live screen share is starting, so the
+  /// incoming prompt fires even if their app is backgrounded.
+  Future<void> notifyScreenShare(String coupleId) async {
+    final token = await _partnerToken(coupleId);
+    final name = await _myFirstName();
+    await FcmService.send(
+      recipientToken: token,
+      title: _anyOf([
+        '🖥️ $name is sharing their screen',
+        '🍿 $name wants to watch together',
+        '🖥️ Come see what $name is showing you',
+      ]),
+      body: 'Open the app to watch live ♡',
+      data: {'type': 'cinema', 'coupleId': coupleId, 'route': '/cinema'},
+    );
+  }
+
   Future<void> updateCinemaPlayback(String coupleId,
           {required bool isPlaying, required int positionMs}) =>
       _cinemaDoc(coupleId).update({
