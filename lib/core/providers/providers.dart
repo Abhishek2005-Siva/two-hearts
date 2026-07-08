@@ -294,6 +294,14 @@ final cinemaSessionProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   return ref.read(firestoreServiceProvider).watchCinemaSession(coupleId);
 });
 
+// ── Listen Together (Spotify) ────────────────────────────────────────────
+
+final listenSessionProvider = StreamProvider<Map<String, dynamic>?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return Stream.value(null);
+  return ref.read(firestoreServiceProvider).watchListenSession(coupleId);
+});
+
 // ── Theme Mode (persisted across restarts) ───────────────────────────────
 
 final themeModeProvider =

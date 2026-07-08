@@ -1341,6 +1341,86 @@ class FirestoreService {
           .snapshots()
           .map((s) => s.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
+  // ── Listen Together (Spotify) ─────────────────────────────────────────────
+
+  DocumentReference<Map<String, dynamic>> _listenDoc(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('listen')
+      .doc('session');
+
+  Stream<Map<String, dynamic>?> watchListenSession(String coupleId) =>
+      _listenDoc(coupleId).snapshots().map((s) => s.data());
+
+  /// Marks this user as present in the listening room (heartbeat).
+  Future<void> joinListen(String coupleId) async {
+    await _listenDoc(coupleId).set({
+      'present.$_uid': Timestamp.now(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> listenHeartbeat(String coupleId) =>
+      _listenDoc(coupleId).set({
+        'present.$_uid': Timestamp.now(),
+      }, SetOptions(merge: true));
+
+  Future<void> leaveListen(String coupleId) => _listenDoc(coupleId)
+      .set({'present.$_uid': FieldValue.delete()}, SetOptions(merge: true));
+
+  /// Sets the shared track and notifies the partner it's time to tune in.
+  Future<void> setListenTrack(
+    String coupleId, {
+    required String uri,
+    required String name,
+    required String artist,
+    required String imageUrl,
+    required int durationMs,
+    bool notify = true,
+  }) async {
+    await _listenDoc(coupleId).set({
+      'uri': uri,
+      'name': name,
+      'artist': artist,
+      'imageUrl': imageUrl,
+      'durationMs': durationMs,
+      'isPlaying': true,
+      'positionMs': 0,
+      'updatedBy': _uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'present.$_uid': Timestamp.now(),
+    }, SetOptions(merge: true));
+    if (notify) {
+      final token = await _partnerToken(coupleId);
+      final myName = await _myFirstName();
+      await FcmService.send(
+        recipientToken: token,
+        title: _anyOf([
+          '🎧 $myName started a song for you two',
+          '🎶 $myName wants to listen together',
+          '🎧 Press play with $myName',
+        ]),
+        body: name.isEmpty ? 'Tap to tune in ♡' : 'Now playing: $name — $artist',
+        data: {'type': 'listen', 'coupleId': coupleId, 'route': '/listen'},
+      );
+    }
+  }
+
+  /// Mirrors play/pause + scrub position to the partner.
+  Future<void> updateListenPlayback(
+    String coupleId, {
+    required bool isPlaying,
+    required int positionMs,
+  }) =>
+      _listenDoc(coupleId).set({
+        'isPlaying': isPlaying,
+        'positionMs': positionMs,
+        'updatedBy': _uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+  Future<void> endListenSession(String coupleId) =>
+      _listenDoc(coupleId).delete();
+
   // ── Avatar ────────────────────────────────────────────────────────────────
 
   Future<void> updateAvatarConfig(String uid, AvatarConfig config) =>

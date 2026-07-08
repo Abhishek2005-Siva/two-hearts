@@ -537,6 +537,36 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      // Listen Together — tap to open the shared Spotify room
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          context.push('/listen');
+                        },
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          margin: const EdgeInsets.only(right: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1DB954),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF1DB954)
+                                    .withValues(alpha: 0.5),
+                                blurRadius: 12,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.music_note_rounded,
+                              color: Colors.black, size: 20),
+                        ),
+                      ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(
+                            begin: const Offset(1, 1),
+                            end: const Offset(1.08, 1.08),
+                            duration: 1200.ms,
+                            curve: Curves.easeInOut,
+                          ),
                       IconButton(
                         icon: const Icon(Icons.tune_rounded, color: Colors.white),
                         onPressed: () => _showSettings(context),
