@@ -2,18 +2,19 @@
 ///
 /// SETUP (one-time, done by you):
 ///   1. Go to https://developer.spotify.com/dashboard and create an app.
-///   2. Copy its Client ID into [clientId] below.
-///   3. In the app's settings, add a Redirect URI that matches
-///      [redirectUri] exactly (e.g. `twohearts://spotify-callback`).
-///   4. For Android, add your app's SHA-1 fingerprint and the package name
-///      `com.twohearts.two_hearts` under "Android Packages" in the Spotify
-///      dashboard. (The redirect scheme `twohearts://` is already registered
-///      in AndroidManifest.xml.)
-///   5. Both partners must have Spotify **Premium** and the Spotify app
-///      installed — full playback is Premium-only.
+///   2. Copy its Client ID and build with it (see below).
+///   3. In the app's settings, add this exact Redirect URI:
+///        twohearts-spotify://callback
+///   4. Both partners need Spotify **Premium** with the Spotify app
+///      installed and opened at least once (Web API playback control needs
+///      an active Spotify device). Playback control is Premium-only.
 ///
-/// Until [clientId] is filled in, the Listen Together screen shows a friendly
-/// "not set up yet" notice instead of trying to connect.
+/// Provide the Client ID at build time:
+///   flutter run --dart-define=SPOTIFY_CLIENT_ID=xxxxxxxx
+///
+/// Until it's set, the Listen Together screen shows a friendly setup notice
+/// instead of trying to connect. No proprietary native SDK is required — we
+/// talk to the Spotify Web API over HTTPS with an OAuth (PKCE) token.
 class SpotifyConfig {
   /// Your Spotify app's Client ID. Leave empty to disable the feature.
   static const String clientId = String.fromEnvironment(
@@ -22,15 +23,20 @@ class SpotifyConfig {
   );
 
   /// Must match a Redirect URI registered in your Spotify dashboard.
-  static const String redirectUri = String.fromEnvironment(
-    'SPOTIFY_REDIRECT_URI',
-    defaultValue: 'twohearts://spotify-callback',
-  );
+  static const String redirectUri = 'twohearts-spotify://callback';
 
-  /// Scopes we need: control playback + read the currently playing track.
-  static const String scope =
-      'app-remote-control,user-modify-playback-state,'
-      'user-read-playback-state,user-read-currently-playing,streaming';
+  /// The custom scheme part of [redirectUri], used by flutter_web_auth_2.
+  static const String callbackScheme = 'twohearts-spotify';
+
+  /// Scopes: control playback + read what's currently playing.
+  static const List<String> scopes = [
+    'user-modify-playback-state',
+    'user-read-playback-state',
+    'user-read-currently-playing',
+    'streaming',
+  ];
+
+  static String get scopeString => scopes.join(' ');
 
   static bool get isConfigured => clientId.isNotEmpty;
 }

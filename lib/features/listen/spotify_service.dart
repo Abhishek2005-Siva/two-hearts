@@ -1,0 +1,254 @@
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'spotify_config.dart';
+
+/// Thin wrapper around the Spotify Web API + OAuth (Authorization Code with
+/// PKCE). No proprietary native SDK — just HTTPS. Tokens are cached in
+/// SharedPreferences and auto-refreshed.
+class SpotifyService {
+  SpotifyService._();
+  static final SpotifyService instance = SpotifyService._();
+
+  static const _kAccess = 'spotify_access_token';
+  static const _kRefresh = 'spotify_refresh_token';
+  static const _kExpiry = 'spotify_expiry_ms';
+
+  String? _accessToken;
+  String? _refreshToken;
+  DateTime _expiry = DateTime.fromMillisecondsSinceEpoch(0);
+
+  bool get isSignedIn => _refreshToken != null;
+
+  // ── Auth ──────────────────────────────────────────────────────────────
+
+  Future<void> loadCached() async {
+    final p = await SharedPreferences.getInstance();
+    _accessToken = p.getString(_kAccess);
+    _refreshToken = p.getString(_kRefresh);
+    _expiry = DateTime.fromMillisecondsSinceEpoch(p.getInt(_kExpiry) ?? 0);
+  }
+
+  Future<void> _persist() async {
+    final p = await SharedPreferences.getInstance();
+    if (_accessToken != null) await p.setString(_kAccess, _accessToken!);
+    if (_refreshToken != null) await p.setString(_kRefresh, _refreshToken!);
+    await p.setInt(_kExpiry, _expiry.millisecondsSinceEpoch);
+  }
+
+  Future<void> signOut() async {
+    _accessToken = _refreshToken = null;
+    _expiry = DateTime.fromMillisecondsSinceEpoch(0);
+    final p = await SharedPreferences.getInstance();
+    await p.remove(_kAccess);
+    await p.remove(_kRefresh);
+    await p.remove(_kExpiry);
+  }
+
+  String _randomString(int len) {
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    final rng = Random.secure();
+    return List.generate(len, (_) => chars[rng.nextInt(chars.length)]).join();
+  }
+
+  String _b64url(List<int> bytes) => base64Url.encode(bytes).replaceAll('=', '');
+
+  /// Runs the full browser OAuth flow. Throws on failure/cancel.
+  Future<void> signIn() async {
+    final verifier = _randomString(96);
+    final challenge = _b64url(sha256.convert(utf8.encode(verifier)).bytes);
+
+    final authUrl = Uri.https('accounts.spotify.com', '/authorize', {
+      'client_id': SpotifyConfig.clientId,
+      'response_type': 'code',
+      'redirect_uri': SpotifyConfig.redirectUri,
+      'code_challenge_method': 'S256',
+      'code_challenge': challenge,
+      'scope': SpotifyConfig.scopeString,
+    }).toString();
+
+    final result = await FlutterWebAuth2.authenticate(
+      url: authUrl,
+      callbackUrlScheme: SpotifyConfig.callbackScheme,
+    );
+    final code = Uri.parse(result).queryParameters['code'];
+    final err = Uri.parse(result).queryParameters['error'];
+    if (err != null) throw Exception('auth denied: $err');
+    if (code == null) throw Exception('auth failed: no code');
+
+    final res = await http.post(
+      Uri.parse('https://accounts.spotify.com/api/token'),
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: {
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': SpotifyConfig.redirectUri,
+        'client_id': SpotifyConfig.clientId,
+        'code_verifier': verifier,
+      },
+    );
+    if (res.statusCode != 200) {
+      throw Exception('token exchange failed: ${res.body}');
+    }
+    _storeToken(jsonDecode(res.body) as Map<String, dynamic>);
+    await _persist();
+  }
+
+  Future<void> _refresh() async {
+    if (_refreshToken == null) throw Exception('not signed in');
+    final res = await http.post(
+      Uri.parse('https://accounts.spotify.com/api/token'),
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: {
+        'grant_type': 'refresh_token',
+        'refresh_token': _refreshToken!,
+        'client_id': SpotifyConfig.clientId,
+      },
+    );
+    if (res.statusCode != 200) {
+      throw Exception('token refresh failed: ${res.body}');
+    }
+    _storeToken(jsonDecode(res.body) as Map<String, dynamic>);
+    await _persist();
+  }
+
+  void _storeToken(Map<String, dynamic> j) {
+    _accessToken = j['access_token'] as String?;
+    if (j['refresh_token'] != null) _refreshToken = j['refresh_token'] as String;
+    final expiresIn = (j['expires_in'] as num?)?.toInt() ?? 3600;
+    _expiry = DateTime.now().add(Duration(seconds: expiresIn - 60));
+  }
+
+  Future<String> _validToken() async {
+    if (_accessToken == null || DateTime.now().isAfter(_expiry)) {
+      await _refresh();
+    }
+    return _accessToken!;
+  }
+
+  // ── Web API calls ────────────────────────────────────────────────────────
+
+  Future<http.Response> _api(String method, String path,
+      {Map<String, dynamic>? body}) async {
+    final token = await _validToken();
+    final uri = Uri.parse('https://api.spotify.com/v1$path');
+    final headers = {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    };
+    switch (method) {
+      case 'PUT':
+        return http.put(uri, headers: headers, body: jsonEncode(body ?? {}));
+      case 'POST':
+        return http.post(uri, headers: headers, body: jsonEncode(body ?? {}));
+      default:
+        return http.get(uri, headers: headers);
+    }
+  }
+
+  Future<List<SpotifyTrack>> search(String query) async {
+    final token = await _validToken();
+    final res = await http.get(
+      Uri.parse(
+          'https://api.spotify.com/v1/search?type=track&limit=25&q=${Uri.encodeQueryComponent(query)}'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (res.statusCode != 200) return [];
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final items = (body['tracks']?['items'] as List?) ?? [];
+    return items.map((t) => SpotifyTrack.fromJson(t)).toList();
+  }
+
+  /// Ensures a device is active — transfers playback to the first available
+  /// one. Returns false if Spotify isn't open anywhere.
+  Future<bool> ensureActiveDevice() async {
+    final res = await _api('GET', '/me/player/devices');
+    if (res.statusCode != 200) return false;
+    final devices = (jsonDecode(res.body)['devices'] as List?) ?? [];
+    if (devices.isEmpty) return false;
+    if (devices.any((d) => d['is_active'] == true)) return true;
+    final id = devices.first['id'];
+    await _api('PUT', '/me/player', body: {
+      'device_ids': [id],
+      'play': false,
+    });
+    return true;
+  }
+
+  /// Plays a track from a position. Throws [NoDeviceException] if Spotify
+  /// isn't open on any device.
+  Future<void> play(String uri, {int positionMs = 0}) async {
+    if (!await ensureActiveDevice()) throw NoDeviceException();
+    final res = await _api('PUT', '/me/player/play',
+        body: {'uris': [uri], 'position_ms': positionMs});
+    if (res.statusCode == 404) throw NoDeviceException();
+  }
+
+  Future<void> resume() async {
+    if (!await ensureActiveDevice()) throw NoDeviceException();
+    await _api('PUT', '/me/player/play');
+  }
+
+  Future<void> pause() => _api('PUT', '/me/player/pause');
+
+  Future<void> seek(int positionMs) =>
+      _api('PUT', '/me/player/seek?position_ms=$positionMs');
+
+  /// Current local playback state, or null if nothing is playing.
+  Future<PlaybackState?> currentState() async {
+    final res = await _api('GET', '/me/player');
+    if (res.statusCode != 200 || res.body.isEmpty) return null;
+    final j = jsonDecode(res.body) as Map<String, dynamic>;
+    return PlaybackState(
+      isPlaying: j['is_playing'] as bool? ?? false,
+      positionMs: (j['progress_ms'] as num?)?.toInt() ?? 0,
+      uri: j['item']?['uri'] as String?,
+    );
+  }
+}
+
+class NoDeviceException implements Exception {}
+
+class PlaybackState {
+  final bool isPlaying;
+  final int positionMs;
+  final String? uri;
+  PlaybackState(
+      {required this.isPlaying, required this.positionMs, this.uri});
+}
+
+class SpotifyTrack {
+  final String uri;
+  final String name;
+  final String artist;
+  final String imageUrl;
+  final int durationMs;
+
+  SpotifyTrack({
+    required this.uri,
+    required this.name,
+    required this.artist,
+    required this.imageUrl,
+    required this.durationMs,
+  });
+
+  factory SpotifyTrack.fromJson(Map<String, dynamic> j) {
+    final artists = (j['artists'] as List?) ?? [];
+    final images = (j['album']?['images'] as List?) ?? [];
+    return SpotifyTrack(
+      uri: j['uri'] as String? ?? '',
+      name: j['name'] as String? ?? 'Unknown',
+      artist: artists.isEmpty
+          ? ''
+          : artists.map((a) => a['name'] as String? ?? '').join(', '),
+      imageUrl: images.isEmpty ? '' : (images.last['url'] as String? ?? ''),
+      durationMs: (j['duration_ms'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
