@@ -28,11 +28,16 @@ class SpotifyConfig {
   /// The custom scheme part of [redirectUri], used by flutter_web_auth_2.
   static const String callbackScheme = 'twohearts-spotify';
 
-  /// Scopes: control playback + read what's currently playing.
+  /// Scopes: control playback, read what's currently playing, and read
+  /// playlists (own + collaborative) for the "both accounts' playlists"
+  /// browser.
   static const List<String> scopes = [
     'user-modify-playback-state',
     'user-read-playback-state',
     'user-read-currently-playing',
+    'user-read-private',
+    'playlist-read-private',
+    'playlist-read-collaborative',
     'streaming',
   ];
 

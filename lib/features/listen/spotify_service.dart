@@ -154,15 +154,72 @@ class SpotifyService {
 
   Future<List<SpotifyTrack>> search(String query) async {
     final token = await _validToken();
-    final res = await http.get(
-      Uri.parse(
-          'https://api.spotify.com/v1/search?type=track&limit=25&q=${Uri.encodeQueryComponent(query)}'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
-    if (res.statusCode != 200) return [];
+    // `market` matters: without it Spotify only returns tracks playable in
+    // every market worldwide, which silently drops most regional catalogue
+    // and made search look broken/empty. `from_token` scopes it to the
+    // signed-in user's own market.
+    final uri = Uri.https('api.spotify.com', '/v1/search', {
+      'type': 'track',
+      'limit': '25',
+      'market': 'from_token',
+      'q': query,
+    });
+    final res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+    if (res.statusCode != 200) {
+      throw Exception('search failed (${res.statusCode})');
+    }
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final items = (body['tracks']?['items'] as List?) ?? [];
     return items.map((t) => SpotifyTrack.fromJson(t)).toList();
+  }
+
+  /// Adds a track to the local playback queue without interrupting the
+  /// current song.
+  Future<void> addToQueue(String uri) async {
+    if (!await ensureActiveDevice()) throw NoDeviceException();
+    final res = await _api('POST',
+        '/me/player/queue?uri=${Uri.encodeQueryComponent(uri)}');
+    if (res.statusCode == 404) throw NoDeviceException();
+    if (res.statusCode != 204 && res.statusCode != 200) {
+      throw Exception('queue failed (${res.statusCode})');
+    }
+  }
+
+  /// Currently playing track plus what's queued up next, on this device.
+  Future<List<SpotifyTrack>> queue() async {
+    final res = await _api('GET', '/me/player/queue');
+    if (res.statusCode != 200) return [];
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final items = (body['queue'] as List?) ?? [];
+    return items
+        .map((t) => SpotifyTrack.fromJson(t as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// The signed-in account's own playlists.
+  Future<List<SpotifyPlaylist>> myPlaylists() async {
+    final res = await _api('GET', '/me/playlists?limit=50');
+    if (res.statusCode != 200) return [];
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final items = (body['items'] as List?) ?? [];
+    return items
+        .map((p) => SpotifyPlaylist.fromJson(p as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Tracks inside a playlist (works for any playlist ID this account can
+  /// see — own playlists, or a partner's if they're public/collaborative).
+  Future<List<SpotifyTrack>> playlistTracks(String playlistId) async {
+    final res = await _api(
+        'GET', '/playlists/${Uri.encodeComponent(playlistId)}/tracks?limit=50');
+    if (res.statusCode != 200) return [];
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final items = (body['items'] as List?) ?? [];
+    return items
+        .map((it) => (it as Map<String, dynamic>)['track'])
+        .whereType<Map<String, dynamic>>()
+        .map((t) => SpotifyTrack.fromJson(t))
+        .toList();
   }
 
   /// Ensures a device is active — transfers playback to the first available
@@ -214,6 +271,49 @@ class SpotifyService {
 }
 
 class NoDeviceException implements Exception {}
+
+class SpotifyPlaylist {
+  final String id;
+  final String name;
+  final String imageUrl;
+  final int trackCount;
+  final String owner;
+
+  SpotifyPlaylist({
+    required this.id,
+    required this.name,
+    required this.imageUrl,
+    required this.trackCount,
+    required this.owner,
+  });
+
+  factory SpotifyPlaylist.fromJson(Map<String, dynamic> j) {
+    final images = (j['images'] as List?) ?? [];
+    return SpotifyPlaylist(
+      id: j['id'] as String? ?? '',
+      name: j['name'] as String? ?? 'Untitled',
+      imageUrl: images.isEmpty ? '' : (images.first['url'] as String? ?? ''),
+      trackCount: (j['tracks']?['total'] as num?)?.toInt() ?? 0,
+      owner: j['owner']?['display_name'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'name': name,
+        'imageUrl': imageUrl,
+        'trackCount': trackCount,
+        'owner': owner,
+      };
+
+  factory SpotifyPlaylist.fromMap(Map<String, dynamic> m) => SpotifyPlaylist(
+        id: m['id'] as String? ?? '',
+        name: m['name'] as String? ?? 'Untitled',
+        imageUrl: m['imageUrl'] as String? ?? '',
+        trackCount: (m['trackCount'] as num?)?.toInt() ?? 0,
+        owner: m['owner'] as String? ?? '',
+      );
+}
 
 class PlaybackState {
   final bool isPlaying;

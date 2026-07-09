@@ -1438,6 +1438,16 @@ class FirestoreService {
   Future<void> endListenSession(String coupleId) =>
       _listenDoc(coupleId).delete();
 
+  /// Publishes this account's Spotify playlists so the partner's device can
+  /// browse them too (each phone only ever holds its own Spotify token).
+  Future<void> syncSpotifyPlaylists(
+    String coupleId,
+    List<Map<String, dynamic>> playlists,
+  ) =>
+      _listenDoc(coupleId).set({
+        'playlists.$_uid': playlists,
+      }, SetOptions(merge: true));
+
   // ── Avatar ────────────────────────────────────────────────────────────────
 
   Future<void> updateAvatarConfig(String uid, AvatarConfig config) =>

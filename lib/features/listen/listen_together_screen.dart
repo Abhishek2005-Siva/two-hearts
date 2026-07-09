@@ -29,16 +29,27 @@ class ListenTogetherScreen extends ConsumerStatefulWidget {
 
 enum _ConnState { idle, connecting, connected, error }
 
+enum _Tab { search, myPlaylists, partnerPlaylists }
+
 class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
   final _spotify = SpotifyService.instance;
 
   _ConnState _conn = _ConnState.idle;
   String _error = '';
 
+  _Tab _tab = _Tab.search;
+
   final _searchCtrl = TextEditingController();
   List<SpotifyTrack> _results = [];
   bool _searching = false;
+  String? _searchError;
   Timer? _searchDebounce;
+  int _searchRequestId = 0;
+
+  List<SpotifyPlaylist> _myPlaylists = [];
+  SpotifyPlaylist? _openPlaylist;
+  List<SpotifyTrack> _playlistTracks = [];
+  bool _loadingPlaylistTracks = false;
 
   Timer? _heartbeat;
   Timer? _poll;
@@ -104,6 +115,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
         await ref.read(firestoreServiceProvider).joinListen(coupleId);
       }
       DelightHaptics.soft();
+      unawaited(_loadAndSyncPlaylists());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -123,6 +135,137 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
       return 'Listen Together needs Spotify Premium on both sides.';
     }
     return 'Couldn\'t connect to Spotify.\n$raw';
+  }
+
+  // ── Playlists ─────────────────────────────────────────────────────────────
+
+  Future<void> _loadAndSyncPlaylists() async {
+    try {
+      final playlists = await _spotify.myPlaylists();
+      if (!mounted) return;
+      setState(() => _myPlaylists = playlists);
+      final coupleId = ref.read(coupleIdProvider);
+      if (coupleId != null) {
+        await ref.read(firestoreServiceProvider).syncSpotifyPlaylists(
+              coupleId,
+              playlists.map((p) => p.toMap()).toList(),
+            );
+      }
+    } catch (_) {}
+  }
+
+  List<SpotifyPlaylist> _partnerPlaylistsFrom(Map<String, dynamic>? session) {
+    final all = session?['playlists'] as Map<String, dynamic>?;
+    if (all == null) return [];
+    for (final entry in all.entries) {
+      if (entry.key == _uid) continue;
+      final list = entry.value as List?;
+      if (list == null) return [];
+      return list
+          .map((p) => SpotifyPlaylist.fromMap(Map<String, dynamic>.from(p)))
+          .toList();
+    }
+    return [];
+  }
+
+  Future<void> _openPlaylistTracks(SpotifyPlaylist p) async {
+    setState(() {
+      _openPlaylist = p;
+      _loadingPlaylistTracks = true;
+      _playlistTracks = [];
+    });
+    try {
+      final tracks = await _spotify.playlistTracks(p.id);
+      if (mounted) setState(() => _playlistTracks = tracks);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Couldn't load that playlist (it may be private)."),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _loadingPlaylistTracks = false);
+    }
+  }
+
+  // ── Queue ─────────────────────────────────────────────────────────────────
+
+  Future<void> _addToQueue(SpotifyTrack t) async {
+    HapticFeedback.selectionClick();
+    try {
+      await _spotify.addToQueue(t.uri);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Added "${t.name}" to queue'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } on NoDeviceException {
+      _noDeviceHint();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Couldn't add to queue. Try again."),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  Future<void> _showQueue() async {
+    List<SpotifyTrack> queue = [];
+    String? error;
+    try {
+      queue = await _spotify.queue();
+    } catch (_) {
+      error = "Couldn't load the queue.";
+    }
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF141414),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Up next',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(error,
+                      style: const TextStyle(color: Colors.white54)),
+                )
+              else if (queue.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('Queue is empty — add a song below.',
+                      style: TextStyle(color: Colors.white54)),
+                )
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: queue.length,
+                    itemBuilder: (_, i) => _trackTile(queue[i]),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Poll local state → mirror to Firestore ───────────────────────────────
@@ -248,17 +391,35 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
   }
 
   Future<void> _runSearch(String q) async {
+    // Guards against out-of-order responses: if a newer search has started
+    // by the time this one resolves, its result is stale and must not
+    // clobber the newer one.
+    final requestId = ++_searchRequestId;
     if (q.isEmpty) {
-      setState(() => _results = []);
+      setState(() {
+        _results = [];
+        _searchError = null;
+      });
       return;
     }
-    setState(() => _searching = true);
+    setState(() {
+      _searching = true;
+      _searchError = null;
+    });
     try {
       final tracks = await _spotify.search(q);
-      if (mounted) setState(() => _results = tracks);
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() => _results = tracks);
     } catch (_) {
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() {
+        _results = [];
+        _searchError = "Search failed. Check your connection and try again.";
+      });
     } finally {
-      if (mounted) setState(() => _searching = false);
+      if (mounted && requestId == _searchRequestId) {
+        setState(() => _searching = false);
+      }
     }
   }
 
@@ -366,6 +527,13 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
                   fontSize: 18,
                   fontWeight: FontWeight.w700)),
           const Spacer(),
+          if (_conn == _ConnState.connected)
+            IconButton(
+              icon: const Icon(Icons.queue_music_rounded,
+                  color: Colors.white70),
+              tooltip: 'Up next',
+              onPressed: _showQueue,
+            ),
           if (_conn == _ConnState.connected)
             Row(
               children: [
@@ -483,10 +651,63 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
     return Column(
       children: [
         _nowPlaying(session),
-        _searchBar(),
-        Expanded(child: _resultList()),
+        _tabBar(),
+        if (_tab == _Tab.search) _searchBar(),
+        Expanded(child: _body(session)),
       ],
     );
+  }
+
+  Widget _tabBar() {
+    Widget chip(_Tab t, String label) {
+      final selected = _tab == t;
+      return GestureDetector(
+        onTap: () => setState(() {
+          _tab = t;
+          _openPlaylist = null;
+        }),
+        child: Container(
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? _spotifyGreen.withValues(alpha: 0.18)
+                : Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color: selected ? _spotifyGreen : Colors.white12),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  color: selected ? _spotifyGreen : Colors.white54,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600)),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          chip(_Tab.search, 'Search'),
+          chip(_Tab.myPlaylists, 'My Playlists'),
+          chip(_Tab.partnerPlaylists, "Their Playlists"),
+        ],
+      ),
+    );
+  }
+
+  Widget _body(Map<String, dynamic>? session) {
+    if (_openPlaylist != null) return _playlistTrackList();
+    switch (_tab) {
+      case _Tab.search:
+        return _resultList();
+      case _Tab.myPlaylists:
+        return _playlistList(_myPlaylists, mine: true);
+      case _Tab.partnerPlaylists:
+        return _playlistList(_partnerPlaylistsFrom(session), mine: false);
+    }
   }
 
   Widget _nowPlaying(Map<String, dynamic>? session) {
@@ -620,6 +841,16 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
   }
 
   Widget _resultList() {
+    if (_searchError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(_searchError!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54, fontSize: 13)),
+        ),
+      );
+    }
     if (_results.isEmpty) {
       return const Center(
         child: Text('Type to find your song ♫',
@@ -629,17 +860,79 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
       itemCount: _results.length,
+      itemBuilder: (context, i) => _trackTile(_results[i]),
+    );
+  }
+
+  Widget _trackTile(SpotifyTrack t) {
+    return ListTile(
+      onTap: () => _pickTrack(t),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: t.imageUrl.isNotEmpty
+            ? CachedNetworkImage(
+                imageUrl: t.imageUrl, width: 46, height: 46, fit: BoxFit.cover)
+            : Container(
+                width: 46,
+                height: 46,
+                color: Colors.white10,
+                child: const Icon(Icons.music_note_rounded,
+                    color: Colors.white30, size: 20)),
+      ),
+      title: Text(t.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+              color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+      subtitle: Text(t.artist,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.white54, fontSize: 12)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline_rounded,
+                color: Colors.white54, size: 22),
+            tooltip: 'Add to queue',
+            onPressed: () => _addToQueue(t),
+          ),
+          const Icon(Icons.play_circle_outline_rounded, color: _spotifyGreen),
+        ],
+      ),
+    );
+  }
+
+  Widget _playlistList(List<SpotifyPlaylist> playlists, {required bool mine}) {
+    if (playlists.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            mine
+                ? "You don't have any Spotify playlists yet."
+                : "Waiting for your partner to connect Spotify…",
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white24, fontSize: 13),
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+      itemCount: playlists.length,
       itemBuilder: (context, i) {
-        final t = _results[i];
+        final p = playlists[i];
         return ListTile(
-          onTap: () => _pickTrack(t),
+          onTap: () => _openPlaylistTracks(p),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: t.imageUrl.isNotEmpty
+            child: p.imageUrl.isNotEmpty
                 ? CachedNetworkImage(
-                    imageUrl: t.imageUrl,
+                    imageUrl: p.imageUrl,
                     width: 46,
                     height: 46,
                     fit: BoxFit.cover)
@@ -647,24 +940,71 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
                     width: 46,
                     height: 46,
                     color: Colors.white10,
-                    child: const Icon(Icons.music_note_rounded,
+                    child: const Icon(Icons.queue_music_rounded,
                         color: Colors.white30, size: 20)),
           ),
-          title: Text(t.name,
+          title: Text(p.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                   color: Colors.white,
                   fontSize: 14,
                   fontWeight: FontWeight.w600)),
-          subtitle: Text(t.artist,
+          subtitle: Text('${p.trackCount} songs${p.owner.isEmpty ? '' : ' · ${p.owner}'}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.white54, fontSize: 12)),
-          trailing: const Icon(Icons.play_circle_outline_rounded,
-              color: _spotifyGreen),
+          trailing:
+              const Icon(Icons.chevron_right_rounded, color: Colors.white38),
         );
       },
+    );
+  }
+
+  Widget _playlistTrackList() {
+    final playlist = _openPlaylist!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_rounded,
+                    color: Colors.white70, size: 20),
+                onPressed: () => setState(() => _openPlaylist = null),
+              ),
+              Expanded(
+                child: Text(playlist.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _loadingPlaylistTracks
+              ? const Center(
+                  child: CircularProgressIndicator(color: _spotifyGreen))
+              : _playlistTracks.isEmpty
+                  ? const Center(
+                      child: Text('No tracks found.',
+                          style:
+                              TextStyle(color: Colors.white24, fontSize: 13)),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                      itemCount: _playlistTracks.length,
+                      itemBuilder: (context, i) =>
+                          _trackTile(_playlistTracks[i]),
+                    ),
+        ),
+      ],
     );
   }
 }
