@@ -205,9 +205,11 @@ class SpotifyService {
     // instead — and omitted entirely if it can't be resolved, rather than
     // failing the whole search.
     final market = await _resolveMarket();
+    // Spotify's search `limit` is capped at 10 (not the historical 1-50) —
+    // 25 was rejected outright with 400 "Invalid limit".
     final uri = Uri.https('api.spotify.com', '/v1/search', {
       'type': 'track',
-      'limit': '25',
+      'limit': '10',
       if (market != null) 'market': market,
       'q': query,
     });
