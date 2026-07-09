@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -99,10 +100,20 @@ class SpotifyService {
       'scope': SpotifyConfig.scopeString,
     }).toString();
 
-    final result = await FlutterWebAuth2.authenticate(
-      url: authUrl,
-      callbackUrlScheme: SpotifyConfig.callbackScheme,
-    );
+    // Without a timeout, a redirect that never makes it back into the app
+    // (e.g. Android not handing the custom scheme back to us) hangs this
+    // Future forever with no error shown — the user is left staring at a
+    // stuck browser tab with no way to recover except force-closing it.
+    final String result;
+    try {
+      result = await FlutterWebAuth2.authenticate(
+        url: authUrl,
+        callbackUrlScheme: SpotifyConfig.callbackScheme,
+      ).timeout(const Duration(minutes: 3));
+    } on TimeoutException {
+      throw Exception(
+          'auth_timeout: the redirect back to the app never arrived');
+    }
     final code = Uri.parse(result).queryParameters['code'];
     final err = Uri.parse(result).queryParameters['error'];
     if (err != null) throw Exception('auth denied: $err');

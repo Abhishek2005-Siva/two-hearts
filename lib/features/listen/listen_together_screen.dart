@@ -134,6 +134,13 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
     if (r.contains('premium')) {
       return 'Listen Together needs Spotify Premium on both sides.';
     }
+    if (r.contains('auth_timeout')) {
+      return "Spotify never redirected back to the app after you tapped "
+          'Agree.\n\nAfter the last permission screen, look for an "Open in '
+          'Two Hearts?" prompt and tap Open — if you tap outside it or the '
+          "browser's back/close button instead, the app never gets the "
+          "result. Tap connect to try again.";
+    }
     return 'Couldn\'t connect to Spotify.\n$raw';
   }
 
