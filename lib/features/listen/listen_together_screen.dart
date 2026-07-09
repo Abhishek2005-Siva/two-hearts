@@ -158,8 +158,8 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
               playlists.map((p) => p.toMap()).toList(),
             );
       }
-    } on SpotifyAuthException {
-      _reconnectHint();
+    } on SpotifyAuthException catch (e) {
+      _reconnectHint(e.detail);
     } catch (_) {}
   }
 
@@ -186,8 +186,8 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
     try {
       final tracks = await _spotify.playlistTracks(p.id);
       if (mounted) setState(() => _playlistTracks = tracks);
-    } on SpotifyAuthException {
-      _reconnectHint();
+    } on SpotifyAuthException catch (e) {
+      _reconnectHint(e.detail);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -394,21 +394,51 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
 
   /// Shown when Spotify rejects a request as unauthorized — almost always a
   /// token issued before a scope change (e.g. this build added playlist
-  /// permissions). A fresh sign-in re-grants the right scopes.
-  void _reconnectHint() {
+  /// permissions). A fresh sign-in re-grants the right scopes. [detail] is
+  /// Spotify's own error text, shown via "Details" so it can be screenshot
+  /// instead of guessed at blind.
+  void _reconnectHint([String? detail]) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: const Text(
           'Spotify needs you to reconnect to enable this (permissions changed).'),
       behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 8),
       action: SnackBarAction(
-        label: 'Reconnect',
+        label: detail != null ? 'Details' : 'Reconnect',
         onPressed: () async {
-          await _spotify.signOut();
-          if (mounted) _connect();
+          if (detail == null) {
+            await _spotify.signOut();
+            if (mounted) _connect();
+            return;
+          }
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              backgroundColor: const Color(0xFF141414),
+              title: const Text('Spotify said',
+                  style: TextStyle(color: Colors.white)),
+              content: SelectableText(detail,
+                  style: const TextStyle(color: Colors.white70)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    await _spotify.signOut();
+                    if (mounted) _connect();
+                  },
+                  child: const Text('Reconnect'),
+                ),
+              ],
+            ),
+          );
         },
       ),
-      duration: const Duration(seconds: 6),
     ));
   }
 
@@ -441,13 +471,13 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
       final tracks = await _spotify.search(q);
       if (!mounted || requestId != _searchRequestId) return;
       setState(() => _results = tracks);
-    } on SpotifyAuthException {
+    } on SpotifyAuthException catch (e) {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() {
         _results = [];
         _searchError = 'Spotify needs you to reconnect to search.';
       });
-      _reconnectHint();
+      _reconnectHint(e.detail);
     } catch (_) {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() {

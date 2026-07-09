@@ -206,7 +206,7 @@ class SpotifyService {
     });
     final res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     if (res.statusCode == 401 || res.statusCode == 403) {
-      throw SpotifyAuthException();
+      throw SpotifyAuthException.fromResponse(res.statusCode, res.body);
     }
     if (res.statusCode != 200) {
       throw Exception('search failed (${res.statusCode})');
@@ -243,7 +243,7 @@ class SpotifyService {
   Future<List<SpotifyPlaylist>> myPlaylists() async {
     final res = await _api('GET', '/me/playlists?limit=50');
     if (res.statusCode == 401 || res.statusCode == 403) {
-      throw SpotifyAuthException();
+      throw SpotifyAuthException.fromResponse(res.statusCode, res.body);
     }
     if (res.statusCode != 200) return [];
     final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -261,7 +261,7 @@ class SpotifyService {
     final res = await _api(
         'GET', '/playlists/${Uri.encodeComponent(playlistId)}/tracks?limit=50');
     if (res.statusCode == 401 || res.statusCode == 403) {
-      throw SpotifyAuthException();
+      throw SpotifyAuthException.fromResponse(res.statusCode, res.body);
     }
     if (res.statusCode != 200) {
       throw Exception('playlist load failed (${res.statusCode})');
@@ -327,8 +327,24 @@ class NoDeviceException implements Exception {}
 
 /// Thrown when the Spotify API rejects a request as unauthorized/forbidden
 /// — most commonly a token issued before a scope change, which a fresh
-/// sign-in fixes.
-class SpotifyAuthException implements Exception {}
+/// sign-in fixes. Carries Spotify's own error message so it can be shown
+/// to the user instead of guessed at.
+class SpotifyAuthException implements Exception {
+  final String? detail;
+  SpotifyAuthException([this.detail]);
+
+  /// Pulls Spotify's `{"error": {"message": "..."}}` body into a short
+  /// human-readable string, falling back to the raw body if it's not JSON.
+  factory SpotifyAuthException.fromResponse(int status, String body) {
+    try {
+      final j = jsonDecode(body) as Map<String, dynamic>;
+      final msg = j['error']?['message'] as String? ?? j['error'] as String?;
+      if (msg != null) return SpotifyAuthException('$status: $msg');
+    } catch (_) {}
+    return SpotifyAuthException(
+        '$status: ${body.isEmpty ? '(empty body)' : body}');
+  }
+}
 
 class SpotifyPlaylist {
   final String id;
