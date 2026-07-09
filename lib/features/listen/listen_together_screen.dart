@@ -151,6 +151,8 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
               playlists.map((p) => p.toMap()).toList(),
             );
       }
+    } on SpotifyAuthException {
+      _reconnectHint();
     } catch (_) {}
   }
 
@@ -177,6 +179,8 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
     try {
       final tracks = await _spotify.playlistTracks(p.id);
       if (mounted) setState(() => _playlistTracks = tracks);
+    } on SpotifyAuthException {
+      _reconnectHint();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -381,6 +385,26 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
     ));
   }
 
+  /// Shown when Spotify rejects a request as unauthorized — almost always a
+  /// token issued before a scope change (e.g. this build added playlist
+  /// permissions). A fresh sign-in re-grants the right scopes.
+  void _reconnectHint() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text(
+          'Spotify needs you to reconnect to enable this (permissions changed).'),
+      behavior: SnackBarBehavior.floating,
+      action: SnackBarAction(
+        label: 'Reconnect',
+        onPressed: () async {
+          await _spotify.signOut();
+          if (mounted) _connect();
+        },
+      ),
+      duration: const Duration(seconds: 6),
+    ));
+  }
+
   // ── Search ───────────────────────────────────────────────────────────────
 
   void _onSearchChanged(String q) {
@@ -410,6 +434,13 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
       final tracks = await _spotify.search(q);
       if (!mounted || requestId != _searchRequestId) return;
       setState(() => _results = tracks);
+    } on SpotifyAuthException {
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() {
+        _results = [];
+        _searchError = 'Spotify needs you to reconnect to search.';
+      });
+      _reconnectHint();
     } catch (_) {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() {

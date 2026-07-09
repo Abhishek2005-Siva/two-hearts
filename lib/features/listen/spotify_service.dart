@@ -18,10 +18,12 @@ class SpotifyService {
   static const _kAccess = 'spotify_access_token';
   static const _kRefresh = 'spotify_refresh_token';
   static const _kExpiry = 'spotify_expiry_ms';
+  static const _kMarket = 'spotify_market';
 
   String? _accessToken;
   String? _refreshToken;
   DateTime _expiry = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _market;
 
   bool get isSignedIn => _refreshToken != null;
 
@@ -32,6 +34,7 @@ class SpotifyService {
     _accessToken = p.getString(_kAccess);
     _refreshToken = p.getString(_kRefresh);
     _expiry = DateTime.fromMillisecondsSinceEpoch(p.getInt(_kExpiry) ?? 0);
+    _market = p.getString(_kMarket);
   }
 
   Future<void> _persist() async {
@@ -39,15 +42,38 @@ class SpotifyService {
     if (_accessToken != null) await p.setString(_kAccess, _accessToken!);
     if (_refreshToken != null) await p.setString(_kRefresh, _refreshToken!);
     await p.setInt(_kExpiry, _expiry.millisecondsSinceEpoch);
+    if (_market != null) await p.setString(_kMarket, _market!);
   }
 
   Future<void> signOut() async {
-    _accessToken = _refreshToken = null;
+    _accessToken = _refreshToken = _market = null;
     _expiry = DateTime.fromMillisecondsSinceEpoch(0);
     final p = await SharedPreferences.getInstance();
     await p.remove(_kAccess);
     await p.remove(_kRefresh);
     await p.remove(_kExpiry);
+    await p.remove(_kMarket);
+  }
+
+  /// The signed-in account's market (ISO 3166-1 alpha-2 country code), used
+  /// to scope search results. Spotify deprecated the `market=from_token`
+  /// shortcut in Nov 2024 — a literal code must be sent instead — so this is
+  /// fetched from `/me` once (needs `user-read-private`) and cached.
+  Future<String?> _resolveMarket() async {
+    if (_market != null) return _market;
+    try {
+      final res = await _api('GET', '/me');
+      if (res.statusCode != 200) return null;
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      final country = j['country'] as String?;
+      if (country != null && country.isNotEmpty) {
+        _market = country;
+        await _persist();
+      }
+      return _market;
+    } catch (_) {
+      return null;
+    }
   }
 
   String _randomString(int len) {
@@ -155,16 +181,22 @@ class SpotifyService {
   Future<List<SpotifyTrack>> search(String query) async {
     final token = await _validToken();
     // `market` matters: without it Spotify only returns tracks playable in
-    // every market worldwide, which silently drops most regional catalogue
-    // and made search look broken/empty. `from_token` scopes it to the
-    // signed-in user's own market.
+    // every market worldwide, which silently drops most regional catalogue.
+    // Spotify deprecated the `from_token` shortcut in Nov 2024 (it now
+    // 400s), so a real country code resolved from the account is used
+    // instead — and omitted entirely if it can't be resolved, rather than
+    // failing the whole search.
+    final market = await _resolveMarket();
     final uri = Uri.https('api.spotify.com', '/v1/search', {
       'type': 'track',
       'limit': '25',
-      'market': 'from_token',
+      if (market != null) 'market': market,
       'q': query,
     });
     final res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw SpotifyAuthException();
+    }
     if (res.statusCode != 200) {
       throw Exception('search failed (${res.statusCode})');
     }
@@ -199,6 +231,9 @@ class SpotifyService {
   /// The signed-in account's own playlists.
   Future<List<SpotifyPlaylist>> myPlaylists() async {
     final res = await _api('GET', '/me/playlists?limit=50');
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw SpotifyAuthException();
+    }
     if (res.statusCode != 200) return [];
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final items = (body['items'] as List?) ?? [];
@@ -209,10 +244,17 @@ class SpotifyService {
 
   /// Tracks inside a playlist (works for any playlist ID this account can
   /// see — own playlists, or a partner's if they're public/collaborative).
+  /// Throws [SpotifyAuthException] on 401/403 — usually a stale token that
+  /// predates a scope change and needs a fresh sign-in.
   Future<List<SpotifyTrack>> playlistTracks(String playlistId) async {
     final res = await _api(
         'GET', '/playlists/${Uri.encodeComponent(playlistId)}/tracks?limit=50');
-    if (res.statusCode != 200) return [];
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw SpotifyAuthException();
+    }
+    if (res.statusCode != 200) {
+      throw Exception('playlist load failed (${res.statusCode})');
+    }
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final items = (body['items'] as List?) ?? [];
     return items
@@ -271,6 +313,11 @@ class SpotifyService {
 }
 
 class NoDeviceException implements Exception {}
+
+/// Thrown when the Spotify API rejects a request as unauthorized/forbidden
+/// — most commonly a token issued before a scope change, which a fresh
+/// sign-in fixes.
+class SpotifyAuthException implements Exception {}
 
 class SpotifyPlaylist {
   final String id;
