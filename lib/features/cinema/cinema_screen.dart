@@ -15,7 +15,7 @@ import 'package:video_player/video_player.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
-import 'screen_share_screen.dart';
+import 'share_target_screen.dart';
 
 /// Watch Together — one shared video, play/pause/seek mirrored between the
 /// two phones through Firestore. Whoever touches the controls drives; the
@@ -124,9 +124,8 @@ class _MovieNightLandingState extends ConsumerState<_MovieNightLanding> {
     if (!mounted) return;
     Navigator.of(context).push(MaterialPageRoute(
       fullscreenDialog: true,
-      builder: (_) => ScreenShareScreen(
+      builder: (_) => ShareTargetScreen(
         coupleId: coupleId,
-        isSharer: true,
         callId: callId,
         partnerName: partnerName,
       ),

@@ -38,6 +38,11 @@ Future<Map<String, dynamic>> _buildIceConfig() async {
 const _offerTimeout = Duration(seconds: 20);
 const _ringTimeout = Duration(seconds: 45);
 
+/// What the sharer chose to mirror. Android's system capture dialog is what
+/// actually scopes "entire screen" vs a single app — this only tailors the
+/// in-app copy and hints, since there's no public API to force the choice.
+enum ScreenShareTarget { fullScreen, singleApp }
+
 /// Screen sharing for Movie Night — the sharer mirrors their phone screen
 /// (plus their mic so they can talk over it) and the partner watches live.
 /// Reuses the same Firestore WebRTC signaling as video calls, tagged with
@@ -48,12 +53,16 @@ class ScreenShareScreen extends StatefulWidget {
   final String callId;
   final String? partnerName;
 
+  /// Only meaningful for the sharer; the viewer leaves it null.
+  final ScreenShareTarget? shareTarget;
+
   const ScreenShareScreen({
     super.key,
     required this.coupleId,
     required this.isSharer,
     required this.callId,
     this.partnerName,
+    this.shareTarget,
   });
 
   @override
@@ -400,10 +409,14 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
                   ? RTCVideoView(_localRenderer,
                       objectFit:
                           RTCVideoViewObjectFit.RTCVideoViewObjectFitContain)
-                  : const _MessageBody(
+                  : _MessageBody(
                       emoji: '🖥️',
-                      message: 'Getting your screen ready…\n'
-                          'Approve the capture prompt to begin.')
+                      message: widget.shareTarget ==
+                              ScreenShareTarget.singleApp
+                          ? 'Getting ready…\nIn the next prompt, choose '
+                              '"Single app" and pick the app to share.'
+                          : 'Getting ready…\nIn the next prompt, choose '
+                              '"Entire screen" to begin.')
             else if (_connected && _remoteRenderer.srcObject != null)
               RTCVideoView(_remoteRenderer,
                   objectFit:
@@ -444,7 +457,10 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
                       Text(
                         widget.isSharer
                             ? (_connected
-                                ? 'Sharing your screen'
+                                ? (widget.shareTarget ==
+                                        ScreenShareTarget.singleApp
+                                    ? 'Sharing an app'
+                                    : 'Sharing your screen')
                                 : 'Waiting for them to join…')
                             : (_connected ? 'Live' : 'Connecting…'),
                         style: const TextStyle(
