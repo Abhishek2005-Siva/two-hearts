@@ -478,11 +478,14 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
         _searchError = 'Spotify needs you to reconnect to search.';
       });
       _reconnectHint(e.detail);
-    } catch (_) {
+    } catch (e) {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() {
         _results = [];
-        _searchError = "Search failed. Check your connection and try again.";
+        // The real failure reason, not a canned guess — Spotify's raw
+        // response (or the token-refresh error) is what actually helps
+        // diagnose this instead of another blind fix.
+        _searchError = 'Search failed:\n$e';
       });
     } finally {
       if (mounted && requestId == _searchRequestId) {
@@ -913,7 +916,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(_searchError!,
+          child: SelectableText(_searchError!,
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.white54, fontSize: 13)),
         ),

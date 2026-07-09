@@ -190,7 +190,14 @@ class SpotifyService {
   }
 
   Future<List<SpotifyTrack>> search(String query) async {
-    final token = await _validToken();
+    final String token;
+    try {
+      token = await _validToken();
+    } catch (e) {
+      // A token-refresh failure lands here, not below — surface it instead
+      // of letting it masquerade as a network error.
+      throw Exception('token refresh: $e');
+    }
     // `market` matters: without it Spotify only returns tracks playable in
     // every market worldwide, which silently drops most regional catalogue.
     // Spotify deprecated the `from_token` shortcut in Nov 2024 (it now
@@ -209,7 +216,7 @@ class SpotifyService {
       throw SpotifyAuthException.fromResponse(res.statusCode, res.body);
     }
     if (res.statusCode != 200) {
-      throw Exception('search failed (${res.statusCode})');
+      throw Exception('search failed (${res.statusCode}): ${res.body}');
     }
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     final items = (body['tracks']?['items'] as List?) ?? [];
