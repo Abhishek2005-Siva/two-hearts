@@ -63,7 +63,7 @@ dependencies:
   flutter_pdfview: ^1.4.4
 
   # Listen Together (Spotify Web API + OAuth PKCE)
-  flutter_web_auth_2: ^4.1.0
+  flutter_web_auth_2: ^5.0.3
   crypto: ^3.0.6
 
 dev_dependencies:
