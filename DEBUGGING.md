@@ -61,10 +61,11 @@ Enter the 6-digit code when prompted. Use the **Tailscale IP** from
 `tailscale status`, not the LAN IP shown on the phone.
 
 ### 6. Connect and run
+`pubspec.yaml` is at the repo root, so no `cd` is needed — you're already
+in the right folder when the Codespace opens.
 ```bash
 adb connect <phone-tailscale-ip>:<debug-port>
 flutter devices          # your phone should show up
-cd two_hearts
 flutter run -d <device-id>
 ```
 Once it's running, press `r` in the terminal for hot reload, `R` for hot
