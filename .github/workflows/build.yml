@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -59,3 +61,22 @@ jobs:
           name: two-hearts-${{ github.run_number }}
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      # A rolling release — same tag every build — so there's one stable
+      # URL that always points at the newest raw .apk (no zip, unlike
+      # Actions artifacts), and so the notify step below can always link
+      # to the same place.
+      - name: Publish rolling release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: latest-build
+          name: Latest build
+          body: Automatically updated on every push to main. Run ${{ github.run_number }}.
+          artifacts: build/app/outputs/flutter-apk/app-release.apk
+          allowUpdates: true
+          removeArtifacts: true
+          makeLatest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify phone that a build is ready
+        run: node .github/scripts/notify_build.js assets/config/service_account.json "https://github.com/${{ github.repository }}/releases/download/latest-build/app-release.apk"

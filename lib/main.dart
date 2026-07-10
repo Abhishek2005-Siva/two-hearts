@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,10 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
 final _localNotifications = FlutterLocalNotificationsPlugin();
+
+// Only this account gets "a new build is ready" pings from CI — not the
+// partner's, who has nothing to do with builds.
+const _devEmail = 'abhishek2005.siva@gmail.com';
 
 // Background message handler — must be top-level function
 @pragma('vm:entry-point')
@@ -108,6 +113,12 @@ class _TwoHeartsAppState extends ConsumerState<TwoHeartsApp> {
     final token = await FirebaseMessaging.instance.getToken();
     if (token == null) return;
     await ref.read(firestoreServiceProvider).saveFCMToken(token);
+
+    // "New build ready" pings from CI go to this one topic — only
+    // subscribe the developer's own account to it, not the partner's.
+    if (FirebaseAuth.instance.currentUser?.email == _devEmail) {
+      FirebaseMessaging.instance.subscribeToTopic('dev_builds').ignore();
+    }
   }
 
   @override
