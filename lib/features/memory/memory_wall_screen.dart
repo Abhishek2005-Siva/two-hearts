@@ -396,29 +396,47 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                             ],
                           ),
               ),
-              if (!_selectMode && !_searching) ...[
-                const SizedBox(height: 4),
-                _HeroSnapshotCard(onSurpriseMe: () {}),
-                const SizedBox(height: 4),
-                _CollectionsRow(
-                  activeCollectionId: _activeCollectionId,
-                  onSelect: (id) => setState(() => _activeCollectionId = id),
-                ),
-                _TypeFilterRow(
-                  value: _typeFilter,
-                  onChanged: (v) => setState(() => _typeFilter = v),
-                ),
-              ],
               Expanded(
-                child: _MemoriesTab(
-                  onLongPress: _onLongPress,
-                  onUpload: _showAddMemorySheet,
-                  activeCollectionId: _activeCollectionId,
-                  typeFilter: _typeFilter,
-                  query: _query,
-                  selectMode: _selectMode,
-                  selectedIds: _selectedIds,
-                  onSelectToggle: _onSelectToggle,
+                // One continuous scroll — the hero card and collections
+                // scroll away, the filter row pins once reached, and the
+                // memory grid keeps scrolling underneath it, all as a
+                // single page rather than a grid scrolling inside a
+                // fixed-chrome shell.
+                child: CustomScrollView(
+                  slivers: [
+                    if (!_selectMode && !_searching) ...[
+                      const SliverToBoxAdapter(child: SizedBox(height: 4)),
+                      SliverToBoxAdapter(
+                          child: _HeroSnapshotCard(onSurpriseMe: () {})),
+                      const SliverToBoxAdapter(child: SizedBox(height: 4)),
+                      SliverToBoxAdapter(
+                        child: _CollectionsRow(
+                          activeCollectionId: _activeCollectionId,
+                          onSelect: (id) =>
+                              setState(() => _activeCollectionId = id),
+                        ),
+                      ),
+                      SliverPersistentHeader(
+                        pinned: true,
+                        delegate: _StickyFilterHeaderDelegate(
+                          child: _TypeFilterRow(
+                            value: _typeFilter,
+                            onChanged: (v) => setState(() => _typeFilter = v),
+                          ),
+                        ),
+                      ),
+                    ],
+                    _MemoriesTab(
+                      onLongPress: _onLongPress,
+                      onUpload: _showAddMemorySheet,
+                      activeCollectionId: _activeCollectionId,
+                      typeFilter: _typeFilter,
+                      query: _query,
+                      selectMode: _selectMode,
+                      selectedIds: _selectedIds,
+                      onSelectToggle: _onSelectToggle,
+                    ),
+                  ],
                 ),
               ),
               if (_selectMode && _selectedIds.isNotEmpty)
@@ -1085,7 +1103,8 @@ class _TypeFilterRow extends StatelessWidget {
       );
     }
 
-    return Padding(
+    return Container(
+      color: AppColors.bg,
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: SizedBox(
         height: 40,
@@ -1101,6 +1120,28 @@ class _TypeFilterRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Pins the type-filter row to the top once scrolled to, Google-Photos
+/// style, while the hero card and collections above it scroll away.
+class _StickyFilterHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+  const _StickyFilterHeaderDelegate({required this.child});
+
+  static const _height = 52.0;
+
+  @override
+  double get minExtent => _height;
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(_StickyFilterHeaderDelegate oldDelegate) => oldDelegate.child != child;
 }
 
 // ── Add to Collection Sheet ───────────────────────────────────────────────
@@ -1311,11 +1352,16 @@ class _MemoriesTab extends ConsumerWidget {
     final coupleId = ref.watch(coupleIdProvider) ?? '';
 
     return memoriesAsync.when(
-      loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.rose)),
-      error: (e, _) => Center(
-          child: Text('Error: $e',
-              style: const TextStyle(color: AppColors.textSecondary))),
+      loading: () => const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(child: CircularProgressIndicator(color: AppColors.rose)),
+      ),
+      error: (e, _) => SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+            child: Text('Error: $e',
+                style: const TextStyle(color: AppColors.textSecondary))),
+      ),
       data: (allMemories) {
         var memories = activeCollectionId == null
             ? allMemories
@@ -1345,38 +1391,46 @@ class _MemoriesTab extends ConsumerWidget {
         }
 
         if (allMemories.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('📸', style: TextStyle(fontSize: 64)),
-                const SizedBox(height: 16),
-                const Text('Your memories will live here',
-                    style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 16)),
-                const SizedBox(height: 24),
-                GradientButton(
-                  label: 'Add First Memory',
-                  width: 200,
-                  onTap: onUpload,
-                ),
-              ],
+          return SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('📸', style: TextStyle(fontSize: 64)),
+                  const SizedBox(height: 16),
+                  const Text('Your memories will live here',
+                      style: TextStyle(
+                          color: AppColors.textSecondary, fontSize: 16)),
+                  const SizedBox(height: 24),
+                  GradientButton(
+                    label: 'Add First Memory',
+                    width: 200,
+                    onTap: onUpload,
+                  ),
+                ],
+              ),
             ),
           );
         }
 
         if (memories.isEmpty) {
-          return const Center(
-            child: Text('No memories match this filter.',
-                style: TextStyle(color: AppColors.textSecondary)),
+          return const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Text('No memories match this filter.',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
           );
         }
 
         final groups = _groupByDate(memories);
 
-        return ListView(
+        return SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          children: groups.entries.map((entry) {
+          sliver: SliverList(
+            delegate: SliverChildListDelegate(
+              groups.entries.map((entry) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 18),
               child: Column(
@@ -1449,6 +1503,8 @@ class _MemoriesTab extends ConsumerWidget {
               ),
             );
           }).toList(),
+            ),
+          ),
         );
       },
     );
