@@ -399,12 +399,17 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // The shared screen (viewer sees remote; sharer sees own preview).
+            // The sharer never sees their own capture mirrored back — for
+            // "entire screen" that would recursively capture this very
+            // preview (a live picture of a picture of a picture...), so a
+            // static status pane replaces it regardless of target.
             if (widget.isSharer)
               _localRenderer.srcObject != null
-                  ? RTCVideoView(_localRenderer,
-                      objectFit:
-                          RTCVideoViewObjectFit.RTCVideoViewObjectFitContain)
+                  ? const _MessageBody(
+                      emoji: '✅',
+                      message: 'You\'re sharing your screen ♡\nGo ahead and '
+                          'open whatever you want to show them — sharing '
+                          'keeps going in the background.')
                   : const _MessageBody(
                       emoji: '🖥️',
                       message: 'Getting ready…\nChoose what to share in the '
