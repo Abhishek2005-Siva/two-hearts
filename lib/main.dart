@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'core/globals.dart';
 import 'core/providers/providers.dart';
 import 'core/router/app_router.dart';
@@ -103,6 +104,13 @@ class _TwoHeartsAppState extends ConsumerState<TwoHeartsApp> {
   }
 
   void _handleNotificationTap(RemoteMessage message) {
+    if (message.data['type'] == 'build_ready') {
+      final url = message.data['apkUrl'];
+      if (url is String) {
+        launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
     final route = message.data['route'];
     if (route is String && route.startsWith('/')) {
       ref.read(routerProvider).go(route);

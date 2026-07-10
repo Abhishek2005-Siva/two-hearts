@@ -75,10 +75,12 @@ async function main() {
             title: '📦 New Two Hearts build ready',
             body: 'Tap to download the APK',
           },
-          android: {
-            // Tapping the notification opens this link directly —
-            // handled by the FCM SDK itself, no app code needed.
-            fcmOptions: { link: apkUrl },
+          // Android has no built-in "open this URL on tap" for a plain
+          // notification (that's a web-push-only field) — the app itself
+          // reads this data on tap and opens the link.
+          data: {
+            type: 'build_ready',
+            apkUrl,
           },
         },
       }),
