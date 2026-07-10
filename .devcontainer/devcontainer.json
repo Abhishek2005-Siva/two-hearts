@@ -1,0 +1,22 @@
+{
+  "name": "Two Hearts (Flutter + Android SDK)",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "17"
+    },
+    "ghcr.io/devcontainers/features/android-sdk:1": {}
+  },
+  "onCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "adb start-server",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.flutter",
+        "Dart-Code.dart-code"
+      ]
+    }
+  },
+  "forwardPorts": [5037],
+  "remoteUser": "vscode"
+}
