@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -400,6 +401,84 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen>
     );
   }
 
+  void _showMyItems(List<HomeDecorItem> initialItems) {
+    final coupleId = ref.read(coupleIdProvider);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) {
+        final items = List<HomeDecorItem>.from(initialItems);
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) => Container(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+            padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).padding.bottom + 20),
+            decoration: const BoxDecoration(
+              color: AppColors.bgMid,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text('My Items',
+                        style: TextStyle(
+                            color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    Text('${items.length}', style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (items.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 30),
+                    child: Text('Nothing placed yet — tap an item below to add it.',
+                        style: TextStyle(color: AppColors.textMuted)),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: items.length,
+                      separatorBuilder: (_, _) =>
+                          const Divider(color: AppColors.divider, height: 1),
+                      itemBuilder: (_, i) {
+                        final item = items[i];
+                        final entry = catalogEntryFor(item.catalogId);
+                        if (entry == null) return const SizedBox.shrink();
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Text(entry.emoji, style: const TextStyle(fontSize: 22)),
+                          title: Text(entry.label,
+                              style: const TextStyle(
+                                  color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.rose),
+                            onPressed: () async {
+                              final confirm = await _confirmRemove(entry.label);
+                              if (confirm == true && coupleId != null) {
+                                await ref
+                                    .read(firestoreServiceProvider)
+                                    .removeHomeDecorItem(coupleId, item.id);
+                                setSheetState(() => items.removeAt(i));
+                              }
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final placed = ref.watch(homeDecorProvider).valueOrNull ?? [];
@@ -449,6 +528,7 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen>
               onCancel: _cancelPlacing,
               onBack: () => Navigator.maybePop(context),
               onStyleTap: () => _showStylePicker(style),
+              onMyItemsTap: () => _showMyItems(placed),
             ),
             Expanded(
               child: Center(
@@ -508,18 +588,20 @@ class _Header extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onBack;
   final VoidCallback onStyleTap;
+  final VoidCallback onMyItemsTap;
 
   const _Header({
     required this.isPlacing,
     required this.onCancel,
     required this.onBack,
     required this.onStyleTap,
+    required this.onMyItemsTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 4, 16, 4),
+      padding: const EdgeInsets.fromLTRB(4, 4, 12, 4),
       child: Row(
         children: [
           IconButton(
@@ -540,11 +622,18 @@ class _Header extends StatelessWidget {
               onPressed: onCancel,
               child: const Text('Cancel', style: TextStyle(color: AppColors.rose)),
             )
-          else
+          else ...[
             IconButton(
+              tooltip: 'My Items',
+              icon: const Icon(Icons.inventory_2_outlined, color: AppColors.textPrimary),
+              onPressed: onMyItemsTap,
+            ),
+            IconButton(
+              tooltip: 'Room Style',
               icon: const Icon(Icons.format_paint_rounded, color: AppColors.textPrimary),
               onPressed: onStyleTap,
             ),
+          ],
         ],
       ),
     );
@@ -553,34 +642,102 @@ class _Header extends StatelessWidget {
 
 // ─── Inventory drawer ────────────────────────────────────────────────────
 
-class _InventoryDrawer extends StatelessWidget {
+class _InventoryDrawer extends StatefulWidget {
   final String? placingId;
   final ValueChanged<String> onSelect;
 
   const _InventoryDrawer({required this.placingId, required this.onSelect});
 
   @override
+  State<_InventoryDrawer> createState() => _InventoryDrawerState();
+}
+
+class _InventoryDrawerState extends State<_InventoryDrawer> {
+  HomeCategory _category = HomeCategory.furniture;
+
+  @override
   Widget build(BuildContext context) {
+    final items = itemsInCategory(_category);
     return Container(
-      height: 104,
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      height: 178,
       decoration: const BoxDecoration(
         color: AppColors.bgMid,
         border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
       ),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        children: kHomeDecorCatalog
-            .map((e) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  child: _CatalogChip(
-                    entry: e,
-                    selected: placingId == e.id,
-                    onTap: () => onSelect(e.id),
-                  ),
-                ))
-            .toList(),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              children: HomeCategory.values
+                  .map((c) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: _CategoryChip(
+                          category: c,
+                          selected: _category == c,
+                          onTap: () => setState(() => _category = c),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.divider),
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              children: items
+                  .map((e) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        child: _CatalogChip(
+                          entry: e,
+                          selected: widget.placingId == e.id,
+                          onTap: () => widget.onSelect(e.id),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryChip extends StatelessWidget {
+  final HomeCategory category;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CategoryChip({required this.category, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return SquishyTap(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.rose.withValues(alpha: 0.2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: selected ? AppColors.rose : AppColors.divider),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(homeCategoryEmoji(category), style: const TextStyle(fontSize: 13)),
+            const SizedBox(width: 5),
+            Text(homeCategoryLabel(category),
+                style: TextStyle(
+                  color: selected ? AppColors.rose : AppColors.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+                )),
+          ],
+        ),
       ),
     );
   }
@@ -881,48 +1038,297 @@ class _IsoScenePainter extends CustomPainter {
     final groundBottom = bottom + Offset(0, h);
     final groundLeft = left + Offset(0, h);
     final groundRight = right + Offset(0, h);
+    final center = Offset((top.dx + bottom.dx) / 2, (top.dy + bottom.dy) / 2);
 
-    final base = r.entry.color;
-    final topFace = Path()
-      ..moveTo(top.dx, top.dy)
-      ..lineTo(right.dx, right.dy)
-      ..lineTo(bottom.dx, bottom.dy)
-      ..lineTo(left.dx, left.dy)
-      ..close();
-    final leftFace = Path()
-      ..moveTo(left.dx, left.dy)
-      ..lineTo(bottom.dx, bottom.dy)
-      ..lineTo(groundBottom.dx, groundBottom.dy)
-      ..lineTo(groundLeft.dx, groundLeft.dy)
-      ..close();
-    final rightFace = Path()
-      ..moveTo(right.dx, right.dy)
-      ..lineTo(bottom.dx, bottom.dy)
-      ..lineTo(groundBottom.dx, groundBottom.dy)
-      ..lineTo(groundRight.dx, groundRight.dy)
-      ..close();
+    final g = _ItemGeom(
+      top: top,
+      right: right,
+      bottom: bottom,
+      left: left,
+      groundBottom: groundBottom,
+      groundLeft: groundLeft,
+      groundRight: groundRight,
+      center: center,
+      h: h,
+      base: r.entry.color,
+      accent: r.entry.accent ?? _lighten(r.entry.color, 0.45),
+    );
 
     if (r.entry.isRug) {
-      canvas.drawPath(topFace, Paint()..color = base.withValues(alpha: 0.85));
-      canvas.drawPath(
-          topFace,
-          Paint()
-            ..color = _darken(base, 0.3)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5);
+      _drawRug(canvas, g);
       return;
     }
 
-    canvas.drawPath(leftFace, Paint()..color = _darken(base, 0.28));
-    canvas.drawPath(rightFace, Paint()..color = _darken(base, 0.42));
-    canvas.drawPath(topFace, Paint()..color = _lighten(base, 0.12));
+    if (r.entry.glow) {
+      _drawGlowHalo(canvas, g.center, g.accent);
+    }
 
-    final center = Offset((top.dx + bottom.dx) / 2, (top.dy + bottom.dy) / 2);
-    _drawEmoji(canvas, center, r.entry.emoji, 18);
+    switch (r.entry.shape) {
+      case HomeItemShape.seating:
+        _drawSeating(canvas, g);
+      case HomeItemShape.table:
+        _drawTable(canvas, g);
+      case HomeItemShape.shelfUnit:
+        _drawShelfUnit(canvas, g);
+      case HomeItemShape.plant:
+        _drawPlant(canvas, g);
+      case HomeItemShape.vase:
+        _drawVase(canvas, g);
+      case HomeItemShape.lampGlow:
+        _drawLampGlow(canvas, g);
+      case HomeItemShape.wallFlat:
+        _drawWallFlat(canvas, g);
+      case HomeItemShape.postBox:
+        _drawPostBox(canvas, g);
+      case HomeItemShape.electronics:
+        _drawElectronics(canvas, g);
+      case HomeItemShape.instrument:
+        _drawInstrument(canvas, g);
+      case HomeItemShape.blob:
+        _drawBlob(canvas, g);
+      case HomeItemShape.box:
+      case HomeItemShape.rug:
+        _drawBox(canvas, g);
+    }
+
+    final emojiOffset = r.entry.shape == HomeItemShape.wallFlat
+        ? g.center
+        : g.center + const Offset(0, -6);
+    _drawEmoji(canvas, emojiOffset, r.entry.emoji, 15);
 
     if (r.trophyCount != null && r.trophyCount! > 0) {
-      _drawBadge(canvas, center + const Offset(16, -10), '${r.trophyCount}', AppColors.gold);
+      _drawBadge(canvas, g.center + const Offset(18, -16), '${r.trophyCount}', AppColors.gold);
     }
+  }
+
+  // ── Shape drawers ─────────────────────────────────────────────────────
+
+  Path _quad(Offset a, Offset b, Offset c, Offset d) => Path()
+    ..moveTo(a.dx, a.dy)
+    ..lineTo(b.dx, b.dy)
+    ..lineTo(c.dx, c.dy)
+    ..lineTo(d.dx, d.dy)
+    ..close();
+
+  void _strokeEdges(Canvas canvas, List<Path> faces) {
+    final paint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.22)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    for (final f in faces) {
+      canvas.drawPath(f, paint);
+    }
+  }
+
+  void _drawBoxFaces(Canvas canvas, _ItemGeom g, {double? overrideHeightFraction}) {
+    final frac = overrideHeightFraction ?? 1.0;
+    final top = g.top + Offset(0, g.h * (1 - frac));
+    final right = g.right + Offset(0, g.h * (1 - frac));
+    final bottom = g.bottom + Offset(0, g.h * (1 - frac));
+    final left = g.left + Offset(0, g.h * (1 - frac));
+    final topFace = _quad(top, right, bottom, left);
+    final leftFace = _quad(left, bottom, g.groundBottom, g.groundLeft);
+    final rightFace = _quad(right, bottom, g.groundBottom, g.groundRight);
+    canvas.drawPath(leftFace, Paint()..color = _darken(g.base, 0.3));
+    canvas.drawPath(rightFace, Paint()..color = _darken(g.base, 0.45));
+    canvas.drawPath(
+        topFace, Paint()..shader = ui.Gradient.linear(top, bottom, [_lighten(g.base, 0.24), g.base]));
+    _strokeEdges(canvas, [topFace, leftFace, rightFace]);
+  }
+
+  void _drawBox(Canvas canvas, _ItemGeom g) => _drawBoxFaces(canvas, g);
+
+  void _drawRug(Canvas canvas, _ItemGeom g) {
+    final topFace = _quad(g.top, g.right, g.bottom, g.left);
+    canvas.drawPath(topFace, Paint()..color = g.base.withValues(alpha: 0.88));
+    canvas.save();
+    canvas.clipPath(topFace);
+    final inset = Path()
+      ..addPolygon([
+        Offset.lerp(g.top, g.center, 0.35)!,
+        Offset.lerp(g.right, g.center, 0.35)!,
+        Offset.lerp(g.bottom, g.center, 0.35)!,
+        Offset.lerp(g.left, g.center, 0.35)!,
+      ], true);
+    canvas.drawPath(
+        inset,
+        Paint()
+          ..color = _darken(g.base, 0.25)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2);
+    canvas.restore();
+    canvas.drawPath(
+        topFace,
+        Paint()
+          ..color = _darken(g.base, 0.35)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
+  }
+
+  void _drawSeating(Canvas canvas, _ItemGeom g) {
+    _drawBoxFaces(canvas, g, overrideHeightFraction: 0.55);
+    // Backrest shadow along the far edge + two armrest accents on the corners.
+    final topFace = _quad(g.top, g.right, g.bottom, g.left);
+    canvas.save();
+    canvas.clipPath(topFace);
+    canvas.drawPath(
+        _quad(g.top, Offset.lerp(g.top, g.right, 0.5)!, Offset.lerp(g.left, g.bottom, 0.35)!, g.left),
+        Paint()..color = _darken(g.base, 0.2));
+    canvas.restore();
+    for (final corner in [g.left, g.right]) {
+      canvas.drawCircle(Offset.lerp(corner, g.center, 0.55)!, 5, Paint()..color = _lighten(g.base, 0.1));
+    }
+  }
+
+  void _drawTable(Canvas canvas, _ItemGeom g) {
+    _drawBoxFaces(canvas, g);
+    final topFace = _quad(g.top, g.right, g.bottom, g.left);
+    canvas.save();
+    canvas.clipPath(topFace);
+    final inset = Path()
+      ..addPolygon([
+        Offset.lerp(g.top, g.center, 0.3)!,
+        Offset.lerp(g.right, g.center, 0.3)!,
+        Offset.lerp(g.bottom, g.center, 0.3)!,
+        Offset.lerp(g.left, g.center, 0.3)!,
+      ], true);
+    canvas.drawPath(inset, Paint()..color = _lighten(g.base, 0.18).withValues(alpha: 0.7));
+    canvas.restore();
+  }
+
+  void _drawShelfUnit(Canvas canvas, _ItemGeom g) {
+    _drawBoxFaces(canvas, g);
+    final shelfPaint = Paint()
+      ..color = _darken(g.base, 0.5)
+      ..strokeWidth = 1.4;
+    for (var i = 1; i < 4; i++) {
+      final t = i / 4;
+      final l = Offset.lerp(g.left, g.groundLeft, t)!;
+      final b = Offset.lerp(g.bottom, g.groundBottom, t)!;
+      final rr = Offset.lerp(g.right, g.groundRight, t)!;
+      canvas.drawLine(l, b, shelfPaint);
+      canvas.drawLine(rr, b, shelfPaint);
+    }
+    const bookColors = [Color(0xFF8B3A3A), Color(0xFF2E5E8E), Color(0xFFB5681F), Color(0xFF4A7C59)];
+    for (var i = 0; i < 4; i++) {
+      final t = 0.15 + i * 0.16;
+      final base = Offset.lerp(g.left, g.bottom, t)!;
+      final top = base - const Offset(0, 8);
+      canvas.drawLine(base, top, Paint()..color = bookColors[i % bookColors.length]..strokeWidth = 3.5);
+    }
+  }
+
+  void _drawPlant(Canvas canvas, _ItemGeom g) {
+    _drawBoxFaces(canvas, g, overrideHeightFraction: 0.4);
+    final potTop = g.center + Offset(0, g.h * 0.3);
+    final greens = [_darken(g.base, 0.1), g.base, _lighten(g.base, 0.15)];
+    for (var i = 0; i < 3; i++) {
+      final dx = (i - 1) * 8.0;
+      final dy = -g.h * 0.35 - i * 6;
+      canvas.drawCircle(potTop + Offset(dx, dy), 11 - i.toDouble(), Paint()..color = greens[i]);
+    }
+  }
+
+  void _drawVase(Canvas canvas, _ItemGeom g) {
+    _drawBoxFaces(canvas, g, overrideHeightFraction: 0.7);
+    final neck = g.center + Offset(0, -g.h * 0.35);
+    const petalColors = [Color(0xFFFF6B8A), Color(0xFFFFD166), Color(0xFFB8A0D9)];
+    for (var i = 0; i < 3; i++) {
+      final angle = i * 2.4;
+      canvas.drawCircle(neck + Offset(math.cos(angle) * 6, math.sin(angle) * 4 - 6), 6,
+          Paint()..color = petalColors[i % petalColors.length]);
+    }
+  }
+
+  void _drawLampGlow(Canvas canvas, _ItemGeom g) {
+    _drawBoxFaces(canvas, g, overrideHeightFraction: 0.5);
+  }
+
+  void _drawGlowHalo(Canvas canvas, Offset center, Color color) {
+    final radius = 20.0 + 5 * glowT;
+    final paint = Paint()
+      ..shader = ui.Gradient.radial(
+          center, radius, [color.withValues(alpha: 0.5), color.withValues(alpha: 0)]);
+    canvas.drawCircle(center, radius, paint);
+  }
+
+  void _drawWallFlat(Canvas canvas, _ItemGeom g) {
+    const thin = 5.0;
+    final top = g.top;
+    final right = g.right;
+    final bottom = g.bottom;
+    final left = g.left;
+    final groundBottom = bottom + const Offset(0, thin);
+    final groundLeft = left + const Offset(0, thin);
+    final groundRight = right + const Offset(0, thin);
+    final topFace = _quad(top, right, bottom, left);
+    final leftFace = _quad(left, bottom, groundBottom, groundLeft);
+    final rightFace = _quad(right, bottom, groundBottom, groundRight);
+    canvas.drawPath(leftFace, Paint()..color = _darken(g.base, 0.3));
+    canvas.drawPath(rightFace, Paint()..color = _darken(g.base, 0.4));
+    canvas.drawPath(topFace, Paint()..color = g.base);
+    canvas.save();
+    canvas.clipPath(topFace);
+    final inset = Path()
+      ..addPolygon([
+        Offset.lerp(top, g.center, 0.28)!,
+        Offset.lerp(right, g.center, 0.28)!,
+        Offset.lerp(bottom, g.center, 0.28)!,
+        Offset.lerp(left, g.center, 0.28)!,
+      ], true);
+    canvas.drawPath(
+        inset,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
+    canvas.restore();
+    _strokeEdges(canvas, [topFace]);
+  }
+
+  void _drawPostBox(Canvas canvas, _ItemGeom g) {
+    canvas.drawLine(g.center + Offset(0, -g.h * 0.1), g.groundBottom,
+        Paint()..color = _darken(g.base, 0.5)..strokeWidth = 3);
+    _drawBoxFaces(canvas, g, overrideHeightFraction: 0.45);
+  }
+
+  void _drawElectronics(Canvas canvas, _ItemGeom g) {
+    _drawBoxFaces(canvas, g);
+    final leftFace = _quad(g.left, g.bottom, g.groundBottom, g.groundLeft);
+    canvas.save();
+    canvas.clipPath(leftFace);
+    final inset = Path()
+      ..addPolygon([
+        Offset.lerp(g.left, g.bottom, 0.2)!,
+        Offset.lerp(g.left, g.bottom, 0.8)!,
+        Offset.lerp(g.groundLeft, g.groundBottom, 0.8)!,
+        Offset.lerp(g.groundLeft, g.groundBottom, 0.2)!,
+      ], true);
+    canvas.drawPath(inset, Paint()..color = g.accent.withValues(alpha: 0.85));
+    canvas.restore();
+  }
+
+  void _drawInstrument(Canvas canvas, _ItemGeom g) {
+    _drawBoxFaces(canvas, g);
+    final topFace = _quad(g.top, g.right, g.bottom, g.left);
+    canvas.save();
+    canvas.clipPath(topFace);
+    for (var i = 0; i < 4; i++) {
+      final t = i / 4;
+      final a = Offset.lerp(g.top, g.left, t)!;
+      final b = Offset.lerp(g.right, g.bottom, t)!;
+      canvas.drawLine(a, b,
+          Paint()..color = (i.isEven ? g.accent : _darken(g.base, 0.3)).withValues(alpha: 0.8)..strokeWidth = 3);
+    }
+    canvas.restore();
+  }
+
+  void _drawBlob(Canvas canvas, _ItemGeom g) {
+    final rect = Rect.fromPoints(g.left, g.right).inflate(4).translate(0, g.h * 0.3);
+    canvas.drawOval(rect.shift(const Offset(0, 4)), Paint()..color = Colors.black.withValues(alpha: 0.15));
+    canvas.drawOval(rect, Paint()..color = g.base);
+    canvas.drawOval(
+        rect.deflate(6).shift(const Offset(0, -3)), Paint()..color = _lighten(g.base, 0.15));
   }
 
   void _drawEmoji(Canvas canvas, Offset center, String emoji, double fontSize) {
@@ -956,4 +1362,25 @@ class _IsoScenePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _IsoScenePainter oldDelegate) => true;
+}
+
+class _ItemGeom {
+  final Offset top, right, bottom, left, groundBottom, groundLeft, groundRight, center;
+  final double h;
+  final Color base;
+  final Color accent;
+
+  const _ItemGeom({
+    required this.top,
+    required this.right,
+    required this.bottom,
+    required this.left,
+    required this.groundBottom,
+    required this.groundLeft,
+    required this.groundRight,
+    required this.center,
+    required this.h,
+    required this.base,
+    required this.accent,
+  });
 }
