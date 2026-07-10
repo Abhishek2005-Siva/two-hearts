@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
 import '../../core/models/content_block.dart';
@@ -49,6 +51,20 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
     _title.dispose();
     super.dispose();
   }
+
+  static const _occasionIdeas = [
+    'Just because ♡',
+    'Missing you today',
+    'For our next chapter',
+    'A little reminder that I love you',
+    'For a rainy day',
+    'Thinking of you again',
+    'For whenever you need this most',
+    'A note for future us',
+  ];
+
+  String _randomOccasion() =>
+      _occasionIdeas[math.Random().nextInt(_occasionIdeas.length)];
 
   DateTime? _resolveUnlockAt({
     required DateTime? myBirthday,
@@ -298,36 +314,69 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
             children: [
               // Top bar
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.fromLTRB(4, 4, 16, 0),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     IconButton(
                       icon: const Icon(Icons.arrow_back_ios_new_rounded,
                           color: AppColors.textPrimary),
                       onPressed: () => context.go('/together'),
                     ),
-                    const Expanded(
-                      child: Text('Write a Letter',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary)),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text('Write a Letter',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .displayMedium
+                                        ?.copyWith(fontSize: 24)),
+                                const SizedBox(width: 6),
+                                const Text('✨', style: TextStyle(fontSize: 18)),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            const Text('Create a heartfelt letter for any occasion',
+                                style: TextStyle(
+                                    color: AppColors.textSecondary, fontSize: 12)),
+                          ],
+                        ),
+                      ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.only(top: 8),
                       child: _sending
                           ? const SizedBox(width: 24, height: 24,
                               child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))
                           : GestureDetector(
                               onTap: _send,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(colors: [accent, AppColors.coral]),
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                        color: accent.withValues(alpha: 0.35),
+                                        blurRadius: 14),
+                                  ],
                                 ),
-                                child: const Text('Send',
-                                    style: TextStyle(color: Colors.white,
-                                        fontWeight: FontWeight.w600)),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('Send',
+                                        style: TextStyle(color: Colors.white,
+                                            fontWeight: FontWeight.w700)),
+                                    const SizedBox(width: 6),
+                                    const Icon(Icons.send_rounded,
+                                        color: Colors.white, size: 15),
+                                  ],
+                                ),
                               ),
                             ),
                     ),
@@ -341,60 +390,104 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _EnvelopeHero(accent: accent),
+                      const SizedBox(height: 20),
+
                       // Subject field
+                      const Padding(
+                        padding: EdgeInsets.only(left: 4, bottom: 6),
+                        child: Row(
+                          children: [
+                            Text('•', style: TextStyle(color: AppColors.rose, fontSize: 16)),
+                            SizedBox(width: 4),
+                            Text('Subject',
+                                style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
                       Container(
                         decoration: BoxDecoration(
                           color: AppColors.bgCard,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: AppColors.divider, width: 0.5),
                         ),
-                        child: TextField(
-                          controller: _title,
-                          style: const TextStyle(color: AppColors.textPrimary,
-                              fontSize: 18, fontWeight: FontWeight.w600),
-                          decoration: const InputDecoration(
-                            hintText: 'Subject…',
-                            hintStyle: TextStyle(color: AppColors.textMuted),
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.all(18),
-                          ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _title,
+                                style: const TextStyle(color: AppColors.textPrimary,
+                                    fontSize: 17, fontWeight: FontWeight.w600),
+                                decoration: const InputDecoration(
+                                  hintText: 'What\'s the occasion?',
+                                  hintStyle: TextStyle(color: AppColors.textMuted),
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.fromLTRB(18, 16, 8, 16),
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: GestureDetector(
+                                onTap: () => setState(
+                                    () => _title.text = _randomOccasion()),
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: accent.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(Icons.auto_awesome_rounded,
+                                      color: accent, size: 18),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 20),
 
                       // ── UNLOCK SECTION ──────────────────────────────────
-                      const Text('OPEN THIS LETTER…',
+                      const Text('WHEN SHOULD THIS LETTER OPEN?',
                           style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold,
-                              color: AppColors.textMuted, letterSpacing: 1.5)),
+                              color: AppColors.rose, letterSpacing: 1.2)),
                       const SizedBox(height: 12),
 
                       // Quick picks row
                       _UnlockChip(
                         emoji: '🌅',
                         label: 'Tomorrow',
+                        subtitle: 'Open this letter tomorrow',
                         selected: _mode == _UnlockMode.tomorrow,
                         accent: accent,
+                        tint: const Color(0xFFE8896A),
                         onTap: () => setState(() { _mode = _UnlockMode.tomorrow; _customDate = null; }),
                       ),
                       const SizedBox(height: 8),
                       _UnlockChip(
                         emoji: '📆',
                         label: 'Next Week',
+                        subtitle: 'Open this letter in 7 days',
                         selected: _mode == _UnlockMode.nextWeek,
                         accent: accent,
+                        tint: const Color(0xFF5B9BD5),
                         onTap: () => setState(() { _mode = _UnlockMode.nextWeek; _customDate = null; }),
                       ),
                       const SizedBox(height: 8),
                       _UnlockChip(
-                        emoji: '💙',
-                        label: 'Open When…',
+                        emoji: '💜',
+                        label: 'Open when…',
                         subtitle: _mode == _UnlockMode.openWhen
                             ? '${_openWhenEmotions.firstWhere(
                                 (e) => e.$2 == _openWhenEmotion,
                                 orElse: () => _openWhenEmotions.last).$1} $_openWhenEmotion'
-                            : 'Pick an emotion — unlocks any time',
+                            : 'Pick an emotion to unlock the letter',
                         selected: _mode == _UnlockMode.openWhen,
                         accent: accent,
+                        tint: const Color(0xFFBA68C8),
                         onTap: () => setState(() { _mode = _UnlockMode.openWhen; _customDate = null; }),
                       ),
                       if (_mode == _UnlockMode.openWhen) ...[
@@ -448,45 +541,65 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                         const SizedBox(height: 14),
                         const Text('SPECIAL DATES',
                             style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold,
-                                color: AppColors.textMuted, letterSpacing: 1.5)),
+                                color: AppColors.rose, letterSpacing: 1.2)),
                         const SizedBox(height: 10),
                       ],
-                      if (myBirthday != null) ...[
-                        _UnlockChip(
-                          emoji: '🎂',
-                          label: 'My Birthday',
-                          subtitle: '${_monthShort(myBirthday.month)} ${myBirthday.day} '
-                              '— ${_daysUntil(_nextOccurrence(myBirthday))}',
-                          selected: _mode == _UnlockMode.myBirthday,
-                          accent: accent,
-                          onTap: () => setState(() { _mode = _UnlockMode.myBirthday; _customDate = null; }),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      if (partnerBirthday != null) ...[
-                        _UnlockChip(
-                          emoji: '🎁',
-                          label: '$partnerFirstName\'s Birthday',
-                          subtitle: '${_monthShort(partnerBirthday.month)} ${partnerBirthday.day} '
-                              '— ${_daysUntil(_nextOccurrence(partnerBirthday))}',
-                          selected: _mode == _UnlockMode.partnerBirthday,
-                          accent: accent,
-                          onTap: () => setState(() { _mode = _UnlockMode.partnerBirthday; _customDate = null; }),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      if (anniversary != null) ...[
-                        _UnlockChip(
-                          emoji: '💑',
-                          label: 'Our Anniversary',
-                          subtitle: '${_monthShort(anniversary.month)} ${anniversary.day} '
-                              '— ${_daysUntil(_nextOccurrence(anniversary))}',
-                          selected: _mode == _UnlockMode.anniversary,
-                          accent: accent,
-                          onTap: () => setState(() { _mode = _UnlockMode.anniversary; _customDate = null; }),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
+                      Builder(builder: (context) {
+                        final cards = <Widget>[
+                          if (myBirthday != null)
+                            _UnlockChip(
+                              emoji: '🎂',
+                              label: 'My Birthday',
+                              subtitle: '${_monthShort(myBirthday.month)} ${myBirthday.day}, '
+                                  '${_nextOccurrence(myBirthday).year} · ${_daysUntil(_nextOccurrence(myBirthday))}',
+                              selected: _mode == _UnlockMode.myBirthday,
+                              accent: accent,
+                              tint: AppColors.gold,
+                              onTap: () => setState(() { _mode = _UnlockMode.myBirthday; _customDate = null; }),
+                            ),
+                          if (partnerBirthday != null)
+                            _UnlockChip(
+                              emoji: '🎁',
+                              label: '$partnerFirstName\'s Birthday',
+                              subtitle: '${_monthShort(partnerBirthday.month)} ${partnerBirthday.day}, '
+                                  '${_nextOccurrence(partnerBirthday).year} · ${_daysUntil(_nextOccurrence(partnerBirthday))}',
+                              selected: _mode == _UnlockMode.partnerBirthday,
+                              accent: accent,
+                              tint: AppColors.lavender,
+                              onTap: () => setState(() { _mode = _UnlockMode.partnerBirthday; _customDate = null; }),
+                            ),
+                          if (anniversary != null)
+                            _UnlockChip(
+                              emoji: '💑',
+                              label: 'Our Anniversary',
+                              subtitle: '${_monthShort(anniversary.month)} ${anniversary.day} '
+                                  '— ${_daysUntil(_nextOccurrence(anniversary))}',
+                              selected: _mode == _UnlockMode.anniversary,
+                              accent: accent,
+                              tint: AppColors.rose,
+                              onTap: () => setState(() { _mode = _UnlockMode.anniversary; _customDate = null; }),
+                            ),
+                        ];
+                        if (cards.isEmpty) return const SizedBox.shrink();
+                        final rows = <Widget>[];
+                        for (var i = 0; i < cards.length; i += 2) {
+                          final hasSecond = i + 1 < cards.length;
+                          rows.add(Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: cards[i]),
+                                if (hasSecond) ...[
+                                  const SizedBox(width: 8),
+                                  Expanded(child: cards[i + 1]),
+                                ],
+                              ],
+                            ),
+                          ));
+                        }
+                        return Column(children: rows);
+                      }),
 
                       // Tip if birthdays not set
                       if (myBirthday == null && partnerBirthday == null) ...[
@@ -516,72 +629,64 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                         const SizedBox(height: 8),
                       ],
 
-                      // Custom date picker
+                      // Custom date picker — teal, matching "Specific Date & Time"
                       const SizedBox(height: 6),
-                      GestureDetector(
-                        onTap: _pickDateAndTime,
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            gradient: _mode == _UnlockMode.custom
-                                ? LinearGradient(colors: [
-                                    accent.withValues(alpha: 0.2),
-                                    AppColors.coral.withValues(alpha: 0.12),
-                                  ])
-                                : null,
-                            color: _mode == _UnlockMode.custom ? null : AppColors.bgCard,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: _mode == _UnlockMode.custom
-                                  ? accent.withValues(alpha: 0.5)
-                                  : AppColors.divider,
-                              width: _mode == _UnlockMode.custom ? 1.5 : 0.5,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: accent.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(Icons.calendar_month_outlined,
-                                    color: accent, size: 20),
+                      Builder(builder: (context) {
+                        const teal = Color(0xFF4DB6AC);
+                        final selected = _mode == _UnlockMode.custom;
+                        return GestureDetector(
+                          onTap: _pickDateAndTime,
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(colors: selected
+                                  ? [teal.withValues(alpha: 0.32), teal.withValues(alpha: 0.14)]
+                                  : [teal.withValues(alpha: 0.12), AppColors.bgCard]),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: selected ? teal : teal.withValues(alpha: 0.25),
+                                width: selected ? 1.5 : 0.5,
                               ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _mode == _UnlockMode.custom && _customDate != null
-                                          ? _formatDateTime(_customDate!, _customTime)
-                                          : 'Pick a specific date & time',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: _mode == _UnlockMode.custom
-                                            ? FontWeight.w600 : FontWeight.normal,
-                                        color: _mode == _UnlockMode.custom
-                                            ? AppColors.textPrimary : AppColors.textSecondary,
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: teal.withValues(alpha: 0.22),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(Icons.calendar_month_outlined,
+                                      color: teal, size: 20),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        selected && _customDate != null
+                                            ? _formatDateTime(_customDate!, _customTime)
+                                            : 'Specific Date & Time',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                                          color: AppColors.textPrimary,
+                                        ),
                                       ),
-                                    ),
-                                    if (_mode != _UnlockMode.custom || _customDate == null)
                                       const Text('Choose any date and time',
                                           style: TextStyle(fontSize: 11,
                                               color: AppColors.textMuted)),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                color: _mode == _UnlockMode.custom ? accent : AppColors.textMuted,
-                                size: 20,
-                              ),
-                            ],
+                                Icon(Icons.chevron_right_rounded,
+                                    color: selected ? teal : AppColors.textMuted, size: 20),
+                              ],
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      }),
 
                       // Unlock date preview card
                       if (_mode != _UnlockMode.openWhen && _mode != _UnlockMode.custom) ...[
@@ -594,6 +699,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                             anniversary: couple?.anniversary,
                           ),
                           accent: accent,
+                          onTap: _pickDateAndTime,
                         ),
                       ],
                       if (_mode == _UnlockMode.custom && _customDate != null) ...[
@@ -606,25 +712,49 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                             anniversary: couple?.anniversary,
                           ),
                           accent: accent,
+                          onTap: _pickDateAndTime,
                         ),
                       ],
 
                       const SizedBox(height: 24),
 
-                      // Body field
+                      // Body field — parchment paper, like the letter itself
                       Container(
                         constraints: BoxConstraints(
                           minHeight: MediaQuery.of(context).size.height * 0.3,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.bgCard,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: AppColors.divider, width: 0.5),
+                          color: const Color(0xFFFBF3E3),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border(
+                            top: BorderSide(
+                                color: const Color(0xFF4A3420).withValues(alpha: 0.25),
+                                width: 1.5),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6)),
+                          ],
                         ),
-                        padding: const EdgeInsets.all(12),
-                        child: RichContentEditor(
-                          initialBlocks: _blocks,
-                          onChanged: (blocks) => setState(() => _blocks = blocks),
+                        padding: const EdgeInsets.all(14),
+                        child: Theme(
+                          data: Theme.of(context).copyWith(
+                            textTheme: Theme.of(context)
+                                .textTheme
+                                .apply(bodyColor: const Color(0xFF2A1A0A)),
+                          ),
+                          child: DefaultTextStyle.merge(
+                            style: const TextStyle(color: Color(0xFF2A1A0A)),
+                            child: RichContentEditor(
+                              initialBlocks: _blocks,
+                              onChanged: (blocks) => setState(() => _blocks = blocks),
+                              textColor: const Color(0xFF2A1A0A),
+                              hintColor: const Color(0xFF2A1A0A).withValues(alpha: 0.4),
+                              toolbarIconColor: const Color(0xFF5C3D1E),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -639,6 +769,119 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
   }
 }
 
+// ── Envelope hero illustration ────────────────────────────────────────────
+
+class _EnvelopeHero extends StatelessWidget {
+  final Color accent;
+  const _EnvelopeHero({required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 150,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          // Envelope body
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 6,
+            child: Container(
+              height: 100,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [accent.withValues(alpha: 0.85), AppColors.coral.withValues(alpha: 0.7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8)),
+                ],
+              ),
+            ),
+          ),
+          // Letter card peeking out
+          Positioned(
+            top: 0,
+            child: Transform.rotate(
+              angle: -0.03,
+              child: Container(
+                width: 190,
+                height: 108,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFBF3E3),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 10, offset: const Offset(0, 4)),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('For someone special,',
+                        style: GoogleFonts.caveat(
+                            color: const Color(0xFF4A3420), fontSize: 17)),
+                    Text('today and always.',
+                        style: GoogleFonts.caveat(
+                            color: const Color(0xFF4A3420), fontSize: 17)),
+                    const Spacer(),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Icon(Icons.favorite_rounded,
+                          color: accent.withValues(alpha: 0.4), size: 16),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Wax seal
+          Positioned(
+            bottom: 30,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFB33A3A), Color(0xFF7A2323)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 8),
+                ],
+              ),
+              child: const Icon(Icons.favorite_rounded, color: Colors.white70, size: 18),
+            ),
+          ),
+          // Little flowers, bottom-left
+          const Positioned(
+            left: 0,
+            bottom: 10,
+            child: Text('✿', style: TextStyle(fontSize: 22, color: Color(0xFFD8C4A0))),
+          ),
+          // Fountain pen, bottom-right
+          Positioned(
+            right: 4,
+            bottom: 0,
+            child: Transform.rotate(
+              angle: -0.55,
+              child: const Icon(Icons.edit_rounded, color: Color(0xFFD4A84B), size: 30),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Unlock Chip ───────────────────────────────────────────────────────────
 
 class _UnlockChip extends StatelessWidget {
@@ -647,6 +890,7 @@ class _UnlockChip extends StatelessWidget {
   final String? subtitle;
   final bool selected;
   final Color accent;
+  final Color? tint;
   final VoidCallback onTap;
 
   const _UnlockChip({
@@ -655,31 +899,40 @@ class _UnlockChip extends StatelessWidget {
     this.subtitle,
     required this.selected,
     required this.accent,
+    this.tint,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final color = tint ?? accent;
+    return SquishyTap(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          gradient: selected
-              ? LinearGradient(colors: [accent.withValues(alpha: 0.2),
-                  AppColors.coral.withValues(alpha: 0.12)])
-              : null,
-          color: selected ? null : AppColors.bgCard,
+          gradient: LinearGradient(
+            colors: selected
+                ? [color.withValues(alpha: 0.32), color.withValues(alpha: 0.14)]
+                : [color.withValues(alpha: 0.12), AppColors.bgCard],
+          ),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: selected ? accent.withValues(alpha: 0.6) : AppColors.divider,
+            color: selected ? color : color.withValues(alpha: 0.25),
             width: selected ? 1.5 : 0.5,
           ),
         ),
         child: Row(
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 22)),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.22),
+                shape: BoxShape.circle,
+              ),
+              child: Text(emoji, style: const TextStyle(fontSize: 18)),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -688,21 +941,31 @@ class _UnlockChip extends StatelessWidget {
                   Text(label,
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                        color: selected ? AppColors.textPrimary : AppColors.textSecondary,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                        color: AppColors.textPrimary,
                       )),
                   if (subtitle != null)
                     Text(subtitle!,
                         style: TextStyle(fontSize: 11,
-                            color: selected ? accent : AppColors.textMuted)),
+                            color: selected ? color : AppColors.textMuted)),
                 ],
               ),
             ),
             if (selected)
-              Icon(Icons.check_circle_rounded, color: accent, size: 18)
+              Container(
+                width: 22, height: 22,
+                decoration: const BoxDecoration(
+                    color: Colors.white, shape: BoxShape.circle),
+                child: Icon(Icons.check_rounded, color: color, size: 15),
+              )
             else
-              Icon(Icons.radio_button_unchecked_rounded,
-                  color: AppColors.divider, size: 18),
+              Container(
+                width: 22, height: 22,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.divider, width: 1.5),
+                ),
+              ),
           ],
         ),
       ),
@@ -716,37 +979,60 @@ class _UnlockPreview extends StatelessWidget {
   final _UnlockMode mode;
   final DateTime? date;
   final Color accent;
+  final VoidCallback? onTap;
 
-  const _UnlockPreview({required this.mode, required this.date, required this.accent});
+  const _UnlockPreview({
+    required this.mode,
+    required this.date,
+    required this.accent,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (date == null) return const SizedBox.shrink();
-    final daysAway = date!.difference(DateTime.now()).inDays;
-    final daysText = daysAway == 0
-        ? 'today'
-        : daysAway == 1
-            ? 'tomorrow'
-            : 'in $daysAway days';
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accent.withValues(alpha: 0.2), width: 0.5),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.lock_clock_outlined, color: accent, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Unlocks ${_formatDateTime(date!, null)} ($daysText)',
-              style: TextStyle(fontSize: 12, color: accent, height: 1.4),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.rose.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.rose.withValues(alpha: 0.3), width: 0.5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.gold.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.lock_rounded, color: AppColors.gold, size: 16),
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Unlocks ${_formatDateTime(date!, null)}',
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.rose),
+                  ),
+                  const Text('You can edit until then',
+                      style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                ],
+              ),
+            ),
+            if (onTap != null) ...[
+              const Icon(Icons.mail_outline_rounded, color: AppColors.textMuted, size: 16),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 18),
+            ],
+          ],
+        ),
       ),
     );
   }
