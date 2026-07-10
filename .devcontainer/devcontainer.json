@@ -4,11 +4,10 @@
   "features": {
     "ghcr.io/devcontainers/features/java:1": {
       "version": "17"
-    },
-    "ghcr.io/devcontainers/features/android-sdk:1": {}
+    }
   },
   "onCreateCommand": "bash .devcontainer/setup.sh",
-  "postStartCommand": "adb start-server",
+  "postStartCommand": "adb start-server; sudo tailscaled --state=/var/lib/tailscale/tailscaled.state > /tmp/tailscaled.log 2>&1 &",
   "customizations": {
     "vscode": {
       "extensions": [

@@ -20,13 +20,19 @@ network, so `adb` can reach the phone over the internet.
   are fast (cached).
 
 ### 3. Connect the Codespace to your Tailscale network
-In the Codespace terminal:
+`tailscaled` auto-starts in the background for every Codespace on this
+repo, so you only need to log in:
 ```bash
-sudo tailscaled &
 sudo tailscale up
 ```
 This prints a link — open it (on your phone or any browser) and sign in
 with the **same account** you used for Tailscale on your phone.
+
+If `tailscale`/`tailscaled` aren't found at all, the install step didn't
+finish — run this once and retry:
+```bash
+curl -fsSL https://tailscale.com/install.sh | sudo sh
+```
 
 Once connected, confirm you can see your phone:
 ```bash
