@@ -730,8 +730,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
             child: Center(
               child: _ThinkingOfYouPill(
                 accent: accent,
-                onTap: _sendThinkingOfYou,
-                onLongPress: _composeThinkingOfYou,
+                onTap: _composeThinkingOfYou,
               ).animate().fadeIn(delay: 200.ms),
             ),
           ),
@@ -944,15 +943,12 @@ class _NameMoodBubble extends StatelessWidget {
 class _ThinkingOfYouPill extends StatelessWidget {
   final Color accent;
   final VoidCallback onTap;
-  final VoidCallback? onLongPress;
-  const _ThinkingOfYouPill(
-      {required this.accent, required this.onTap, this.onLongPress});
+  const _ThinkingOfYouPill({required this.accent, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
-      onLongPress: onLongPress,
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 24, vertical: 10),

@@ -15,7 +15,8 @@ import 'package:video_player/video_player.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
-import 'share_target_screen.dart';
+import 'archive_search_screen.dart';
+import 'screen_share_screen.dart';
 
 /// Watch Together — one shared video, play/pause/seek mirrored between the
 /// two phones through Firestore. Whoever touches the controls drives; the
@@ -106,6 +107,14 @@ class _MovieNightLandingState extends ConsumerState<_MovieNightLanding> {
     }
   }
 
+  Future<void> _startWithArchive() async {
+    final result = await Navigator.of(context).push<(String, String)>(
+      MaterialPageRoute(builder: (_) => const ArchiveSearchScreen()),
+    );
+    if (result == null || !mounted) return;
+    await _start(result.$1, result.$2);
+  }
+
   Future<void> _startScreenShare() async {
     final coupleId = ref.read(coupleIdProvider);
     if (coupleId == null) return;
@@ -122,10 +131,14 @@ class _MovieNightLandingState extends ConsumerState<_MovieNightLanding> {
         .notifyScreenShare(coupleId)
         .ignore();
     if (!mounted) return;
+    // Android's own screen-cast picker already lets you choose entire
+    // screen vs a single app — asking again in-app before it was just a
+    // redundant extra tap, so go straight to the real capture flow.
     Navigator.of(context).push(MaterialPageRoute(
       fullscreenDialog: true,
-      builder: (_) => ShareTargetScreen(
+      builder: (_) => ScreenShareScreen(
         coupleId: coupleId,
+        isSharer: true,
         callId: callId,
         partnerName: partnerName,
       ),
@@ -288,6 +301,15 @@ class _MovieNightLandingState extends ConsumerState<_MovieNightLanding> {
                               accent: accent,
                               onTap: _startScreenShare,
                             ).animate().fadeIn(delay: 320.ms).slideX(begin: -0.04),
+                            const SizedBox(height: 14),
+                            _SourceButton(
+                              emoji: '🏛️',
+                              title: 'Free classics',
+                              subtitle:
+                                  'Search public-domain films from the Internet Archive',
+                              accent: accent,
+                              onTap: _startWithArchive,
+                            ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.04),
                             const SizedBox(height: 20),
                             const Text(
                               'Starting a movie sends them a little\n'

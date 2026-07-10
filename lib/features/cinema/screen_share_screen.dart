@@ -39,23 +39,17 @@ Future<Map<String, dynamic>> _buildIceConfig() async {
 const _offerTimeout = Duration(seconds: 20);
 const _ringTimeout = Duration(seconds: 45);
 
-/// What the sharer chose to mirror. Android's system capture dialog is what
-/// actually scopes "entire screen" vs a single app — this only tailors the
-/// in-app copy and hints, since there's no public API to force the choice.
-enum ScreenShareTarget { fullScreen, singleApp }
-
 /// Screen sharing for Movie Night — the sharer mirrors their phone screen
-/// (plus their mic so they can talk over it) and the partner watches live.
-/// Reuses the same Firestore WebRTC signaling as video calls, tagged with
-/// `mode: 'screen'` so the incoming prompt knows what it is.
+/// and the partner watches live. Android's own screen-cast picker is what
+/// lets the sharer choose entire screen vs a single app, so there's nothing
+/// to pre-select in-app. Reuses the same Firestore WebRTC signaling as
+/// video calls, tagged with `mode: 'screen'` so the incoming prompt knows
+/// what it is.
 class ScreenShareScreen extends StatefulWidget {
   final String coupleId;
   final bool isSharer;
   final String callId;
   final String? partnerName;
-
-  /// Only meaningful for the sharer; the viewer leaves it null.
-  final ScreenShareTarget? shareTarget;
 
   const ScreenShareScreen({
     super.key,
@@ -63,7 +57,6 @@ class ScreenShareScreen extends StatefulWidget {
     required this.isSharer,
     required this.callId,
     this.partnerName,
-    this.shareTarget,
   });
 
   @override
@@ -79,7 +72,7 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
   bool _connected = false;
   bool _disposed = false;
   bool _remoteDescSet = false;
-  bool _micOn = true;
+  bool _micOn = false;
   bool _serviceStarted = false;
   bool _controlsVisible = true;
   String? _error;
@@ -140,12 +133,14 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
           'audio': false,
           'video': true,
         });
-        // Add the sharer's mic so they can narrate.
+        // Add the sharer's mic so they can narrate — off by default, tap
+        // the mic button to turn it on.
         try {
           await Permission.microphone.request();
           final mic = await navigator.mediaDevices
               .getUserMedia({'audio': true, 'video': false});
           for (final t in mic.getAudioTracks()) {
+            t.enabled = false;
             await display.addTrack(t);
           }
         } catch (_) {}
@@ -410,14 +405,10 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
                   ? RTCVideoView(_localRenderer,
                       objectFit:
                           RTCVideoViewObjectFit.RTCVideoViewObjectFitContain)
-                  : _MessageBody(
+                  : const _MessageBody(
                       emoji: '🖥️',
-                      message: widget.shareTarget ==
-                              ScreenShareTarget.singleApp
-                          ? 'Getting ready…\nIn the next prompt, choose '
-                              '"Single app" and pick the app to share.'
-                          : 'Getting ready…\nIn the next prompt, choose '
-                              '"Entire screen" to begin.')
+                      message: 'Getting ready…\nChoose what to share in the '
+                          'next prompt — entire screen, or just one app.')
             else if (_connected && _remoteRenderer.srcObject != null)
               RTCVideoView(_remoteRenderer,
                   objectFit:
@@ -458,10 +449,7 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
                       Text(
                         widget.isSharer
                             ? (_connected
-                                ? (widget.shareTarget ==
-                                        ScreenShareTarget.singleApp
-                                    ? 'Sharing an app'
-                                    : 'Sharing your screen')
+                                ? 'Sharing your screen'
                                 : 'Waiting for them to join…')
                             : (_connected ? 'Live' : 'Connecting…'),
                         style: const TextStyle(
