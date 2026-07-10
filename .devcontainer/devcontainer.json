@@ -6,8 +6,12 @@
       "version": "17"
     }
   },
+  "runArgs": [
+    "--cap-add=NET_ADMIN",
+    "--device=/dev/net/tun:/dev/net/tun"
+  ],
   "onCreateCommand": "bash .devcontainer/setup.sh",
-  "postStartCommand": "adb start-server; sudo tailscaled --state=/var/lib/tailscale/tailscaled.state > /tmp/tailscaled.log 2>&1 &",
+  "postStartCommand": "bash .devcontainer/start.sh",
   "customizations": {
     "vscode": {
       "extensions": [

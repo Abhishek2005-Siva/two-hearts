@@ -70,6 +70,38 @@ flutter run -d <device-id>
 Once it's running, press `r` in the terminal for hot reload, `R` for hot
 restart — same as running locally, but pushed straight to your phone.
 
+## If tailscaled falls back to "userspace networking" mode
+
+Tailscale normally needs a TUN device + the `NET_ADMIN` capability, which
+`devcontainer.json` requests via `runArgs`. If GitHub's hosted Codespaces
+ignores that (some hosted platforms restrict container capabilities),
+`start.sh` automatically falls back to Tailscale's userspace-networking
+mode instead — you'll see `"tailscaled running in USERSPACE mode"` printed
+when the Codespace starts.
+
+In that mode there's no raw IP routing, so a plain `adb connect <ip>:<port>`
+won't reach your phone. Instead, tunnel the connection through Tailscale's
+built-in relay using `tailscale nc` + `socat`:
+
+```bash
+sudo apt-get install -y socat   # once per Codespace
+
+# In one terminal: forward a local port to your phone's debug port
+# through the tailnet, without needing raw routing.
+socat TCP-LISTEN:6520,fork,reuseaddr \
+  EXEC:"tailscale nc <phone-tailscale-ip> <debug-port>"
+
+# In another terminal:
+adb connect localhost:6520
+```
+
+Same idea for the one-time pairing step — swap in the pairing port instead
+of the debug port for that `socat`/`adb pair` combo.
+
+This is only needed if you see the USERSPACE warning; if `tailscaled
+running normally` is printed, ignore this section and use the plain
+`adb connect <phone-tailscale-ip>:<port>` from step 6 above.
+
 ## Notes
 - Wireless debugging can drop if your phone sleeps deeply or reboots —
   just re-run `adb connect <ip>:<port>` (no need to re-pair unless it was
