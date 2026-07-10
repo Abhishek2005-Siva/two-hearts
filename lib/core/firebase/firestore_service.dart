@@ -798,6 +798,65 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(RoomObject.fromDoc).toList());
 
+  // ── Home Decor (isometric shared room) ──────────────────────────────────
+
+  Future<void> placeHomeDecorItem(String coupleId, HomeDecorItem item) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('homeDecor')
+      .doc(item.id)
+      .set(item.toMap());
+
+  Future<void> moveHomeDecorItem(
+          String coupleId, String itemId, int col, int row) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('homeDecor')
+          .doc(itemId)
+          .update({'col': col, 'row': row});
+
+  Future<void> rotateHomeDecorItem(
+          String coupleId, String itemId, int rotation) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('homeDecor')
+          .doc(itemId)
+          .update({'rotation': rotation});
+
+  Future<void> removeHomeDecorItem(String coupleId, String itemId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('homeDecor')
+      .doc(itemId)
+      .delete();
+
+  Stream<List<HomeDecorItem>> watchHomeDecor(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('homeDecor')
+      .snapshots()
+      .map((s) => s.docs.map(HomeDecorItem.fromDoc).toList());
+
+  DocumentReference<Map<String, dynamic>> _homeStyleDoc(String coupleId) =>
+      _db.collection('couples').doc(coupleId).collection('homeRoom').doc('style');
+
+  Future<void> setHomeRoomStyle(
+    String coupleId, {
+    String? floorId,
+    String? wallId,
+    String? lightingId,
+  }) =>
+      _homeStyleDoc(coupleId).set({
+        if (floorId != null) 'floorId': floorId,
+        if (wallId != null) 'wallId': wallId,
+        if (lightingId != null) 'lightingId': lightingId,
+      }, SetOptions(merge: true));
+
+  Stream<HomeRoomStyle> watchHomeRoomStyle(String coupleId) =>
+      _homeStyleDoc(coupleId).snapshots().map(HomeRoomStyle.fromDoc);
+
   // ── Typing indicator ─────────────────────────────────────────────────────
 
   Future<void> setTyping(String coupleId, bool typing) => _db

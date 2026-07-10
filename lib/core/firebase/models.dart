@@ -786,6 +786,75 @@ class RoomObject {
       };
 }
 
+// ──────────────── Home Decor (isometric shared room) ────────────────
+
+/// A single placed piece of furniture/decor in the couple's shared room.
+class HomeDecorItem {
+  final String id;
+  final String catalogId; // key into the static kHomeDecorCatalog list
+  final int col;
+  final int row;
+  final int rotation; // 0/90/180/270 — ignored by items that don't rotate
+  final String placedBy;
+  final DateTime placedAt;
+
+  const HomeDecorItem({
+    required this.id,
+    required this.catalogId,
+    required this.col,
+    required this.row,
+    this.rotation = 0,
+    required this.placedBy,
+    required this.placedAt,
+  });
+
+  factory HomeDecorItem.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return HomeDecorItem(
+      id: doc.id,
+      catalogId: d['catalogId'] ?? '',
+      col: (d['col'] ?? 0) as int,
+      row: (d['row'] ?? 0) as int,
+      rotation: (d['rotation'] ?? 0) as int,
+      placedBy: d['placedBy'] ?? '',
+      placedAt: (d['placedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'catalogId': catalogId,
+        'col': col,
+        'row': row,
+        'rotation': rotation,
+        'placedBy': placedBy,
+        'placedAt': Timestamp.fromDate(placedAt),
+      };
+}
+
+/// The couple's chosen floor / wall / lighting style — one shared singleton
+/// per couple, following the same doc shape as cinema/listen sessions.
+class HomeRoomStyle {
+  final String floorId;
+  final String wallId;
+  final String lightingId;
+
+  const HomeRoomStyle({
+    this.floorId = 'oak',
+    this.wallId = 'cream_paint',
+    this.lightingId = 'warm',
+  });
+
+  factory HomeRoomStyle.fromDoc(DocumentSnapshot doc) {
+    if (!doc.exists) return const HomeRoomStyle();
+    final d = doc.data() as Map<String, dynamic>;
+    return HomeRoomStyle(
+      floorId: d['floorId'] ?? 'oak',
+      wallId: d['wallId'] ?? 'cream_paint',
+      lightingId: d['lightingId'] ?? 'warm',
+    );
+  }
+}
+
 // ──────────────── Game Round (Would You Rather) ────────────────
 
 class GameRound {

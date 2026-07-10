@@ -8,6 +8,7 @@ import '../../features/auth/pairing_screen.dart';
 import '../../features/auth/onboarding_screen.dart';
 import '../../features/chat/chat_screen.dart';
 import '../../features/room/room_screen.dart';
+import '../../features/room/home_decorate_screen.dart';
 import '../../features/memory/memory_wall_screen.dart';
 import '../../features/together/together_screen.dart';
 import '../../features/you_and_me/you_and_me_screen.dart';
@@ -145,6 +146,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/room',
             pageBuilder: (_, _) => _tabPage(const RoomScreen()),
+          ),
+          GoRoute(
+            path: '/room/decorate',
+            builder: (_, _) => const HomeDecorateScreen(),
           ),
           GoRoute(
             path: '/chat',

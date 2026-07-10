@@ -692,6 +692,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                             curve: Curves.easeInOut,
                           ),
                       IconButton(
+                        tooltip: 'Decorate Our Home',
+                        icon: const Icon(Icons.chair_rounded, color: Colors.white),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          context.push('/room/decorate');
+                        },
+                      ),
+                      IconButton(
                         icon: const Icon(Icons.tune_rounded, color: Colors.white),
                         onPressed: () => _showSettings(context),
                       ),

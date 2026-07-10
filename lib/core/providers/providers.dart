@@ -127,6 +127,20 @@ final roomObjectsProvider = StreamProvider<List<RoomObject>>((ref) {
   return ref.read(firestoreServiceProvider).watchRoomObjects(coupleId);
 });
 
+// ── Home Decor (isometric shared room) ────────────────────────────────────
+
+final homeDecorProvider = StreamProvider<List<HomeDecorItem>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchHomeDecor(coupleId);
+});
+
+final homeRoomStyleProvider = StreamProvider<HomeRoomStyle>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return Stream.value(const HomeRoomStyle());
+  return ref.read(firestoreServiceProvider).watchHomeRoomStyle(coupleId);
+});
+
 // ── Partner User ──────────────────────────────────────────────────────────
 
 final partnerUserProvider = StreamProvider<UserModel?>((ref) {
