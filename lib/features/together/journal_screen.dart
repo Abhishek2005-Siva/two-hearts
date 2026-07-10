@@ -44,18 +44,25 @@ _BookDesign _bookDesign(String id) =>
 
 // ─── Main Screen ──────────────────────────────────────────────────────────
 
-class JournalScreen extends ConsumerWidget {
+class JournalScreen extends ConsumerStatefulWidget {
   const JournalScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<JournalScreen> createState() => _JournalScreenState();
+}
+
+class _JournalScreenState extends ConsumerState<JournalScreen> {
+  // Newest-first by default; the AppBar toggle flips this.
+  bool _newestFirst = true;
+
+  @override
+  Widget build(BuildContext context) {
     final journalAsync = ref.watch(journalProvider);
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
       backgroundColor: const Color(0xFF2A1F14),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: const Color(0xFF2A1F14),
         elevation: 0,
         title: Text(
           'Our Journal',
@@ -67,6 +74,15 @@ class JournalScreen extends ConsumerWidget {
           ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFFF5DEB3)),
+        actions: [
+          IconButton(
+            tooltip: _newestFirst ? 'Newest first' : 'Oldest first',
+            icon: Icon(
+                _newestFirst ? Icons.south_rounded : Icons.north_rounded,
+                color: const Color(0xFFF5DEB3)),
+            onPressed: () => setState(() => _newestFirst = !_newestFirst),
+          ),
+        ],
       ),
       body: journalAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -76,7 +92,7 @@ class JournalScreen extends ConsumerWidget {
         ),
         data: (entries) => _BookshelfBody(
           entries: entries,
-          onLecternTap: () => _openTodayEntry(context, ref, entries),
+          newestFirst: _newestFirst,
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
@@ -102,74 +118,143 @@ class JournalScreen extends ConsumerWidget {
 }
 
 // ─── Bookshelf body ───────────────────────────────────────────────────────
+//
+// Grows naturally instead of being pinned to 3 fixed shelf slots: entries
+// are grouped by year, and within each year, chunked into shelf-rows of a
+// fixed capacity (computed from how many book-widths actually fit the
+// screen) — once a shelf fills up, the rest continue onto the next one.
 
-// Shelf board BOTTOM edges (fractional from screen top, where books rest).
-const _kShelfFractions = [0.38, 0.60, 0.82];
-// Extra upward nudge so books sit slightly higher on each shelf board.
-// ~38 logical px per cm; raised by 2 cm (76 px) on request.
-const _kShelfUpShift = 98.0;
-// Tallest possible book; container must be >= this.
 const _kBookContainerHeight = 150.0;
-const _kShelfLeft = 0.08;
-const _kShelfRight = 0.08;
+const _kShelfSidePad = 16.0;
+
+int _yearOf(String id) {
+  final match = RegExp(r'^(\d{4})-\d{2}-\d{2}').firstMatch(id);
+  if (match != null) return int.parse(match.group(1)!);
+  final fallback = int.tryParse(id.length >= 4 ? id.substring(0, 4) : '');
+  return fallback ?? 0;
+}
+
+List<List<T>> _chunk<T>(List<T> items, int size) {
+  final out = <List<T>>[];
+  for (var i = 0; i < items.length; i += size) {
+    out.add(items.sublist(i, (i + size).clamp(0, items.length)));
+  }
+  return out;
+}
 
 class _BookshelfBody extends StatelessWidget {
   final List<JournalDay> entries;
-  final VoidCallback onLecternTap;
+  final bool newestFirst;
 
-  const _BookshelfBody({required this.entries, required this.onLecternTap});
+  const _BookshelfBody({required this.entries, required this.newestFirst});
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final h = constraints.maxHeight;
-      final w = constraints.maxWidth;
-
-      // Fill shelves sequentially: compute capacity by average book width (46px)
-      final shelfW = w * (1 - _kShelfLeft - _kShelfRight);
-      final maxPerShelf = (shelfW / 46).floor().clamp(4, 14);
-      final shelves = [
-        entries.take(maxPerShelf).toList(),
-        entries.skip(maxPerShelf).take(maxPerShelf).toList(),
-        entries.skip(maxPerShelf * 2).toList(),
-      ];
-
-      return Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/empty_bookshelf.png',
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
-            ),
+    if (entries.isEmpty) {
+      return Center(
+        child: Text(
+          'No entries yet — write today\'s page ✍️',
+          style: GoogleFonts.lato(
+            color: const Color(0xFFF5DEB3).withValues(alpha: 0.5),
+            fontSize: 14,
+            fontStyle: FontStyle.italic,
           ),
-          for (int i = 0; i < 3; i++)
-            Positioned(
-              top: h * _kShelfFractions[i] - _kBookContainerHeight - _kShelfUpShift,
-              left: w * _kShelfLeft,
-              right: w * _kShelfRight,
-              height: _kBookContainerHeight,
-              child: _Shelf(books: shelves[i]),
-            ),
+        ),
+      );
+    }
+
+    // entries already arrive newest-first (id descending); flip for oldest-first.
+    final ordered = newestFirst ? entries : entries.reversed.toList();
+
+    // Group into year buckets, preserving the incoming order.
+    final byYear = <int, List<JournalDay>>{};
+    for (final e in ordered) {
+      byYear.putIfAbsent(_yearOf(e.id), () => []).add(e);
+    }
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final shelfW = constraints.maxWidth - _kShelfSidePad * 2;
+      final maxPerShelf = (shelfW / 46).floor().clamp(4, 14);
+
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 140),
+        children: [
+          for (final year in byYear.keys) ...[
+            _YearLabel(year: year),
+            for (final chunk in _chunk(byYear[year]!, maxPerShelf))
+              _ShelfRow(books: chunk),
+          ],
         ],
       );
     });
   }
 }
 
-// ─── Single shelf ─────────────────────────────────────────────────────────
+// ─── Year label ───────────────────────────────────────────────────────────
 
-class _Shelf extends StatelessWidget {
-  final List<JournalDay> books;
-  const _Shelf({required this.books});
+class _YearLabel extends StatelessWidget {
+  final int year;
+  const _YearLabel({required this.year});
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(_kShelfSidePad, 18, _kShelfSidePad, 10),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: _buildBookItems(context),
+        children: [
+          Expanded(
+            child: Container(
+                height: 1,
+                color: const Color(0xFFF5DEB3).withValues(alpha: 0.25)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              year == 0 ? 'Undated' : '$year',
+              style: GoogleFonts.playfairDisplay(
+                color: const Color(0xFFF5DEB3),
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Container(
+                height: 1,
+                color: const Color(0xFFF5DEB3).withValues(alpha: 0.25)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── A single shelf: a row of books resting on a wooden plank ────────────
+
+class _ShelfRow extends StatelessWidget {
+  final List<JournalDay> books;
+  const _ShelfRow({required this.books});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: _kShelfSidePad, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: _kBookContainerHeight,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: _buildBookItems(context),
+              ),
+            ),
+          ),
+          const _WoodPlank(),
+        ],
       ),
     );
   }
@@ -187,22 +272,48 @@ class _Shelf extends StatelessWidget {
         )),
       ));
     }
-    if (books.isEmpty) {
-      items.add(
-        Padding(
-          padding: const EdgeInsets.only(left: 16, bottom: 8),
-          child: Text(
-            'No entries yet',
-            style: GoogleFonts.lato(
-              color: const Color(0xFFF5DEB3).withValues(alpha: 0.4),
-              fontSize: 13,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ),
-      );
-    }
     return items;
+  }
+}
+
+// ─── Wooden shelf plank ───────────────────────────────────────────────────
+
+class _WoodPlank extends StatelessWidget {
+  const _WoodPlank();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 14,
+      margin: const EdgeInsets.only(top: 2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(2),
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF6B4226),
+            Color(0xFF4A2E18),
+            Color(0xFF2E1B0E),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Container(
+          height: 2,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          color: const Color(0xFF8B6340).withValues(alpha: 0.6),
+        ),
+      ),
+    );
   }
 }
 
