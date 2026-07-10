@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 
 /**
  * A minimal foreground service of type `mediaProjection`. Android 14+ (and
@@ -20,6 +21,7 @@ class ScreenCaptureService : Service() {
     companion object {
         const val CHANNEL_ID = "screen_share_channel"
         const val NOTIF_ID = 8801
+        const val TAG = "ScreenCaptureService"
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -33,14 +35,24 @@ class ScreenCaptureService : Service() {
             .setOngoing(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIF_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-        } else {
-            startForeground(NOTIF_ID, notification)
+        // startForeground() with type mediaProjection can be refused by the
+        // OS (permission/policy changes, OEM battery restrictions, a stale
+        // notification permission, etc.) — without a catch here, that threw
+        // straight up through the framework and crashed the whole app with
+        // no visible error, instead of just failing this screen share.
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIF_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                )
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground failed", e)
+            stopSelf()
         }
         return START_NOT_STICKY
     }
