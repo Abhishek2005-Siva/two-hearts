@@ -210,7 +210,7 @@ class SpotifyService {
     final uri = Uri.https('api.spotify.com', '/v1/search', {
       'type': 'track',
       'limit': '10',
-      if (market != null) 'market': market,
+      'market': ?market,
       'q': query,
     });
     final res = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
