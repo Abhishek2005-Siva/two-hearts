@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'pdf_viewer_screen.dart';
@@ -14,6 +15,16 @@ import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
+
+// ── Palette (warm library / parchment) ────────────────────────────────────
+
+const _kParchment = Color(0xFFF2E6C9);
+const _kParchmentEdge = Color(0xFFE3D2A6);
+const _kInk = Color(0xFF2A1A0A);
+const _kInkMuted = Color(0xFF7A6650);
+const _kGreen = Color(0xFF3F7D53);
+const _kGreenDark = Color(0xFF2C5C3D);
+const _kRibbon = Color(0xFFB33A3A);
 
 // ── Deterministic spine color ─────────────────────────────────────────────
 
@@ -46,18 +57,28 @@ class _BookWishlistScreenState extends ConsumerState<BookWishlistScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
   late ConfettiController _confetti;
+  final _searchCtrl = TextEditingController();
+  bool _searching = false;
+  String _query = '';
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 2, vsync: this)
+      ..addListener(() {
+        if (mounted) setState(() {});
+      });
     _confetti = ConfettiController(duration: const Duration(seconds: 2));
+    _searchCtrl.addListener(() {
+      setState(() => _query = _searchCtrl.text.trim().toLowerCase());
+    });
   }
 
   @override
   void dispose() {
     _tabCtrl.dispose();
     _confetti.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -85,26 +106,30 @@ class _BookWishlistScreenState extends ConsumerState<BookWishlistScreen>
     );
   }
 
+  List<BookWish> _filtered(List<BookWish> books) {
+    if (_query.isEmpty) return books;
+    return books
+        .where((b) =>
+            b.title.toLowerCase().contains(_query) ||
+            (b.author?.toLowerCase().contains(_query) ?? false))
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final accent = ref.watch(accentColorProvider);
     final booksAsync = ref.watch(booksProvider);
-    final books = booksAsync.valueOrNull ?? [];
-    final readCount = books.where((b) => b.read).length;
-    final wishlistCount = books.where((b) => !b.read).length;
+    final allBooks = booksAsync.valueOrNull ?? [];
+    final readCount = allBooks.where((b) => b.read).length;
+    final wishlistCount = allBooks.where((b) => !b.read).length;
 
     return Scaffold(
       body: Stack(
         children: [
-          // Background gradient
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: AppColors.bgGradient,
-              ),
-            ),
+          Positioned.fill(
+            child: Image.asset('assets/images/book_wishlist_bg.png', fit: BoxFit.cover),
+          ),
+          Positioned.fill(
+            child: Container(color: Colors.black.withValues(alpha: 0.4)),
           ),
 
           SafeArea(
@@ -112,167 +137,267 @@ class _BookWishlistScreenState extends ConsumerState<BookWishlistScreen>
               children: [
                 // Header
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                            color: AppColors.textPrimary),
-                        onPressed: () => Navigator.maybePop(context),
+                      _CircleIconButton(
+                        icon: Icons.arrow_back_ios_new_rounded,
+                        onTap: () => Navigator.maybePop(context),
                       ),
-                      const Expanded(
-                        child: Text(
-                          'Book Wishlist',
-                          style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                          ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: _searching
+                              ? _SearchField(
+                                  controller: _searchCtrl,
+                                  onClose: () => setState(() {
+                                    _searching = false;
+                                    _searchCtrl.clear();
+                                  }),
+                                )
+                              : Column(
+                                  children: [
+                                    RichText(
+                                      textAlign: TextAlign.center,
+                                      text: TextSpan(
+                                        style: GoogleFonts.playfairDisplay(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                        children: const [
+                                          TextSpan(text: 'My Book '),
+                                          TextSpan(
+                                              text: 'Wishlist',
+                                              style: TextStyle(color: AppColors.coral)),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text('The books you want to read',
+                                        style: GoogleFonts.lato(
+                                            fontSize: 12.5,
+                                            color: Colors.white70,
+                                            fontStyle: FontStyle.italic)),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(width: 28, height: 1, color: Colors.white24),
+                                        const SizedBox(width: 8),
+                                        const Text('✦',
+                                            style: TextStyle(color: AppColors.gold, fontSize: 13)),
+                                        const SizedBox(width: 8),
+                                        Container(width: 28, height: 1, color: Colors.white24),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                         ),
                       ),
+                      if (!_searching)
+                        _CircleIconButton(
+                          icon: Icons.search_rounded,
+                          onTap: () => setState(() => _searching = true),
+                        )
+                      else
+                        const SizedBox(width: 40),
                     ],
                   ),
                 ),
-
-                // Stats card
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 14),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          accent.withValues(alpha: 0.15),
-                          AppColors.coral.withValues(alpha: 0.1),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: accent.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _StatChip(
-                          icon: '✓',
-                          label: '$readCount read together',
-                          color: const Color(0xFF4CAF50),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 28,
-                          color: AppColors.divider,
-                        ),
-                        _StatChip(
-                          icon: '📚',
-                          label: '$wishlistCount on wishlist',
-                          color: accent,
-                        ),
-                      ],
-                    ),
-                  ),
-                ).animate().fadeIn().slideY(begin: -0.2),
 
                 const SizedBox(height: 16),
 
-                // Tabs
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  decoration: BoxDecoration(
-                    color: AppColors.bgCard,
-                    borderRadius: BorderRadius.circular(16),
+                // Stat cards
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _StatCard(
+                          emoji: '📖',
+                          value: '$readCount',
+                          label: 'Read Together',
+                          sub: 'Shared reads',
+                          color: _kGreen,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _StatCard(
+                          emoji: '📚',
+                          value: '$wishlistCount',
+                          label: 'On Wishlist',
+                          sub: 'Books saved',
+                          color: AppColors.coral,
+                        ),
+                      ),
+                    ],
                   ),
-                  child: TabBar(
-                    controller: _tabCtrl,
-                    indicator: BoxDecoration(
-                      gradient: LinearGradient(
-                          colors: [accent, AppColors.coral]),
-                      borderRadius: BorderRadius.circular(14),
+                ).animate().fadeIn().slideY(begin: -0.15),
+
+                const SizedBox(height: 16),
+
+                // Wood-plank tab selector
+                Container(
+                  height: 54,
+                  margin: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF5C3D26), Color(0xFF2E1C10)],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                     ),
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: AppColors.textSecondary,
-                    dividerColor: Colors.transparent,
-                    labelStyle: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 14),
-                    tabs: const [
-                      Tab(text: 'Wishlist'),
-                      Tab(text: 'Read Together'),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.black.withValues(alpha: 0.4)),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _WoodTab(
+                          label: 'Wishlist',
+                          icon: Icons.menu_book_rounded,
+                          selected: _tabCtrl.index == 0,
+                          onTap: () => _tabCtrl.animateTo(0),
+                        ),
+                      ),
+                      Expanded(
+                        child: _WoodTab(
+                          label: 'Read Together',
+                          icon: Icons.people_alt_rounded,
+                          selected: _tabCtrl.index == 1,
+                          onTap: () => _tabCtrl.animateTo(1),
+                        ),
+                      ),
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
 
-                // Tab views
+                // Open-book content area
                 Expanded(
-                  child: booksAsync.when(
-                    loading: () => const Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.rose)),
-                    error: (e, _) => Center(
-                        child: Text('$e',
-                            style: const TextStyle(
-                                color: AppColors.textSecondary))),
-                    data: (books) => TabBarView(
-                      controller: _tabCtrl,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Stack(
+                      clipBehavior: Clip.none,
                       children: [
-                        _BookList(
-                          books: books.where((b) => !b.read).toList(),
-                          emptyMessage: 'No books yet!\nAdd your first read ♡',
-                          emptyIcon: '📖',
-                          onToggleRead: (book) async {
-                            final coupleId = ref.read(coupleIdProvider);
-                            if (coupleId == null) return;
-                            await ref
-                                .read(firestoreServiceProvider)
-                                .toggleRead(coupleId, book.id, true);
-                            _triggerConfetti();
-                          },
-                          onDelete: (book) async {
-                            final coupleId = ref.read(coupleIdProvider);
-                            if (coupleId == null) return;
-                            await ref
-                                .read(firestoreServiceProvider)
-                                .deleteBook(coupleId, book.id);
-                          },
-                          onUndo: (book) async {
-                            final coupleId = ref.read(coupleIdProvider);
-                            if (coupleId == null) return;
-                            await ref
-                                .read(firestoreServiceProvider)
-                                .addBook(coupleId, book);
-                          },
-                          ref: ref,
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: _kParchment,
+                              boxShadow: [
+                                BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.45),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, -4)),
+                              ],
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Container(width: 12, color: _kParchmentEdge),
+                                Expanded(
+                                  child: booksAsync.when(
+                                    loading: () => const Center(
+                                        child: CircularProgressIndicator(color: _kGreen)),
+                                    error: (e, _) => Center(
+                                        child: Text('$e',
+                                            style: const TextStyle(color: _kInkMuted))),
+                                    data: (books) {
+                                      final filtered = _filtered(books);
+                                      return TabBarView(
+                                        controller: _tabCtrl,
+                                        children: [
+                                          _BookList(
+                                            books: filtered.where((b) => !b.read).toList(),
+                                            emptyMessage: _query.isNotEmpty
+                                                ? 'No books match "$_query"'
+                                                : 'No books yet!\nAdd your first read ♡',
+                                            emptyIcon: '📖',
+                                            onToggleRead: (book) async {
+                                              final coupleId = ref.read(coupleIdProvider);
+                                              if (coupleId == null) return;
+                                              await ref
+                                                  .read(firestoreServiceProvider)
+                                                  .toggleRead(coupleId, book.id, true);
+                                              _triggerConfetti();
+                                            },
+                                            onDelete: (book) async {
+                                              final coupleId = ref.read(coupleIdProvider);
+                                              if (coupleId == null) return;
+                                              await ref
+                                                  .read(firestoreServiceProvider)
+                                                  .deleteBook(coupleId, book.id);
+                                            },
+                                            onUndo: (book) async {
+                                              final coupleId = ref.read(coupleIdProvider);
+                                              if (coupleId == null) return;
+                                              await ref
+                                                  .read(firestoreServiceProvider)
+                                                  .addBook(coupleId, book);
+                                            },
+                                            ref: ref,
+                                          ),
+                                          _BookList(
+                                            books: filtered.where((b) => b.read).toList(),
+                                            emptyMessage: _query.isNotEmpty
+                                                ? 'No books match "$_query"'
+                                                : 'Nothing read yet.\nFinish a book to see it here ♡',
+                                            emptyIcon: '✓',
+                                            onToggleRead: (book) async {
+                                              final coupleId = ref.read(coupleIdProvider);
+                                              if (coupleId == null) return;
+                                              await ref
+                                                  .read(firestoreServiceProvider)
+                                                  .toggleRead(coupleId, book.id, false);
+                                            },
+                                            onDelete: (book) async {
+                                              final coupleId = ref.read(coupleIdProvider);
+                                              if (coupleId == null) return;
+                                              await ref
+                                                  .read(firestoreServiceProvider)
+                                                  .deleteBook(coupleId, book.id);
+                                            },
+                                            onUndo: (book) async {
+                                              final coupleId = ref.read(coupleIdProvider);
+                                              if (coupleId == null) return;
+                                              await ref
+                                                  .read(firestoreServiceProvider)
+                                                  .addBook(coupleId, book);
+                                            },
+                                            ref: ref,
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        _BookList(
-                          books: books.where((b) => b.read).toList(),
-                          emptyMessage:
-                              'Nothing read yet.\nFinish a book to see it here ♡',
-                          emptyIcon: '✓',
-                          onToggleRead: (book) async {
-                            final coupleId = ref.read(coupleIdProvider);
-                            if (coupleId == null) return;
-                            await ref
-                                .read(firestoreServiceProvider)
-                                .toggleRead(coupleId, book.id, false);
-                          },
-                          onDelete: (book) async {
-                            final coupleId = ref.read(coupleIdProvider);
-                            if (coupleId == null) return;
-                            await ref
-                                .read(firestoreServiceProvider)
-                                .deleteBook(coupleId, book.id);
-                          },
-                          onUndo: (book) async {
-                            final coupleId = ref.read(coupleIdProvider);
-                            if (coupleId == null) return;
-                            await ref
-                                .read(firestoreServiceProvider)
-                                .addBook(coupleId, book);
-                          },
-                          ref: ref,
+                        // Bookmark ribbon peeking below the page edge
+                        Positioned(
+                          bottom: -16,
+                          left: 44,
+                          child: Container(
+                            width: 14,
+                            height: 34,
+                            decoration: const BoxDecoration(
+                              color: _kRibbon,
+                              borderRadius: BorderRadius.vertical(bottom: Radius.circular(3)),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -289,12 +414,12 @@ class _BookWishlistScreenState extends ConsumerState<BookWishlistScreen>
               confettiController: _confetti,
               blastDirectionality: BlastDirectionality.explosive,
               numberOfParticles: 30,
-              colors: [
+              colors: const [
                 AppColors.rose,
                 AppColors.coral,
                 AppColors.gold,
                 AppColors.lavender,
-                const Color(0xFF4CAF50),
+                _kGreen,
               ],
               gravity: 0.3,
             ),
@@ -303,36 +428,190 @@ class _BookWishlistScreenState extends ConsumerState<BookWishlistScreen>
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddSheet,
-        backgroundColor: accent,
-        child: const Icon(Icons.add_rounded, color: Colors.white),
+        backgroundColor: _kGreen,
+        elevation: 6,
+        child: const Text('🪶', style: TextStyle(fontSize: 22)),
       ),
     );
   }
 }
 
-// ── Stat chip ─────────────────────────────────────────────────────────────
+// ── Header helper widgets ───────────────────────────────────────────────────
 
-class _StatChip extends StatelessWidget {
-  final String icon;
-  final String label;
-  final Color color;
-
-  const _StatChip(
-      {required this.icon, required this.label, required this.color});
+class _CircleIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _CircleIconButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(icon, style: TextStyle(fontSize: 16, color: color)),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-              color: color, fontWeight: FontWeight.w600, fontSize: 13),
+    return SquishyTap(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.black.withValues(alpha: 0.4),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
         ),
-      ],
+        child: Icon(icon, color: Colors.white, size: 19),
+      ),
+    );
+  }
+}
+
+class _SearchField extends StatelessWidget {
+  final TextEditingController controller;
+  final VoidCallback onClose;
+  const _SearchField({required this.controller, required this.onClose});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded, color: Colors.white70, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: const InputDecoration(
+                hintText: 'Search title or author…',
+                hintStyle: TextStyle(color: Colors.white54),
+                border: InputBorder.none,
+                isDense: true,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: onClose,
+            child: const Icon(Icons.close_rounded, color: Colors.white70, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Stat card ─────────────────────────────────────────────────────────────
+
+class _StatCard extends StatelessWidget {
+  final String emoji;
+  final String value;
+  final String label;
+  final String sub;
+  final Color color;
+
+  const _StatCard({
+    required this.emoji,
+    required this.value,
+    required this.label,
+    required this.sub,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.22),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(emoji, style: const TextStyle(fontSize: 18)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value,
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+                Text(label,
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                Text(sub,
+                    style: const TextStyle(color: Colors.white60, fontSize: 10.5)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Wood tab ──────────────────────────────────────────────────────────────
+
+class _WoodTab extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _WoodTab({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SquishyTap(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          gradient: selected
+              ? const LinearGradient(colors: [_kGreen, _kGreenDark])
+              : null,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: selected ? Colors.white : Colors.white54),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? Colors.white : Colors.white54,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -365,25 +644,23 @@ class _BookList extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emptyIcon, style: const TextStyle(fontSize: 56)),
-            const SizedBox(height: 16),
+            Text(emptyIcon, style: const TextStyle(fontSize: 48)),
+            const SizedBox(height: 14),
             Text(
               emptyMessage,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 15,
-                height: 1.6,
-              ),
+              style: const TextStyle(color: _kInkMuted, fontSize: 14, height: 1.6),
             ),
           ],
         ),
       ).animate().fadeIn();
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 110),
       itemCount: books.length,
+      separatorBuilder: (_, _) => Divider(
+          height: 1, thickness: 0.6, color: _kInk.withValues(alpha: 0.12)),
       itemBuilder: (ctx, i) {
         final book = books[i];
         return _BookCard(
@@ -415,7 +692,7 @@ class _BookList extends StatelessWidget {
 
 // ── Book card ─────────────────────────────────────────────────────────────
 
-class _BookCard extends StatefulWidget {
+class _BookCard extends StatelessWidget {
   final BookWish book;
   final WidgetRef ref;
   final VoidCallback onToggleRead;
@@ -430,271 +707,207 @@ class _BookCard extends StatefulWidget {
   });
 
   @override
-  State<_BookCard> createState() => _BookCardState();
-}
-
-class _BookCardState extends State<_BookCard> {
-  bool _expanded = false;
-
-  @override
   Widget build(BuildContext context) {
-    final accent = widget.ref.watch(accentColorProvider);
-    final me = widget.ref.watch(currentUserProvider).valueOrNull;
-    final partner = widget.ref.watch(partnerUserProvider).valueOrNull;
-    final addedByName = widget.book.addedBy == me?.uid
+    final me = ref.watch(currentUserProvider).valueOrNull;
+    final partner = ref.watch(partnerUserProvider).valueOrNull;
+    final addedByName = book.addedBy == me?.uid
         ? (me?.displayName.split(' ').first ?? 'You')
         : (partner?.displayName.split(' ').first ?? 'Partner');
 
     return Dismissible(
-      key: ValueKey('dismissible_${widget.book.id}'),
+      key: ValueKey('dismissible_${book.id}'),
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.only(right: 12),
+        margin: const EdgeInsets.symmetric(vertical: 4),
         decoration: BoxDecoration(
-          color: AppColors.rose.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(20),
+          color: _kRibbon.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(14),
         ),
-        child: const Icon(Icons.delete_outline_rounded,
-            color: AppColors.rose, size: 26),
+        child: const Icon(Icons.delete_outline_rounded, color: _kRibbon, size: 24),
       ),
       confirmDismiss: (_) async {
         return await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: AppColors.bgCard,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
-            title: const Text('Remove book?',
-                style: TextStyle(color: AppColors.textPrimary)),
-            content: Text('"${widget.book.title}"',
-                style:
-                    const TextStyle(color: AppColors.textSecondary)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Remove book?', style: TextStyle(color: AppColors.textPrimary)),
+            content: Text('"${book.title}"',
+                style: const TextStyle(color: AppColors.textSecondary)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel',
-                    style:
-                        TextStyle(color: AppColors.textSecondary)),
+                child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Remove',
-                    style: TextStyle(color: AppColors.rose)),
+                child: const Text('Remove', style: TextStyle(color: AppColors.rose)),
               ),
             ],
           ),
         );
       },
-      onDismissed: (_) => widget.onDelete(),
-      child: GestureDetector(
-        onTap: () => setState(() => _expanded = !_expanded),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: AppColors.cardGradient,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: widget.book.read
-                  ? const Color(0xFF4CAF50).withValues(alpha: 0.4)
-                  : AppColors.divider,
-              width: widget.book.read ? 1.0 : 0.5,
-            ),
-          ),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Cover image or spine
-                    _BookCover(book: widget.book),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.book.title,
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                            ),
-                            maxLines: _expanded ? null : 2,
-                            overflow: _expanded
-                                ? null
-                                : TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 3),
-                          if (widget.book.author != null)
-                            Text(
-                              widget.book.author!,
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 13,
-                              ),
-                            ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: accent.withValues(alpha: 0.1),
-                                  borderRadius:
-                                      BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'by $addedByName',
-                                  style: TextStyle(
-                                    color: accent,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                DateFormat('MMM d')
-                                    .format(widget.book.addedAt),
-                                style: const TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    widget.book.read
-                        ? const Icon(Icons.check_circle_rounded,
-                            color: Color(0xFF4CAF50), size: 22)
-                        : Icon(Icons.favorite_border_rounded,
-                            color: accent, size: 22),
-                  ],
-                ),
-              ),
-
-              // Expanded detail
-              if (_expanded) ...[
-                const Divider(
-                    height: 1, color: AppColors.divider, thickness: 0.5),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      onDismissed: (_) => onDelete(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _BookCover(book: book),
+                const SizedBox(width: 14),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (widget.book.note != null) ...[
-                        Text(
-                          widget.book.note!,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 13,
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      if (widget.book.pdfUrl != null) ...[
-                        Builder(builder: (context) {
-                          final myUid =
-                              FirebaseAuth.instance.currentUser?.uid;
-                          final mine = widget.book.progressOf(myUid);
-                          final partnerEntry = widget.book.progress.entries
-                              .where((e) => e.key != myUid)
-                              .toList();
-                          final theirs = partnerEntry.isNotEmpty
-                              ? partnerEntry.first.value
-                              : null;
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (mine != null || theirs != null) ...[
-                                Row(
-                                  children: [
-                                    const Icon(Icons.menu_book_rounded,
-                                        size: 14,
-                                        color: AppColors.textMuted),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        [
-                                          if (mine != null)
-                                            'You: page ${mine.page + 1}'
-                                            '${mine.totalPages > 0 ? '/${mine.totalPages}' : ''}',
-                                          if (theirs != null)
-                                            '${partner?.displayName.split(' ').first ?? 'Partner'}: '
-                                            'page ${theirs.page + 1}'
-                                            '${theirs.totalPages > 0 ? '/${theirs.totalPages}' : ''}',
-                                        ].join('  ·  '),
-                                        style: const TextStyle(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 12),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                              ],
-                              OutlinedButton.icon(
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    fullscreenDialog: true,
-                                    builder: (_) => PdfViewerScreen(
-                                      url: widget.book.pdfUrl!,
-                                      title: widget.book.title,
-                                      bookId: widget.book.id,
-                                    ),
-                                  ),
-                                ),
-                                icon: const Icon(Icons.picture_as_pdf_rounded,
-                                    size: 18, color: AppColors.rose),
-                                label: Text(
-                                    mine != null && mine.page > 0
-                                        ? 'Continue reading (p. ${mine.page + 1})'
-                                        : 'Read in-app',
-                                    style: const TextStyle(
-                                        color: AppColors.rose)),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(
-                                      color: AppColors.rose, width: 0.8),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(12)),
-                                ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              book.title,
+                              style: GoogleFonts.playfairDisplay(
+                                color: _kInk,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 18,
                               ),
-                            ],
-                          );
-                        }),
-                        const SizedBox(height: 10),
-                      ],
-                      GradientButton(
-                        label: widget.book.read
-                            ? 'Move back to wishlist'
-                            : 'Mark as read together ♡',
-                        onTap: () {
-                          setState(() => _expanded = false);
-                          widget.onToggleRead();
-                        },
+                            ),
+                          ),
+                          Icon(
+                            book.read
+                                ? Icons.check_circle_rounded
+                                : Icons.favorite_border_rounded,
+                            color: _kGreen.withValues(alpha: 0.8),
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      if (book.author != null)
+                        Text('by ${book.author}',
+                            style: GoogleFonts.lato(
+                                color: _kGreen, fontWeight: FontWeight.w600, fontSize: 13)),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.calendar_today_rounded, size: 12, color: _kInkMuted),
+                          const SizedBox(width: 5),
+                          Text(DateFormat('MMM d').format(book.addedAt),
+                              style: const TextStyle(color: _kInkMuted, fontSize: 11.5)),
+                          const SizedBox(width: 10),
+                          Text('added by $addedByName',
+                              style: const TextStyle(color: _kInkMuted, fontSize: 11.5)),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ],
+            ),
+            if (book.note != null) ...[
+              const SizedBox(height: 10),
+              Text(book.note!,
+                  style: const TextStyle(color: _kInk, fontSize: 13, height: 1.5)),
             ],
-          ),
+            if (book.pdfUrl != null) ...[
+              const SizedBox(height: 10),
+              Builder(builder: (context) {
+                final myUid = FirebaseAuth.instance.currentUser?.uid;
+                final mine = book.progressOf(myUid);
+                final partnerEntry =
+                    book.progress.entries.where((e) => e.key != myUid).toList();
+                final theirs = partnerEntry.isNotEmpty ? partnerEntry.first.value : null;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (mine != null || theirs != null) ...[
+                      Row(
+                        children: [
+                          const Icon(Icons.menu_book_rounded, size: 13, color: _kInkMuted),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              [
+                                if (mine != null)
+                                  'You: page ${mine.page + 1}'
+                                      '${mine.totalPages > 0 ? '/${mine.totalPages}' : ''}',
+                                if (theirs != null)
+                                  '${partner?.displayName.split(' ').first ?? 'Partner'}: '
+                                      'page ${theirs.page + 1}'
+                                      '${theirs.totalPages > 0 ? '/${theirs.totalPages}' : ''}',
+                              ].join('  ·  '),
+                              style: const TextStyle(color: _kInkMuted, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          fullscreenDialog: true,
+                          builder: (_) => PdfViewerScreen(
+                            url: book.pdfUrl!,
+                            title: book.title,
+                            bookId: book.id,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.picture_as_pdf_rounded, size: 17, color: _kGreen),
+                      label: Text(
+                          mine != null && mine.page > 0
+                              ? 'Continue reading (p. ${mine.page + 1})'
+                              : 'Read in-app',
+                          style: const TextStyle(color: _kGreen)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: _kGreen, width: 0.9),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ],
+            const SizedBox(height: 12),
+            SquishyTap(
+              onTap: onToggleRead,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_kGreen, AppColors.coral]),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                        color: _kGreen.withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4)),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.people_alt_rounded, color: Colors.white, size: 17),
+                    const SizedBox(width: 8),
+                    Text(
+                      book.read ? 'Move back to wishlist' : 'Mark as read together',
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                    ),
+                    if (!book.read) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.favorite_rounded, color: Colors.white, size: 15),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -717,8 +930,8 @@ class _BookCover extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         child: CachedNetworkImage(
           imageUrl: book.coverUrl!,
-          width: 56,
-          height: 80,
+          width: 58,
+          height: 82,
           fit: BoxFit.cover,
           errorWidget: (_, _, e) => _Spine(color: spine, title: book.title),
           placeholder: (_, _) => _Spine(color: spine, title: book.title),
@@ -738,24 +951,23 @@ class _Spine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 56,
-      height: 80,
+      width: 58,
+      height: 82,
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1),
         boxShadow: [
           BoxShadow(
-            color: color.withValues(alpha: 0.4),
+            color: Colors.black.withValues(alpha: 0.35),
             blurRadius: 6,
-            offset: const Offset(2, 2),
+            offset: const Offset(2, 3),
           ),
         ],
       ),
-      child: Center(
-        child: RotatedBox(
-          quarterTurns: 0,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Stack(
+        children: [
+          Center(
             child: Text(
               title.isNotEmpty ? title[0].toUpperCase() : '?',
               style: TextStyle(
@@ -765,7 +977,19 @@ class _Spine extends StatelessWidget {
               ),
             ),
           ),
-        ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              height: 6,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.2),
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(7)),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
