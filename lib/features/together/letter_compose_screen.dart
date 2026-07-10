@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -336,8 +337,8 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                                         .textTheme
                                         .displayMedium
                                         ?.copyWith(fontSize: 24)),
-                                const SizedBox(width: 6),
-                                const Text('✨', style: TextStyle(fontSize: 18)),
+                                const SizedBox(width: 4),
+                                _FloatingSparkles(color: accent),
                               ],
                             ),
                             const SizedBox(height: 2),
@@ -408,44 +409,59 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                           ],
                         ),
                       ),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.bgCard,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.divider, width: 0.5),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _title,
-                                style: const TextStyle(color: AppColors.textPrimary,
-                                    fontSize: 17, fontWeight: FontWeight.w600),
-                                decoration: const InputDecoration(
-                                  hintText: 'What\'s the occasion?',
-                                  hintStyle: TextStyle(color: AppColors.textMuted),
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.fromLTRB(18, 16, 8, 16),
-                                ),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.10),
+                                  accent.withValues(alpha: 0.06),
+                                ],
                               ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.16),
+                                  width: 1),
                             ),
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: GestureDetector(
-                                onTap: () => setState(
-                                    () => _title.text = _randomOccasion()),
-                                child: Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: accent.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _title,
+                                    style: const TextStyle(color: AppColors.textPrimary,
+                                        fontSize: 17, fontWeight: FontWeight.w600),
+                                    decoration: const InputDecoration(
+                                      hintText: 'What\'s the occasion?',
+                                      hintStyle: TextStyle(color: AppColors.textMuted),
+                                      border: InputBorder.none,
+                                      contentPadding: EdgeInsets.fromLTRB(18, 16, 8, 16),
+                                    ),
                                   ),
-                                  child: Icon(Icons.auto_awesome_rounded,
-                                      color: accent, size: 18),
                                 ),
-                              ),
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: GestureDetector(
+                                    onTap: () => setState(
+                                        () => _title.text = _randomOccasion()),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: accent.withValues(alpha: 0.18),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(Icons.auto_awesome_rounded,
+                                          color: accent, size: 18),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -464,6 +480,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                         selected: _mode == _UnlockMode.tomorrow,
                         accent: accent,
                         tint: const Color(0xFFE8896A),
+                        motif: _CardMotif.sunrise,
                         onTap: () => setState(() { _mode = _UnlockMode.tomorrow; _customDate = null; }),
                       ),
                       const SizedBox(height: 8),
@@ -474,6 +491,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                         selected: _mode == _UnlockMode.nextWeek,
                         accent: accent,
                         tint: const Color(0xFF5B9BD5),
+                        motif: _CardMotif.wave,
                         onTap: () => setState(() { _mode = _UnlockMode.nextWeek; _customDate = null; }),
                       ),
                       const SizedBox(height: 8),
@@ -488,6 +506,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                         selected: _mode == _UnlockMode.openWhen,
                         accent: accent,
                         tint: const Color(0xFFBA68C8),
+                        motif: _CardMotif.clouds,
                         onTap: () => setState(() { _mode = _UnlockMode.openWhen; _customDate = null; }),
                       ),
                       if (_mode == _UnlockMode.openWhen) ...[
@@ -636,52 +655,62 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                         final selected = _mode == _UnlockMode.custom;
                         return GestureDetector(
                           onTap: _pickDateAndTime,
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(colors: selected
-                                  ? [teal.withValues(alpha: 0.32), teal.withValues(alpha: 0.14)]
-                                  : [teal.withValues(alpha: 0.12), AppColors.bgCard]),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: selected ? teal : teal.withValues(alpha: 0.25),
-                                width: selected ? 1.5 : 0.5,
-                              ),
-                            ),
-                            child: Row(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Stack(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: teal.withValues(alpha: 0.22),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Icon(Icons.calendar_month_outlined,
-                                      color: teal, size: 20),
+                                Positioned.fill(
+                                  child: CustomPaint(
+                                      painter: _MotifPainter(_CardMotif.clock, teal)),
                                 ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(colors: selected
+                                        ? [teal.withValues(alpha: 0.32), teal.withValues(alpha: 0.14)]
+                                        : [teal.withValues(alpha: 0.12), AppColors.bgCard]),
+                                    border: Border.all(
+                                      color: selected ? teal : teal.withValues(alpha: 0.25),
+                                      width: selected ? 1.5 : 0.5,
+                                    ),
+                                  ),
+                                  child: Row(
                                     children: [
-                                      Text(
-                                        selected && _customDate != null
-                                            ? _formatDateTime(_customDate!, _customTime)
-                                            : 'Specific Date & Time',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                                          color: AppColors.textPrimary,
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: teal.withValues(alpha: 0.22),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: const Icon(Icons.calendar_month_outlined,
+                                            color: teal, size: 20),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              selected && _customDate != null
+                                                  ? _formatDateTime(_customDate!, _customTime)
+                                                  : 'Specific Date & Time',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                                                color: AppColors.textPrimary,
+                                              ),
+                                            ),
+                                            const Text('Choose any date and time',
+                                                style: TextStyle(fontSize: 11,
+                                                    color: AppColors.textMuted)),
+                                          ],
                                         ),
                                       ),
-                                      const Text('Choose any date and time',
-                                          style: TextStyle(fontSize: 11,
-                                              color: AppColors.textMuted)),
+                                      Icon(Icons.chevron_right_rounded,
+                                          color: selected ? teal : AppColors.textMuted, size: 20),
                                     ],
                                   ),
                                 ),
-                                Icon(Icons.chevron_right_rounded,
-                                    color: selected ? teal : AppColors.textMuted, size: 20),
                               ],
                             ),
                           ),
@@ -719,43 +748,64 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                       const SizedBox(height: 24),
 
                       // Body field — parchment paper, like the letter itself
-                      Container(
-                        constraints: BoxConstraints(
-                          minHeight: MediaQuery.of(context).size.height * 0.3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFBF3E3),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border(
-                            top: BorderSide(
-                                color: const Color(0xFF4A3420).withValues(alpha: 0.25),
-                                width: 1.5),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.3),
-                                blurRadius: 16,
-                                offset: const Offset(0, 6)),
-                          ],
-                        ),
-                        padding: const EdgeInsets.all(14),
-                        child: Theme(
-                          data: Theme.of(context).copyWith(
-                            textTheme: Theme.of(context)
-                                .textTheme
-                                .apply(bodyColor: const Color(0xFF2A1A0A)),
-                          ),
-                          child: DefaultTextStyle.merge(
-                            style: const TextStyle(color: Color(0xFF2A1A0A)),
-                            child: RichContentEditor(
-                              initialBlocks: _blocks,
-                              onChanged: (blocks) => setState(() => _blocks = blocks),
-                              textColor: const Color(0xFF2A1A0A),
-                              hintColor: const Color(0xFF2A1A0A).withValues(alpha: 0.4),
-                              toolbarIconColor: const Color(0xFF5C3D1E),
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            constraints: BoxConstraints(
+                              minHeight: MediaQuery.of(context).size.height * 0.3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFBF3E3),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border(
+                                top: BorderSide(
+                                    color: const Color(0xFF4A3420).withValues(alpha: 0.25),
+                                    width: 1.5),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.3),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 6)),
+                              ],
+                            ),
+                            padding: const EdgeInsets.all(14),
+                            child: Theme(
+                              data: Theme.of(context).copyWith(
+                                textTheme: Theme.of(context)
+                                    .textTheme
+                                    .apply(bodyColor: const Color(0xFF2A1A0A)),
+                              ),
+                              child: DefaultTextStyle.merge(
+                                style: const TextStyle(color: Color(0xFF2A1A0A)),
+                                child: RichContentEditor(
+                                  initialBlocks: _blocks,
+                                  onChanged: (blocks) => setState(() => _blocks = blocks),
+                                  textColor: const Color(0xFF2A1A0A),
+                                  hintColor: const Color(0xFF2A1A0A).withValues(alpha: 0.4),
+                                  toolbarIconColor: const Color(0xFF5C3D1E),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          Positioned(
+                            top: -14,
+                            left: 22,
+                            child: Transform.rotate(
+                              angle: 0.32,
+                              child: Icon(Icons.attach_file_rounded,
+                                  color: Colors.grey.shade400,
+                                  size: 34,
+                                  shadows: [
+                                    Shadow(
+                                        color: Colors.black.withValues(alpha: 0.4),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2)),
+                                  ]),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -882,6 +932,150 @@ class _EnvelopeHero extends StatelessWidget {
   }
 }
 
+// ── Floating sparkles (title decoration) ───────────────────────────────────
+
+class _FloatingSparkles extends StatefulWidget {
+  final Color color;
+  const _FloatingSparkles({required this.color});
+
+  @override
+  State<_FloatingSparkles> createState() => _FloatingSparklesState();
+}
+
+class _FloatingSparklesState extends State<_FloatingSparkles>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  static const _specs = [
+    (dx: 0.0, dy: 2.0, size: 12.0, phase: 0.0),
+    (dx: 20.0, dy: -6.0, size: 8.0, phase: 0.4),
+    (dx: 38.0, dy: 6.0, size: 9.0, phase: 0.75),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 4))
+      ..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 52,
+      height: 24,
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, _) => Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (final s in _specs)
+              Positioned(
+                left: s.dx,
+                top: s.dy + math.sin((_ctrl.value + s.phase) * 2 * math.pi) * 3,
+                child: Opacity(
+                  opacity: (0.35 +
+                          0.65 *
+                              (0.5 +
+                                  0.5 *
+                                      math.sin(
+                                          (_ctrl.value + s.phase) * 2 * math.pi)))
+                      .clamp(0.0, 1.0),
+                  child: Icon(Icons.auto_awesome_rounded,
+                      color: widget.color, size: s.size),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Illustrated card-background motifs ─────────────────────────────────────
+
+enum _CardMotif { sunrise, wave, clouds, clock }
+
+class _MotifPainter extends CustomPainter {
+  final _CardMotif motif;
+  final Color color;
+  const _MotifPainter(this.motif, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fill = Paint()
+      ..color = color.withValues(alpha: 0.12)
+      ..style = PaintingStyle.fill;
+    switch (motif) {
+      case _CardMotif.sunrise:
+        final center = Offset(size.width - 26, size.height + 4);
+        canvas.drawCircle(center, 20, fill);
+        final rayPaint = Paint()
+          ..color = color.withValues(alpha: 0.10)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke;
+        for (var i = 0; i < 3; i++) {
+          canvas.drawArc(
+              Rect.fromCircle(center: center, radius: 28.0 + i * 8),
+              3.5, 2.3, false, rayPaint);
+        }
+        break;
+      case _CardMotif.wave:
+        final baseY = size.height * 0.6;
+        final startX = size.width - 66;
+        for (var line = 0; line < 2; line++) {
+          final path = Path();
+          final y0 = baseY + line * 9;
+          path.moveTo(startX, y0);
+          for (double x = 0; x <= 66; x += 2) {
+            path.lineTo(startX + x,
+                y0 + math.sin(x / 9 + line * 1.1) * 5);
+          }
+          canvas.drawPath(
+              path,
+              Paint()
+                ..color = color.withValues(alpha: line == 0 ? 0.14 : 0.08)
+                ..strokeWidth = 2.2
+                ..style = PaintingStyle.stroke);
+        }
+        break;
+      case _CardMotif.clouds:
+        final cx = size.width - 38;
+        final cy = size.height * 0.4;
+        for (final o in [
+          Offset(cx - 13, cy + 4),
+          Offset(cx, cy - 5),
+          Offset(cx + 13, cy + 4),
+          Offset(cx - 3, cy + 9),
+          Offset(cx + 8, cy + 9),
+        ]) {
+          canvas.drawCircle(o, 9, fill);
+        }
+        break;
+      case _CardMotif.clock:
+        final center = Offset(size.width - 28, size.height / 2);
+        final ring = Paint()
+          ..color = color.withValues(alpha: 0.14)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke;
+        canvas.drawCircle(center, 18, ring);
+        canvas.drawLine(center, center + const Offset(0, -10), ring);
+        canvas.drawLine(center, center + const Offset(8, 4), ring);
+        break;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MotifPainter oldDelegate) =>
+      oldDelegate.motif != motif || oldDelegate.color != color;
+}
+
 // ── Unlock Chip ───────────────────────────────────────────────────────────
 
 class _UnlockChip extends StatelessWidget {
@@ -891,6 +1085,7 @@ class _UnlockChip extends StatelessWidget {
   final bool selected;
   final Color accent;
   final Color? tint;
+  final _CardMotif? motif;
   final VoidCallback onTap;
 
   const _UnlockChip({
@@ -900,6 +1095,7 @@ class _UnlockChip extends StatelessWidget {
     required this.selected,
     required this.accent,
     this.tint,
+    this.motif,
     required this.onTap,
   });
 
@@ -908,64 +1104,72 @@ class _UnlockChip extends StatelessWidget {
     final color = tint ?? accent;
     return SquishyTap(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: selected
-                ? [color.withValues(alpha: 0.32), color.withValues(alpha: 0.14)]
-                : [color.withValues(alpha: 0.12), AppColors.bgCard],
-          ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? color : color.withValues(alpha: 0.25),
-            width: selected ? 1.5 : 0.5,
-          ),
-        ),
-        child: Row(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
+            if (motif != null)
+              Positioned.fill(child: CustomPaint(painter: _MotifPainter(motif!, color))),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.22),
-                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: selected
+                      ? [color.withValues(alpha: 0.32), color.withValues(alpha: 0.14)]
+                      : [color.withValues(alpha: 0.12), AppColors.bgCard],
+                ),
+                border: Border.all(
+                  color: selected ? color : color.withValues(alpha: 0.25),
+                  width: selected ? 1.5 : 0.5,
+                ),
               ),
-              child: Text(emoji, style: const TextStyle(fontSize: 18)),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(label,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      )),
-                  if (subtitle != null)
-                    Text(subtitle!,
-                        style: TextStyle(fontSize: 11,
-                            color: selected ? color : AppColors.textMuted)),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.22),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(emoji, style: const TextStyle(fontSize: 18)),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(label,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            )),
+                        if (subtitle != null)
+                          Text(subtitle!,
+                              style: TextStyle(fontSize: 11,
+                                  color: selected ? color : AppColors.textMuted)),
+                      ],
+                    ),
+                  ),
+                  if (selected)
+                    Container(
+                      width: 22, height: 22,
+                      decoration: const BoxDecoration(
+                          color: Colors.white, shape: BoxShape.circle),
+                      child: Icon(Icons.check_rounded, color: color, size: 15),
+                    )
+                  else
+                    Container(
+                      width: 22, height: 22,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.divider, width: 1.5),
+                      ),
+                    ),
                 ],
               ),
             ),
-            if (selected)
-              Container(
-                width: 22, height: 22,
-                decoration: const BoxDecoration(
-                    color: Colors.white, shape: BoxShape.circle),
-                child: Icon(Icons.check_rounded, color: color, size: 15),
-              )
-            else
-              Container(
-                width: 22, height: 22,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.divider, width: 1.5),
-                ),
-              ),
           ],
         ),
       ),
