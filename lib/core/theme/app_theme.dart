@@ -412,6 +412,9 @@ class _SquishyTapState extends State<SquishyTap>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final Animation<double> _scale;
+  // A mechanical-key feel — the button dips down a touch as it shrinks,
+  // like it's being pressed into the surface, not just shrinking in place.
+  late final Animation<double> _dip;
 
   @override
   void initState() {
@@ -425,6 +428,16 @@ class _SquishyTapState extends State<SquishyTap>
           weight: 30),
       TweenSequenceItem(
           tween: Tween(begin: 0.95, end: 1.0)
+              .chain(CurveTween(curve: Curves.elasticOut)),
+          weight: 70),
+    ]).animate(_ctrl);
+    _dip = TweenSequence<double>([
+      TweenSequenceItem(
+          tween: Tween(begin: 0.0, end: 2.5)
+              .chain(CurveTween(curve: Curves.easeOut)),
+          weight: 30),
+      TweenSequenceItem(
+          tween: Tween(begin: 2.5, end: 0.0)
               .chain(CurveTween(curve: Curves.elasticOut)),
           weight: 70),
     ]).animate(_ctrl);
@@ -447,7 +460,14 @@ class _SquishyTapState extends State<SquishyTap>
               widget.onTap!();
             },
       onLongPress: widget.onLongPress,
-      child: ScaleTransition(scale: _scale, child: widget.child),
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, child) => Transform.translate(
+          offset: Offset(0, _dip.value),
+          child: ScaleTransition(scale: _scale, child: child),
+        ),
+        child: widget.child,
+      ),
     );
   }
 }

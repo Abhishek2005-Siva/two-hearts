@@ -301,6 +301,34 @@ class _MainShellState extends ConsumerState<MainShell>
                                       : AppColors.textMuted,
                                   size: 22,
                                 ),
+                                // A little "pinned" dot on the active tab —
+                                // echoes the push-pin used on memory cards.
+                                if (selected)
+                                  Positioned(
+                                    top: -8,
+                                    left: 0,
+                                    right: 0,
+                                    child: Center(
+                                      child: Container(
+                                        width: 5,
+                                        height: 5,
+                                        decoration: BoxDecoration(
+                                          color: accent,
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                                color: accent.withValues(
+                                                    alpha: 0.6),
+                                                blurRadius: 4),
+                                          ],
+                                        ),
+                                      ),
+                                    ).animate().scale(
+                                        begin: const Offset(0, 0),
+                                        end: const Offset(1, 1),
+                                        duration: 200.ms,
+                                        curve: Curves.easeOutBack),
+                                  ),
                                 // Partner's pfp — shows on the tab they're
                                 // in right now, only while online.
                                 if (partnerTabIdx == i)
