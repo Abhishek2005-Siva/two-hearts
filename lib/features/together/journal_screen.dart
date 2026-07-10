@@ -273,62 +273,72 @@ class _JournalScreenState extends ConsumerState<JournalScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFF2A1F14),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _JournalHeader(
-              searching: _searching,
-              searchCtrl: _searchCtrl,
-              onSearchToggle: () => setState(() {
-                _searching = !_searching;
-                if (!_searching) {
-                  _query = '';
-                  _searchCtrl.clear();
-                }
-              }),
-              onQueryChanged: (v) => setState(() => _query = v),
-              onOrderToggle: () => setState(() => _newestFirst = !_newestFirst),
-              newestFirst: _newestFirst,
-              twinkle: _twinkle,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset('assets/images/journal_bookshelf_bg.png', fit: BoxFit.cover),
+          ),
+          Positioned.fill(
+            child: Container(color: Colors.black.withValues(alpha: 0.4)),
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                _JournalHeader(
+                  searching: _searching,
+                  searchCtrl: _searchCtrl,
+                  onSearchToggle: () => setState(() {
+                    _searching = !_searching;
+                    if (!_searching) {
+                      _query = '';
+                      _searchCtrl.clear();
+                    }
+                  }),
+                  onQueryChanged: (v) => setState(() => _query = v),
+                  onOrderToggle: () => setState(() => _newestFirst = !_newestFirst),
+                  newestFirst: _newestFirst,
+                  twinkle: _twinkle,
+                ),
+                if (!_searching) ...[
+                  _StatsPlaque(
+                    memories: journal.length,
+                    letters: letters.length,
+                    photos: photosCount,
+                    years: years,
+                  ),
+                  const SizedBox(height: 10),
+                  _FilterChipsRow(
+                    value: _filter,
+                    onChanged: (f) => setState(() {
+                      _filter = f;
+                      if (f == _JournalFilter.random) {
+                        _randomSeed = math.Random().nextInt(1 << 31);
+                      }
+                    }),
+                  ),
+                ],
+                Expanded(
+                  child: journalAsync.isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : Stack(
+                          children: [
+                            _BookshelfBody(books: books),
+                            if (!_searching)
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                child: _WritingStation(
+                                  onTap: () => _openTodayEntry(context),
+                                ),
+                              ),
+                          ],
+                        ),
+                ),
+              ],
             ),
-            if (!_searching) ...[
-              _StatsPlaque(
-                memories: journal.length,
-                letters: letters.length,
-                photos: photosCount,
-                years: years,
-              ),
-              const SizedBox(height: 10),
-              _FilterChipsRow(
-                value: _filter,
-                onChanged: (f) => setState(() {
-                  _filter = f;
-                  if (f == _JournalFilter.random) {
-                    _randomSeed = math.Random().nextInt(1 << 31);
-                  }
-                }),
-              ),
-            ],
-            Expanded(
-              child: journalAsync.isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : Stack(
-                      children: [
-                        _BookshelfBody(books: books),
-                        if (!_searching)
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            child: _WritingStation(
-                              onTap: () => _openTodayEntry(context),
-                            ),
-                          ),
-                      ],
-                    ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
