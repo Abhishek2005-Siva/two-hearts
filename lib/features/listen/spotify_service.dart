@@ -25,6 +25,7 @@ class SpotifyService {
   String? _refreshToken;
   DateTime _expiry = DateTime.fromMillisecondsSinceEpoch(0);
   String? _market;
+  String? _userId;
 
   bool get isSignedIn => _refreshToken != null;
 
@@ -47,7 +48,7 @@ class SpotifyService {
   }
 
   Future<void> signOut() async {
-    _accessToken = _refreshToken = _market = null;
+    _accessToken = _refreshToken = _market = _userId = null;
     _expiry = DateTime.fromMillisecondsSinceEpoch(0);
     final p = await SharedPreferences.getInstance();
     await p.remove(_kAccess);
@@ -62,19 +63,31 @@ class SpotifyService {
   /// fetched from `/me` once (needs `user-read-private`) and cached.
   Future<String?> _resolveMarket() async {
     if (_market != null) return _market;
+    await _fetchMe();
+    return _market;
+  }
+
+  /// This Spotify account's own user ID — used to detect both partners
+  /// having connected the *same* Spotify account (which only lets one of
+  /// their phones play at a time; that's a Spotify-side restriction, not a
+  /// bug in this app).
+  Future<String?> myUserId() async {
+    if (_userId != null) return _userId;
+    await _fetchMe();
+    return _userId;
+  }
+
+  Future<void> _fetchMe() async {
     try {
       final res = await _api('GET', '/me');
-      if (res.statusCode != 200) return null;
+      if (res.statusCode != 200) return;
       final j = jsonDecode(res.body) as Map<String, dynamic>;
       final country = j['country'] as String?;
-      if (country != null && country.isNotEmpty) {
-        _market = country;
-        await _persist();
-      }
-      return _market;
-    } catch (_) {
-      return null;
-    }
+      if (country != null && country.isNotEmpty) _market = country;
+      final id = j['id'] as String?;
+      if (id != null && id.isNotEmpty) _userId = id;
+      await _persist();
+    } catch (_) {}
   }
 
   String _randomString(int len) {
@@ -98,6 +111,12 @@ class SpotifyService {
       'code_challenge_method': 'S256',
       'code_challenge': challenge,
       'scope': SpotifyConfig.scopeString,
+      // Forces the consent screen every time, even if this account already
+      // approved the app under an older, narrower scope set — without this,
+      // Spotify can silently skip re-prompting and hand back a token that
+      // still lacks the newly-added scopes (e.g. playlist access), so
+      // tapping "reconnect" would appear to do nothing.
+      'show_dialog': 'true',
     }).toString();
 
     // Without a timeout, a redirect that never makes it back into the app

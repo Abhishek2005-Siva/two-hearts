@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/theme/app_theme.dart';
 import 'screen_capture_service.dart';
 
 const _fallbackIceServers = [
@@ -519,7 +520,7 @@ class _CtrlBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return SquishyTap(
       onTap: onTap,
       child: Container(
         width: 58,

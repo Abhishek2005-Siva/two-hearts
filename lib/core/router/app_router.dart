@@ -28,6 +28,33 @@ import '../firebase/models.dart';
 import '../providers/providers.dart';
 import '../shell/main_shell.dart';
 
+/// Fade-through transition used for the 5 bottom-nav tabs — a soft
+/// cross-fade with a touch of scale, instead of GoRouter's default
+/// platform push, so switching sections feels like moving between places
+/// in the same room rather than one page shoving another off-screen.
+CustomTransitionPage _tabPage(Widget child) {
+  return CustomTransitionPage(
+    child: child,
+    transitionDuration: const Duration(milliseconds: 260),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final fadeIn = CurvedAnimation(parent: animation, curve: Curves.easeOut);
+      final fadeOut = CurvedAnimation(
+          parent: secondaryAnimation, curve: Curves.easeIn);
+      return FadeTransition(
+        opacity: fadeIn,
+        child: FadeTransition(
+          opacity: Tween<double>(begin: 1, end: 0).animate(fadeOut),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.98, end: 1.0).animate(fadeIn),
+            child: child,
+          ),
+        ),
+      );
+    },
+  );
+}
+
 // Notifier that fires whenever auth or couple state changes so GoRouter
 // re-evaluates its redirect without recreating the router instance.
 class _RouterNotifier extends ChangeNotifier {
@@ -115,15 +142,27 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => MainShell(child: child),
         routes: [
-          GoRoute(path: '/room', builder: (_, _) => const RoomScreen()),
-          GoRoute(path: '/chat', builder: (_, _) => const ChatScreen()),
-          GoRoute(path: '/memory', builder: (_, _) => const MemoryWallScreen()),
+          GoRoute(
+            path: '/room',
+            pageBuilder: (_, _) => _tabPage(const RoomScreen()),
+          ),
+          GoRoute(
+            path: '/chat',
+            pageBuilder: (_, _) => _tabPage(const ChatScreen()),
+          ),
+          GoRoute(
+            path: '/memory',
+            pageBuilder: (_, _) => _tabPage(const MemoryWallScreen()),
+          ),
           GoRoute(
             path: '/memory/:id',
             builder: (_, state) =>
                 MemoryDetailScreen(memoryId: state.pathParameters['id']!),
           ),
-          GoRoute(path: '/together', builder: (_, _) => const TogetherScreen()),
+          GoRoute(
+            path: '/together',
+            pageBuilder: (_, _) => _tabPage(const TogetherScreen()),
+          ),
           GoRoute(
             path: '/together/letter/new',
             builder: (_, _) => const LetterComposeScreen(),
@@ -132,7 +171,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/together/journal',
             builder: (_, _) => const JournalScreen(),
           ),
-          GoRoute(path: '/you', builder: (_, _) => const YouAndMeScreen()),
+          GoRoute(
+            path: '/you',
+            pageBuilder: (_, _) => _tabPage(const YouAndMeScreen()),
+          ),
           GoRoute(path: '/games', builder: (_, _) => const GamesScreen()),
           GoRoute(path: '/dates', builder: (_, _) => const DateIdeasScreen()),
           GoRoute(path: '/snaps', builder: (_, _) => const SnapsScreen()),

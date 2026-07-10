@@ -327,14 +327,25 @@ class _SourceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return SquishyTap(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: AppColors.bgCardLight,
+          gradient: const LinearGradient(
+            colors: AppColors.cardGradient,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppColors.divider, width: 0.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
         child: Row(
           children: [
@@ -967,7 +978,7 @@ class _CinemaPlayerState extends ConsumerState<_CinemaPlayer> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: _reactionEmojis
-                                .map((e) => GestureDetector(
+                                .map((e) => SquishyTap(
                                       onTap: () => _sendReaction(e),
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(
@@ -1042,7 +1053,7 @@ class _CinemaPlayerState extends ConsumerState<_CinemaPlayer> {
                                 onPressed: () =>
                                     _seekBy(const Duration(seconds: -10)),
                               ),
-                              GestureDetector(
+                              SquishyTap(
                                 onTap: _togglePlay,
                                 child: Container(
                                   width: 62,

@@ -37,6 +37,16 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Shrinks + obfuscates the Android/Java side (Flutter's own Dart
+            // AOT code is unaffected — this only trims unused plugin/embedding
+            // code and drops unused resources) — a meaningful APK size cut
+            // with no feature impact.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

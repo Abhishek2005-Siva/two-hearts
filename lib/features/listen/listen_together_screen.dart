@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
+import '../../core/theme/app_theme.dart';
 import 'spotify_config.dart';
 import 'spotify_service.dart';
 
@@ -116,6 +117,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
       }
       DelightHaptics.soft();
       unawaited(_loadAndSyncPlaylists());
+      unawaited(_syncAccountId());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -144,6 +146,25 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
     return 'Couldn\'t connect to Spotify.\n$raw';
   }
 
+  // ── Same-account detection ───────────────────────────────────────────────
+
+  Future<void> _syncAccountId() async {
+    try {
+      final id = await _spotify.myUserId();
+      final coupleId = ref.read(coupleIdProvider);
+      if (id == null || coupleId == null) return;
+      await ref.read(firestoreServiceProvider).syncSpotifyAccountId(coupleId, id);
+    } catch (_) {}
+  }
+
+  bool _sameAccountAsPartner(Map<String, dynamic>? session) {
+    final ids = session?['accountIds'] as Map<String, dynamic>?;
+    if (ids == null || ids.length < 2) return false;
+    final mine = ids[_uid] as String?;
+    if (mine == null) return false;
+    return ids.entries.any((e) => e.key != _uid && e.value == mine);
+  }
+
   // ── Playlists ─────────────────────────────────────────────────────────────
 
   Future<void> _loadAndSyncPlaylists() async {
@@ -159,7 +180,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
             );
       }
     } on SpotifyAuthException catch (e) {
-      _reconnectHint(e.detail);
+      _reconnectHint(e.detail, _loadAndSyncPlaylists);
     } catch (_) {}
   }
 
@@ -187,7 +208,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
       final tracks = await _spotify.playlistTracks(p.id);
       if (mounted) setState(() => _playlistTracks = tracks);
     } on SpotifyAuthException catch (e) {
-      _reconnectHint(e.detail);
+      _reconnectHint(e.detail, () => _openPlaylistTracks(p));
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -396,8 +417,17 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
   /// token issued before a scope change (e.g. this build added playlist
   /// permissions). A fresh sign-in re-grants the right scopes. [detail] is
   /// Spotify's own error text, shown via "Details" so it can be screenshot
-  /// instead of guessed at blind.
-  void _reconnectHint([String? detail]) {
+  /// instead of guessed at blind. [retry], if given, is re-run automatically
+  /// once reconnecting succeeds, so the user doesn't have to re-tap whatever
+  /// they were doing (open the playlist / re-search) a second time.
+  Future<void> _reconnect(VoidCallback? retry) async {
+    await _spotify.signOut();
+    if (!mounted) return;
+    await _connect();
+    if (mounted && _conn == _ConnState.connected) retry?.call();
+  }
+
+  void _reconnectHint(String? detail, [VoidCallback? retry]) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: const Text(
@@ -406,13 +436,11 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
       duration: const Duration(seconds: 8),
       action: SnackBarAction(
         label: detail != null ? 'Details' : 'Reconnect',
-        onPressed: () async {
+        onPressed: () {
           if (detail == null) {
-            await _spotify.signOut();
-            if (mounted) _connect();
+            _reconnect(retry);
             return;
           }
-          if (!mounted) return;
           showDialog(
             context: context,
             builder: (_) => AlertDialog(
@@ -427,10 +455,9 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
                   child: const Text('Close'),
                 ),
                 TextButton(
-                  onPressed: () async {
+                  onPressed: () {
                     Navigator.of(context).pop();
-                    await _spotify.signOut();
-                    if (mounted) _connect();
+                    _reconnect(retry);
                   },
                   child: const Text('Reconnect'),
                 ),
@@ -477,7 +504,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
         _results = [];
         _searchError = 'Spotify needs you to reconnect to search.';
       });
-      _reconnectHint(e.detail);
+      _reconnectHint(e.detail, () => _runSearch(q));
     } catch (e) {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() {
@@ -673,7 +700,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
               ),
             ],
             const SizedBox(height: 28),
-            GestureDetector(
+            SquishyTap(
               onTap: connecting ? null : _connect,
               child: Container(
                 padding:
@@ -721,6 +748,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
   Widget _room(Map<String, dynamic>? session) {
     return Column(
       children: [
+        if (_sameAccountAsPartner(session)) _sameAccountBanner(),
         _nowPlaying(session),
         _tabBar(),
         if (_tab == _Tab.search) _searchBar(),
@@ -729,10 +757,40 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
     );
   }
 
+  Widget _sameAccountBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('⚠️', style: TextStyle(fontSize: 16)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "You're both connected with the same Spotify account — "
+              "Spotify only ever plays on one device at a time per account, "
+              "so only one of you actually hears sound right now. For audio "
+              "on both phones, each of you needs your own separate Spotify "
+              "Premium account.",
+              style: TextStyle(
+                  color: Colors.orange.shade100, fontSize: 11.5, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _tabBar() {
     Widget chip(_Tab t, String label) {
       final selected = _tab == t;
-      return GestureDetector(
+      return SquishyTap(
         onTap: () => setState(() {
           _tab = t;
           _openPlaylist = null;
@@ -1088,7 +1146,7 @@ class _MiniBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return SquishyTap(
       onTap: onTap,
       child: Container(
         padding: EdgeInsets.symmetric(

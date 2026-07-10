@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -36,6 +37,11 @@ class _MainShellState extends ConsumerState<MainShell>
   int? _pawFrom;
   int? _pawTo;
   String? _lastPartnerSection;
+
+  // System back button: from any tab, land on Home first rather than
+  // exiting straight away; from Home, a second press within the window
+  // actually exits.
+  DateTime? _lastBackPress;
 
   static const _tabs = [
     _Tab(icon: Icons.house_rounded, label: 'Home', path: '/room'),
@@ -112,7 +118,6 @@ class _MainShellState extends ConsumerState<MainShell>
     final to = _sectionIndex(section);
     _lastPartnerSection = section;
     if (!online || from == null || to == null || from == to) return;
-    if (ref.read(calmModeProvider)) return;
     setState(() {
       _pawFrom = from;
       _pawTo = to;
@@ -120,6 +125,29 @@ class _MainShellState extends ConsumerState<MainShell>
     _pawCtrl.forward(from: 0).whenComplete(() {
       if (mounted) setState(() => _pawFrom = null);
     });
+  }
+
+  /// Only reached when we're exactly at a tab root (nothing pushed on top
+  /// within that tab, since [canPop] is true otherwise and the system just
+  /// pops normally). From any tab but Home, land on Home; from Home, a
+  /// second press within 2 seconds actually exits the app.
+  void _handleBackPress(BuildContext context, String currentLocation) {
+    if (currentLocation != '/room') {
+      context.go('/room');
+      return;
+    }
+    final now = DateTime.now();
+    if (_lastBackPress != null &&
+        now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+      SystemNavigator.pop();
+      return;
+    }
+    _lastBackPress = now;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Press back again to exit'),
+      duration: Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   void _showIncomingCall(BuildContext context, Map<String, dynamic> call) {
@@ -215,7 +243,16 @@ class _MainShellState extends ConsumerState<MainShell>
       },
     );
 
-    return Scaffold(
+    final currentLocation = GoRouterState.of(context).matchedLocation;
+    final atTabRoot = _tabs.any((t) => t.path == currentLocation);
+
+    return PopScope(
+      canPop: !atTabRoot,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _handleBackPress(context, currentLocation);
+      },
+      child: Scaffold(
       body: Stack(
         children: [
           widget.child,
@@ -239,8 +276,7 @@ class _MainShellState extends ConsumerState<MainShell>
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: List.generate(_tabs.length, (i) {
                     final selected = idx == i;
-                    return GestureDetector(
-                      behavior: HitTestBehavior.opaque,
+                    return SquishyTap(
                       onTap: () => context.go(_tabs[i].path),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
@@ -334,6 +370,7 @@ class _MainShellState extends ConsumerState<MainShell>
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -362,8 +399,7 @@ class _PartnerDot extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: avatarUrl != null && avatarUrl!.isNotEmpty
           ? CachedNetworkImage(imageUrl: avatarUrl!, fit: BoxFit.cover)
-          : const Center(
-              child: Text('🙂', style: TextStyle(fontSize: 9))),
+          : Icon(Icons.favorite_rounded, color: accent, size: 10),
     );
   }
 }
@@ -488,7 +524,7 @@ class _GiftOverlayState extends ConsumerState<_GiftOverlay> {
       child: Container(
         color: Colors.black.withValues(alpha: 0.55),
         child: Center(
-          child: GestureDetector(
+          child: SquishyTap(
             onTap: () => _openGift(gift),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -744,7 +780,7 @@ class _CallBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return SquishyTap(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,

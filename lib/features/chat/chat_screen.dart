@@ -649,7 +649,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             color: AppColors.lavender, fontSize: 12),
                       ),
                     ),
-                    GestureDetector(
+                    SquishyTap(
                       onTap: () =>
                           setState(() => _whisperMode = false),
                       child: const Icon(Icons.close_rounded,
@@ -675,7 +675,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    GestureDetector(
+                    SquishyTap(
                       onTap: () => setState(() => _replyingTo = null),
                       child: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 16),
                     ),
@@ -767,7 +767,7 @@ class _ChatAppBar extends StatelessWidget {
           children: [
             const SizedBox(width: 12),
             if (partner?.avatarUrl != null)
-              GestureDetector(
+              SquishyTap(
                 onTap: () =>
                     FullscreenImageViewer.open(context, partner!.avatarUrl!),
                 child: CircleAvatar(
@@ -790,9 +790,8 @@ class _ChatAppBar extends StatelessWidget {
               ),
             const SizedBox(width: 10),
             Expanded(
-              child: GestureDetector(
+              child: SquishyTap(
                 onTap: () => context.push('/snaps'),
-                behavior: HitTestBehavior.opaque,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -946,7 +945,7 @@ class _BackgroundPickerSheet extends StatelessWidget {
                 // Last tile = Gallery picker
                 if (i == _imageOptions.length + 1) {
                   final isSelected = customBgUrl != null;
-                  return GestureDetector(
+                  return SquishyTap(
                     onTap: onGalleryPick,
                     child: Stack(
                       fit: StackFit.expand,
@@ -1003,7 +1002,7 @@ class _BackgroundPickerSheet extends StatelessWidget {
                 final bg = i == 0 ? ChatBackground.dark : _imageOptions[i - 1];
                 final isSelected = customBgUrl == null && current == bg;
                 final asset = _chatBgAssets[bg];
-                return GestureDetector(
+                return SquishyTap(
                   onTap: () => onSelect(bg),
                   child: Stack(
                     fit: StackFit.expand,
@@ -1273,7 +1272,7 @@ class _ChatInputState extends State<_ChatInput> {
             ),
           ),
           // Release to send button
-          GestureDetector(
+          SquishyTap(
             onTap: _stopAndPreview,
             child: Container(
               padding: const EdgeInsets.all(10),
@@ -1292,7 +1291,7 @@ class _ChatInputState extends State<_ChatInput> {
   Widget _buildNormalRow(BuildContext context, bool hasText) {
     return Row(
       children: [
-        GestureDetector(
+        SquishyTap(
           onTap: widget.onSnap,
           child: Container(
             padding: const EdgeInsets.all(8),
@@ -1348,7 +1347,7 @@ class _ChatInputState extends State<_ChatInput> {
           ),
         ),
         const SizedBox(width: 8),
-        GestureDetector(
+        SquishyTap(
           onTap: widget.onToggleWhisper,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
@@ -1364,7 +1363,11 @@ class _ChatInputState extends State<_ChatInput> {
                     : Colors.transparent,
               ),
             ),
-            child: const Text('🌙', style: TextStyle(fontSize: 18)),
+            child: Icon(Icons.bedtime_rounded,
+                color: widget.whisperMode
+                    ? AppColors.lavender
+                    : AppColors.textSecondary,
+                size: 18),
           ),
         ),
         const SizedBox(width: 8),
@@ -1399,7 +1402,7 @@ class _ChatInputState extends State<_ChatInput> {
             ),
           )
         else
-          GestureDetector(
+          SquishyTap(
             onTap: widget.sending ? null : widget.onSend,
             child: Container(
               padding: const EdgeInsets.all(10),
@@ -2852,9 +2855,9 @@ class _ReactionPerformanceState extends State<_ReactionPerformance>
                                 ? CachedNetworkImage(
                                     imageUrl: widget.avatarUrl!,
                                     fit: BoxFit.cover)
-                                : const Center(
-                                    child: Text('🙂',
-                                        style: TextStyle(fontSize: 26))),
+                                : Center(
+                                    child: Icon(Icons.favorite_rounded,
+                                        color: widget.accent, size: 24)),
                           ),
                         ),
                       ),

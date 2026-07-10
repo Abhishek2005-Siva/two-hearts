@@ -1,38 +1,15 @@
-// The "living world" layer — Calm Mode, haptic identity, floating stickers,
-// signature fly-away morphs and seasonal ambience.
+// The "living world" layer — haptic identity, floating stickers, signature
+// fly-away morphs and seasonal ambience.
 //
 // Governing rule (the Delight Budget): one delightful thing at a time.
-// Everything here can be dialled down with the global Calm Mode toggle.
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vibration/vibration.dart';
 
-// ── Calm Mode (persisted) ─────────────────────────────────────────────────
-
-final calmModeProvider =
-    NotifierProvider<CalmModeNotifier, bool>(CalmModeNotifier.new);
-
-class CalmModeNotifier extends Notifier<bool> {
-  static const _key = 'calm_mode';
-
-  @override
-  bool build() {
-    SharedPreferences.getInstance().then((prefs) {
-      final saved = prefs.getBool(_key);
-      if (saved != null && saved != state) state = saved;
-    });
-    return false;
-  }
-
-  void set(bool value) {
-    state = value;
-    SharedPreferences.getInstance().then((p) => p.setBool(_key, value));
-  }
-}
+import '../theme/app_theme.dart';
 
 // ── Haptic identity ───────────────────────────────────────────────────────
 // Each meaningful event has its own touch signature, so the app can be
@@ -64,6 +41,162 @@ class DelightHaptics {
   static Future<void> soft() async => HapticFeedback.selectionClick();
 }
 
+// ── Top banner ────────────────────────────────────────────────────────────
+// A single little "something happened" banner that drops down from the top
+// and can be swiped away to the right. Only ever one on screen: calling
+// show() again immediately replaces whatever's already showing instead of
+// queueing behind it — the fix for a rapid burst of taps stacking up a pile
+// of popups that then play out one after another for the next half minute.
+
+class TopBanner {
+  TopBanner._();
+
+  static OverlayEntry? _entry;
+  static Timer? _timer;
+
+  static void show(
+    BuildContext context, {
+    required String emoji,
+    required String text,
+    Duration duration = const Duration(seconds: 4),
+  }) {
+    _dismiss();
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    final key = GlobalKey<_TopBannerState>();
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _TopBanner(
+        key: key,
+        emoji: emoji,
+        text: text,
+        onDismiss: () => _remove(entry),
+      ),
+    );
+    _entry = entry;
+    overlay.insert(entry);
+    _timer = Timer(duration, () => key.currentState?.exit());
+  }
+
+  static void _dismiss() {
+    _timer?.cancel();
+    final entry = _entry;
+    _entry = null;
+    if (entry != null) {
+      try {
+        entry.remove();
+      } catch (_) {}
+    }
+  }
+
+  static void _remove(OverlayEntry entry) {
+    if (_entry == entry) {
+      _timer?.cancel();
+      _entry = null;
+    }
+    try {
+      entry.remove();
+    } catch (_) {}
+  }
+}
+
+class _TopBanner extends StatefulWidget {
+  final String emoji;
+  final String text;
+  final VoidCallback onDismiss;
+  const _TopBanner({
+    super.key,
+    required this.emoji,
+    required this.text,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_TopBanner> createState() => _TopBannerState();
+}
+
+class _TopBannerState extends State<_TopBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 320));
+    _ctrl.forward();
+  }
+
+  void exit() {
+    if (!mounted) return;
+    _ctrl.reverse().whenComplete(widget.onDismiss);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 8,
+      left: 16,
+      right: 16,
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, child) {
+          final t = Curves.easeOutBack.transform(_ctrl.value);
+          return Opacity(
+            opacity: _ctrl.value.clamp(0.0, 1.0),
+            child: Transform.translate(
+              offset: Offset(0, -70 * (1 - t)),
+              child: child,
+            ),
+          );
+        },
+        child: Dismissible(
+          key: const ValueKey('top_banner_swipe'),
+          direction: DismissDirection.startToEnd,
+          onDismissed: (_) => widget.onDismiss(),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.divider, width: 0.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Text(widget.emoji, style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(widget.text,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Floating stickers ─────────────────────────────────────────────────────
 // A small cluster of emoji that drifts up from a point and fades — the
 // reward for a meaningful action. A few particles, never a firework.
@@ -80,14 +213,7 @@ class FloatingStickers {
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
 
-    var n = count;
-    try {
-      if (ProviderScope.containerOf(context, listen: false)
-          .read(calmModeProvider)) {
-        n = (count / 3).ceil();
-      }
-    } catch (_) {}
-
+    final n = count;
     final size = MediaQuery.of(context).size;
     final from = origin ?? Offset(size.width / 2, size.height * 0.7);
 
@@ -424,15 +550,15 @@ const Map<Season, List<String>> kSeasonStickers = {
 };
 
 /// Slow, low-opacity falling seasonal particles. Purely ambient — used on
-/// the home room. Renders nothing outside a season or in Calm Mode.
-class SeasonalDrift extends ConsumerStatefulWidget {
+/// the home room. Renders nothing outside a season.
+class SeasonalDrift extends StatefulWidget {
   const SeasonalDrift({super.key});
 
   @override
-  ConsumerState<SeasonalDrift> createState() => _SeasonalDriftState();
+  State<SeasonalDrift> createState() => _SeasonalDriftState();
 }
 
-class _SeasonalDriftState extends ConsumerState<SeasonalDrift>
+class _SeasonalDriftState extends State<SeasonalDrift>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final List<_DriftFlake> _flakes;
@@ -468,8 +594,7 @@ class _SeasonalDriftState extends ConsumerState<SeasonalDrift>
 
   @override
   Widget build(BuildContext context) {
-    final calm = ref.watch(calmModeProvider);
-    if (calm || _flakes.isEmpty) return const SizedBox.shrink();
+    if (_flakes.isEmpty) return const SizedBox.shrink();
     final size = MediaQuery.of(context).size;
     return IgnorePointer(
       child: AnimatedBuilder(

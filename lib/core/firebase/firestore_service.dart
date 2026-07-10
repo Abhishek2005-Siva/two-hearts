@@ -1448,6 +1448,15 @@ class FirestoreService {
         'playlists.$_uid': playlists,
       }, SetOptions(merge: true));
 
+  /// Publishes this account's Spotify user ID so both phones can tell
+  /// whether they connected the *same* Spotify account — Spotify only ever
+  /// streams to one device at a time per account, so a shared login means
+  /// only one partner actually hears audio no matter what this app does.
+  Future<void> syncSpotifyAccountId(String coupleId, String spotifyUserId) =>
+      _listenDoc(coupleId).set({
+        'accountIds.$_uid': spotifyUserId,
+      }, SetOptions(merge: true));
+
   // ── Avatar ────────────────────────────────────────────────────────────────
 
   Future<void> updateAvatarConfig(String uid, AvatarConfig config) =>

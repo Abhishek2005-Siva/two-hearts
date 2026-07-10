@@ -790,8 +790,8 @@ class _OptionButton extends StatelessWidget {
       }
     }
 
-    return GestureDetector(
-      onTap: () { if (onTap != null) { HapticFeedback.lightImpact(); onTap!(); } },
+    return SquishyTap(
+      onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
@@ -1104,7 +1104,7 @@ class _ScribbleTabState extends ConsumerState<_ScribbleTab> {
 
               // Pen controls
               Row(children: [
-                ..._colors.map((c) => GestureDetector(
+                ..._colors.map((c) => SquishyTap(
                   onTap: () => setState(() => _penColor = c),
                   child: Container(
                     width: 28, height: 28,
@@ -1226,7 +1226,7 @@ class _ScribbleTabState extends ConsumerState<_ScribbleTab> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                GestureDetector(
+                SquishyTap(
                   onTap: _submittingGuess ? null : _submitGuess,
                   child: Container(
                     padding: const EdgeInsets.all(12),
@@ -1521,7 +1521,7 @@ class _RpsTabState extends ConsumerState<_RpsTab> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: _rpsEmoji.entries.map((e) {
                     final selected = myPick == e.key;
-                    return GestureDetector(
+                    return SquishyTap(
                       onTap: myPick == null
                           ? () {
                               HapticFeedback.mediumImpact();

@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/delight/delight.dart';
 import '../../core/firebase/models.dart';
-import '../../core/globals.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/app_logo.dart';
@@ -133,20 +132,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
       _ => ('♡', message ?? 'Thinking of you ♡'),
     };
 
-    scaffoldMessengerKey.currentState?.showSnackBar(SnackBar(
-      content: Row(children: [
-        Text('$emoji  ', style: const TextStyle(fontSize: 18)),
-        Expanded(
-            child: Text(text,
-                style: const TextStyle(color: Colors.white))),
-      ]),
-      backgroundColor: AppColors.bgCard,
-      behavior: SnackBarBehavior.floating,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      margin: const EdgeInsets.all(16),
-      duration: const Duration(seconds: 5),
-    ));
+    TopBanner.show(context, emoji: emoji, text: text);
   }
 
   void _showPartnerMoodPopup(MoodType mood) {
@@ -159,7 +145,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     });
   }
 
-  void _sendThinkingOfYou() async {
+  DateTime? _lastThinkingOfYouSent;
+
+  void _sendThinkingOfYou([String? message]) async {
+    // A short cooldown so mashing the pill can't flood the partner with a
+    // burst of separate notifications/banners — one every few seconds max.
+    final now = DateTime.now();
+    if (_lastThinkingOfYouSent != null &&
+        now.difference(_lastThinkingOfYouSent!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastThinkingOfYouSent = now;
     final coupleId = ref.read(coupleIdProvider);
     final partner = ref.read(partnerUserProvider).valueOrNull;
     if (coupleId == null) return;
@@ -168,7 +164,113 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     await ref.read(firestoreServiceProvider).sendThinkingOfYou(
       coupleId,
       toUid: partner?.uid,
+      message: message,
     );
+  }
+
+  Future<void> _composeThinkingOfYou() async {
+    HapticFeedback.selectionClick();
+    final ctrl = TextEditingController();
+    final message = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('♡ Add a little note',
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 150,
+          maxLines: 3,
+          minLines: 1,
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: 'Optional — leave blank to just send ♡',
+            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            counterStyle: const TextStyle(color: AppColors.textMuted, fontSize: 10),
+            filled: true,
+            fillColor: AppColors.bgMid,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, ctrl.text.trim()),
+            child: const Text('Send ♡',
+                style: TextStyle(
+                    color: AppColors.rose, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (message == null) return; // cancelled
+    _sendThinkingOfYou(message.isEmpty ? null : message);
+  }
+
+  Future<void> _sendHomeGift() async {
+    final coupleId = ref.read(coupleIdProvider);
+    final partnerUid = ref.read(partnerUserProvider).valueOrNull?.uid;
+    if (coupleId == null || partnerUid == null) return;
+    HapticFeedback.selectionClick();
+    final ctrl = TextEditingController();
+    final message = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('🎁 Send a surprise',
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 200,
+          maxLines: 4,
+          minLines: 1,
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: 'Write something only they should read…',
+            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            counterStyle: const TextStyle(color: AppColors.textMuted, fontSize: 10),
+            filled: true,
+            fillColor: AppColors.bgMid,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, ctrl.text.trim()),
+            child: const Text('Wrap it up 🎁',
+                style: TextStyle(
+                    color: AppColors.rose, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (message == null || message.isEmpty || !mounted) return;
+    HapticFeedback.mediumImpact();
+    FloatingStickers.burst(context, stickers: const ['🎁', '🎀'], count: 5);
+    await ref
+        .read(firestoreServiceProvider)
+        .sendGift(coupleId, toUid: partnerUid, message: message);
   }
 
   void _showMoodPicker() {
@@ -225,7 +327,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
               runSpacing: 10,
               children: MoodType.values.map((mood) {
                 final selected = currentMood == mood;
-                return GestureDetector(
+                return SquishyTap(
                   onTap: () async {
                     Navigator.pop(sheetCtx);
                     await ref
@@ -373,7 +475,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
           left: myLeft,
           right: myRight,
           top: myTop,
-          child: GestureDetector(
+          child: SquishyTap(
             onTap: _showMoodPicker,
             child: _CharNameLabel(name: myName, color: accent),
           ),
@@ -384,7 +486,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
           left: partnerLeft,
           right: partnerRight,
           top: partnerTop,
-          child: GestureDetector(
+          child: SquishyTap(
             onTap: _showMoodPicker,
             child: _CharNameLabel(name: partnerName, color: AppColors.lavender),
           ),
@@ -537,8 +639,30 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      // Send a custom gift — a little surprise letter that
+                      // lands as a present box on their screen.
+                      SquishyTap(
+                        onTap: _sendHomeGift,
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          margin: const EdgeInsets.only(right: 4),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                                colors: [accent, AppColors.coral]),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                  color: accent.withValues(alpha: 0.4),
+                                  blurRadius: 12),
+                            ],
+                          ),
+                          child: const Icon(Icons.card_giftcard_rounded,
+                              color: Colors.white, size: 18),
+                        ),
+                      ),
                       // Listen Together — tap to open the shared Spotify room
-                      GestureDetector(
+                      SquishyTap(
                         onTap: () {
                           HapticFeedback.lightImpact();
                           context.push('/listen');
@@ -607,6 +731,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
               child: _ThinkingOfYouPill(
                 accent: accent,
                 onTap: _sendThinkingOfYou,
+                onLongPress: _composeThinkingOfYou,
               ).animate().fadeIn(delay: 200.ms),
             ),
           ),
@@ -819,13 +944,15 @@ class _NameMoodBubble extends StatelessWidget {
 class _ThinkingOfYouPill extends StatelessWidget {
   final Color accent;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   const _ThinkingOfYouPill(
-      {required this.accent, required this.onTap});
+      {required this.accent, required this.onTap, this.onLongPress});
 
   @override
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
@@ -912,7 +1039,7 @@ class _PolaroidStrip extends StatelessWidget {
           // Sticky note at end
           return Padding(
             padding: const EdgeInsets.only(right: 16, top: 6),
-            child: GestureDetector(
+            child: SquishyTap(
               onTap: () => ctx.push('/memory'),
               child: _StickyNote(nightness: nightness),
             ),
@@ -953,7 +1080,7 @@ class _PolaroidCard extends StatelessWidget {
     final cardColor = Color.lerp(
         const Color(0xFFFFFDF8), const Color(0xFFF5EDE0), nightness)!;
 
-    return GestureDetector(
+    return SquishyTap(
       onTap: () => context.push('/memory/${memory.id}'),
       child: SizedBox(
         width: 112,
@@ -1360,9 +1487,20 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: AppColors.bgCard,
+              gradient: const LinearGradient(
+                colors: AppColors.cardGradient,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.divider, width: 0.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1409,7 +1547,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    GestureDetector(
+                    SquishyTap(
                       onTap: _nicknameSaving ? null : _saveNickname,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -1444,9 +1582,20 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: AppColors.bgCard,
+              gradient: const LinearGradient(
+                colors: AppColors.cardGradient,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.divider, width: 0.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1471,7 +1620,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                   runSpacing: 8,
                   children: [
                     ..._wildIdeas.map((idea) {
-                      return GestureDetector(
+                      return SquishyTap(
                         onTap: () => _sendWildIdea(idea.$3),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
@@ -1498,7 +1647,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                       );
                     }),
                     // Write your own — wrapped and delivered the same way
-                    GestureDetector(
+                    SquishyTap(
                       onTap: _sendCustomWildIdea,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -1533,9 +1682,20 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.bgCard,
+              gradient: const LinearGradient(
+                colors: AppColors.cardGradient,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.divider, width: 0.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
             ),
             child: Row(
               children: [
@@ -1554,43 +1714,6 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-
-          // Calm Mode — quiets seasonal particles, sticker bursts & ambient glow
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.bgCard,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.divider, width: 0.5),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.spa_outlined,
-                    color: AppColors.textMuted, size: 20),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('Calm mode',
-                          style: TextStyle(color: AppColors.textSecondary)),
-                      Text('Quiet the little animations',
-                          style: TextStyle(
-                              color: AppColors.textMuted, fontSize: 11)),
-                    ],
-                  ),
-                ),
-                Switch(
-                  value: ref.watch(calmModeProvider),
-                  onChanged: (v) =>
-                      ref.read(calmModeProvider.notifier).set(v),
-                  activeThumbColor: AppColors.rose,
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 20),
           Text('Your colour',
               style: Theme.of(context).textTheme.titleLarge),
@@ -1602,7 +1725,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
               final color = a['color'] as Color;
               final selected =
                   couple?.themeColor == color.toARGB32();
-              return GestureDetector(
+              return SquishyTap(
                 onTap: () async {
                   if (couple != null) {
                     await ref
@@ -1639,7 +1762,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
             }).toList(),
           ),
           const SizedBox(height: 24),
-          GestureDetector(
+          SquishyTap(
             onTap: () async {
               await FirebaseAuth.instance.signOut();
               if (context.mounted) {

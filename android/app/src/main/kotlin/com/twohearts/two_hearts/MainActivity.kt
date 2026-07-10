@@ -2,6 +2,8 @@ package com.twohearts.two_hearts
 
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -21,7 +23,16 @@ class MainActivity : FlutterActivity() {
                         } else {
                             startService(intent)
                         }
-                        result.success(true)
+                        // startForegroundService() only schedules the service —
+                        // it returns before onStartCommand()/startForeground()
+                        // has actually run. On Android 14+, requesting the
+                        // MediaProjection screen-capture intent before the
+                        // foreground service is truly up throws a
+                        // SecurityException, so give it a beat to land before
+                        // telling Dart it's safe to proceed.
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            result.success(true)
+                        }, 350)
                     }
                     "stop" -> {
                         stopService(Intent(this, ScreenCaptureService::class.java))

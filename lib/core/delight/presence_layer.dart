@@ -7,8 +7,6 @@
 //    lingers and fades over ten minutes.
 //  • Synced breathing: while you're both online, a barely-there warm glow
 //    breathes at the bottom edge — almost subliminal.
-//
-// All of it respects Calm Mode.
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -61,7 +59,6 @@ class _PresenceLayerState extends ConsumerState<PresenceLayer>
   }
 
   void _onWalkedIn() {
-    if (ref.read(calmModeProvider)) return;
     DelightHaptics.heartbeat();
     setState(() {
       _showWalkIn = true;
@@ -83,7 +80,6 @@ class _PresenceLayerState extends ConsumerState<PresenceLayer>
 
   @override
   Widget build(BuildContext context) {
-    final calm = ref.watch(calmModeProvider);
     final online = ref.watch(partnerOnlineProvider).valueOrNull;
     final partner = ref.watch(partnerUserProvider).valueOrNull;
     final accent = ref.watch(accentColorProvider);
@@ -108,7 +104,7 @@ class _PresenceLayerState extends ConsumerState<PresenceLayer>
       child: Stack(
         children: [
           // ── Synced breathing — soft glow along the bottom edge ──
-          if (online == true && !calm)
+          if (online == true)
             Positioned(
               left: 0,
               right: 0,
@@ -170,7 +166,7 @@ class _PresenceLayerState extends ConsumerState<PresenceLayer>
             ),
 
           // ── Warmth left behind ──
-          if (!_showWalkIn && online == false && warmth > 0 && !calm)
+          if (!_showWalkIn && online == false && warmth > 0)
             Positioned(
               left: 14,
               bottom: 10,
@@ -242,7 +238,8 @@ class _WalkInCard extends StatelessWidget {
             child: avatarUrl != null && avatarUrl!.isNotEmpty
                 ? CachedNetworkImage(imageUrl: avatarUrl!, fit: BoxFit.cover)
                 : const Center(
-                    child: Text('🙂', style: TextStyle(fontSize: 20))),
+                    child: Icon(Icons.favorite_rounded,
+                        color: Colors.white, size: 18)),
           ),
           const SizedBox(width: 10),
           Column(
