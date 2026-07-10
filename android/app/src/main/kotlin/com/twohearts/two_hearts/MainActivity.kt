@@ -6,10 +6,13 @@ import android.os.Handler
 import android.os.Looper
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val channelName = "two_hearts/screen_capture"
+    private val audioCapture by lazy { SystemAudioCapture(this) }
+    private val audioPlayback by lazy { SystemAudioPlayback() }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -49,5 +52,54 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // System/app audio capture during screen share — a second,
+        // independent MediaProjection grant (see SystemAudioCapture for why).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "two_hearts/system_audio")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "requestPermission" -> audioCapture.requestPermission(result)
+                    "start" -> audioCapture.start(result)
+                    "stop" -> audioCapture.stop(result)
+                    else -> result.notImplemented()
+                }
+            }
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "two_hearts/system_audio/stream")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    audioCapture.eventSink = events
+                }
+                override fun onCancel(arguments: Any?) {
+                    audioCapture.eventSink = null
+                }
+            })
+
+        // Plays the partner's captured app audio back on this device.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "two_hearts/audio_playback")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> {
+                        val sampleRate = (call.argument<Int>("sampleRate"))
+                            ?: SystemAudioCapture.SAMPLE_RATE
+                        audioPlayback.start(sampleRate)
+                        result.success(true)
+                    }
+                    "write" -> {
+                        val bytes = call.argument<ByteArray>("bytes")
+                        if (bytes != null) audioPlayback.write(bytes)
+                        result.success(true)
+                    }
+                    "stop" -> {
+                        audioPlayback.stop()
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (audioCapture.onActivityResult(requestCode, resultCode, data)) return
+        super.onActivityResult(requestCode, resultCode, data)
     }
 }

@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/theme/app_theme.dart';
 import 'screen_capture_service.dart';
+import 'system_audio_service.dart';
 
 const _fallbackIceServers = [
   {'urls': 'stun:stun.l.google.com:19302'},
@@ -73,9 +74,13 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
   bool _disposed = false;
   bool _remoteDescSet = false;
   bool _micOn = false;
+  bool _appAudioOn = false;
   bool _serviceStarted = false;
   bool _controlsVisible = true;
   String? _error;
+
+  RTCDataChannel? _audioChannel;
+  StreamSubscription<Uint8List>? _audioCaptureSub;
 
   Timer? _ringTimer;
   StreamSubscription? _answerSub;
@@ -109,6 +114,9 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
     _calleeCandSub?.cancel();
     _callerCandSub?.cancel();
     _statusSub?.cancel();
+    _audioCaptureSub?.cancel();
+    SystemAudioCapture.stop();
+    SystemAudioPlayback.stop();
     _localStream?.getTracks().forEach((t) => t.stop());
     _localStream?.dispose();
     _pc?.close();
@@ -179,6 +187,17 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
       );
     }
 
+    // The viewer receives the sharer's app-audio channel here; the sharer
+    // creates it explicitly in _setupSharer() before the offer goes out.
+    _pc!.onDataChannel = (channel) {
+      if (channel.label != 'sysaudio') return;
+      _audioChannel = channel;
+      channel.onMessage = (msg) {
+        if (msg.isBinary) SystemAudioPlayback.write(msg.binary);
+      };
+      SystemAudioPlayback.start();
+    };
+
     _pc!.onIceCandidate = (c) {
       if (c.candidate == null) return;
       _callDoc
@@ -229,6 +248,10 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
   }
 
   Future<void> _setupSharer() async {
+    // Must be created before the offer so it's included in the SDP
+    // negotiation — the viewer picks it up via onDataChannel.
+    _audioChannel = await _pc!.createDataChannel(
+        'sysaudio', RTCDataChannelInit());
     final offer = await _pc!.createOffer();
     await _pc!.setLocalDescription(offer);
     await _callDoc.set({
@@ -382,6 +405,41 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
     });
   }
 
+  /// App/media sound (not the mic) needs its own MediaProjection grant —
+  /// a second system prompt — since there's no way to reuse the one the
+  /// WebRTC plugin already holds for video. Off by default; this is the
+  /// explicit opt-in.
+  Future<void> _toggleAppAudio() async {
+    if (_appAudioOn) {
+      await _audioCaptureSub?.cancel();
+      _audioCaptureSub = null;
+      await SystemAudioCapture.stop();
+      if (mounted) setState(() => _appAudioOn = false);
+      return;
+    }
+    HapticFeedback.selectionClick();
+    final granted = await SystemAudioCapture.requestPermission();
+    if (!granted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              "Couldn't get permission to share app sound — mic narration still works."),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+    await SystemAudioCapture.start();
+    _audioCaptureSub = SystemAudioCapture.chunks.listen((chunk) {
+      final channel = _audioChannel;
+      if (channel != null &&
+          channel.state == RTCDataChannelState.RTCDataChannelOpen) {
+        channel.send(RTCDataChannelMessage.fromBinary(chunk));
+      }
+    });
+    if (mounted) setState(() => _appAudioOn = true);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
@@ -474,7 +532,16 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    if (widget.isSharer)
+                    if (widget.isSharer) ...[
+                      _CtrlBtn(
+                        icon: _appAudioOn
+                            ? Icons.volume_up_rounded
+                            : Icons.volume_off_rounded,
+                        bg: _appAudioOn ? Colors.white24 : Colors.white,
+                        fg: _appAudioOn ? Colors.white : Colors.black,
+                        onTap: _toggleAppAudio,
+                      ),
+                      const SizedBox(width: 22),
                       _CtrlBtn(
                         icon: _micOn
                             ? Icons.mic_rounded
@@ -483,7 +550,8 @@ class _ScreenShareScreenState extends State<ScreenShareScreen> {
                         fg: _micOn ? Colors.white : Colors.black,
                         onTap: _toggleMic,
                       ),
-                    const SizedBox(width: 22),
+                      const SizedBox(width: 22),
+                    ],
                     _CtrlBtn(
                       icon: Icons.call_end_rounded,
                       bg: const Color(0xFFE53935),
