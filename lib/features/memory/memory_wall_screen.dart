@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,8 @@ import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
 
+enum _TypeFilter { all, photos, videos, favorites }
+
 class MemoryWallScreen extends ConsumerStatefulWidget {
   const MemoryWallScreen({super.key});
 
@@ -27,10 +30,21 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   bool _uploading = false;
   // null = show all memories; non-null = filter to a specific collection
   String? _activeCollectionId;
+  _TypeFilter _typeFilter = _TypeFilter.all;
+
+  bool _searching = false;
+  final _searchCtrl = TextEditingController();
+  String _query = '';
 
   // Multi-select state
   bool _selectMode = false;
   final Set<String> _selectedIds = {};
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _showAddMemorySheet() async {
     final coupleId = ref.read(coupleIdProvider);
@@ -294,47 +308,105 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
             children: [
               // AppBar row
               Padding(
-                padding: const EdgeInsets.fromLTRB(4, 4, 16, 0),
-                child: Row(
-                  children: [
-                    if (_selectMode) ...[
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded,
-                            color: AppColors.textPrimary),
-                        onPressed: _exitSelectMode,
-                      ),
-                      Text('${_selectedIds.length} selected',
-                          style: Theme.of(context).textTheme.titleLarge),
-                    ] else ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text('Memories',
-                            style: Theme.of(context).textTheme.titleLarge),
-                      ),
-                      if (_uploading)
-                        const Padding(
-                          padding: EdgeInsets.only(right: 4),
-                          child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: AppColors.rose)),
-                        )
-                      else
-                        IconButton(
-                          icon: const Icon(Icons.add_photo_alternate_outlined,
-                              color: AppColors.textPrimary),
-                          onPressed: _showAddMemorySheet,
-                        ),
-                    ],
-                  ],
-                ),
+                padding: const EdgeInsets.fromLTRB(20, 8, 16, 0),
+                child: _selectMode
+                    ? Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded,
+                                color: AppColors.textPrimary),
+                            onPressed: _exitSelectMode,
+                          ),
+                          Text('${_selectedIds.length} selected',
+                              style: Theme.of(context).textTheme.titleLarge),
+                        ],
+                      )
+                    : _searching
+                        ? Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchCtrl,
+                                  autofocus: true,
+                                  style: const TextStyle(
+                                      color: AppColors.textPrimary),
+                                  decoration: const InputDecoration(
+                                    hintText: 'Search caption or place…',
+                                    border: InputBorder.none,
+                                  ),
+                                  onChanged: (v) =>
+                                      setState(() => _query = v.trim()),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded,
+                                    color: AppColors.textMuted),
+                                onPressed: () => setState(() {
+                                  _searching = false;
+                                  _query = '';
+                                  _searchCtrl.clear();
+                                }),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Memories',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .displayMedium
+                                            ?.copyWith(fontSize: 26)),
+                                    const SizedBox(height: 2),
+                                    const Text(
+                                        'Relive the little moments that mean everything.',
+                                        style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.search_rounded,
+                                    color: AppColors.textPrimary),
+                                onPressed: () =>
+                                    setState(() => _searching = true),
+                              ),
+                              if (_uploading)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 4),
+                                  child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: AppColors.rose)),
+                                )
+                              else
+                                IconButton(
+                                  icon: const Icon(
+                                      Icons.add_photo_alternate_outlined,
+                                      color: AppColors.textPrimary),
+                                  onPressed: _showAddMemorySheet,
+                                ),
+                            ],
+                          ),
               ),
-              if (!_selectMode) ...[
+              if (!_selectMode && !_searching) ...[
+                const SizedBox(height: 4),
+                _HeroSnapshotCard(onSurpriseMe: () {}),
                 const SizedBox(height: 4),
                 _CollectionsRow(
                   activeCollectionId: _activeCollectionId,
                   onSelect: (id) => setState(() => _activeCollectionId = id),
+                ),
+                _TypeFilterRow(
+                  value: _typeFilter,
+                  onChanged: (v) => setState(() => _typeFilter = v),
                 ),
               ],
               Expanded(
@@ -342,6 +414,8 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                   onLongPress: _onLongPress,
                   onUpload: _showAddMemorySheet,
                   activeCollectionId: _activeCollectionId,
+                  typeFilter: _typeFilter,
+                  query: _query,
                   selectMode: _selectMode,
                   selectedIds: _selectedIds,
                   onSelectToggle: _onSelectToggle,
@@ -388,7 +462,215 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   }
 }
 
-// ── Collections Row ───────────────────────────────────────────────────────
+// ── Hero "Random Snapshot" card ───────────────────────────────────────────
+
+String _timeAgo(DateTime from) {
+  final days = DateTime.now().difference(from).inDays;
+  if (days <= 0) return 'today';
+  if (days < 30) return '$days day${days == 1 ? '' : 's'} ago';
+  if (days < 365) {
+    final months = (days / 30).round();
+    return '$months month${months == 1 ? '' : 's'} ago';
+  }
+  final years = (days / 365).round();
+  return '$years year${years == 1 ? '' : 's'} ago';
+}
+
+class _HeroSnapshotCard extends ConsumerStatefulWidget {
+  final VoidCallback onSurpriseMe;
+  const _HeroSnapshotCard({required this.onSurpriseMe});
+
+  @override
+  ConsumerState<_HeroSnapshotCard> createState() => _HeroSnapshotCardState();
+}
+
+class _HeroSnapshotCardState extends ConsumerState<_HeroSnapshotCard> {
+  final _rng = math.Random();
+  int _seed = 0;
+
+  void _shuffle() {
+    HapticFeedback.selectionClick();
+    setState(() => _seed = _rng.nextInt(1 << 31));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final memories = ref.watch(memoriesProvider).valueOrNull ?? [];
+    final accent = ref.watch(accentColorProvider);
+    if (memories.isEmpty) return const SizedBox.shrink();
+
+    final pick = memories[_seed.abs() % memories.length];
+    final when = pick.takenAt ?? pick.createdAt;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [accent.withValues(alpha: 0.22), AppColors.bgCard],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: accent.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.auto_awesome_rounded, color: accent, size: 14),
+                      const SizedBox(width: 6),
+                      Text('RANDOM SNAPSHOT',
+                          style: TextStyle(
+                              color: accent,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('A moment from ${_timeAgo(when)}',
+                      style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time_rounded,
+                          color: AppColors.textMuted, size: 13),
+                      const SizedBox(width: 4),
+                      Text(DateFormat('h:mm a').format(when),
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 12)),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined,
+                          color: AppColors.textMuted, size: 13),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          [
+                            DateFormat('MMM d, yyyy').format(when),
+                            if (pick.location != null && pick.location!.isNotEmpty)
+                              pick.location!,
+                          ].join(' • '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SquishyTap(
+                    onTap: _shuffle,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        gradient:
+                            LinearGradient(colors: [accent, AppColors.coral]),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.shuffle_rounded,
+                              color: Colors.white, size: 15),
+                          const SizedBox(width: 6),
+                          const Text('Surprise me',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            GestureDetector(
+              onTap: () => context.push('/memory/${pick.id}'),
+              child: Transform.rotate(
+                angle: 0.06,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 96,
+                      height: 118,
+                      padding: const EdgeInsets.fromLTRB(5, 5, 5, 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFDF8),
+                        borderRadius: BorderRadius.circular(4),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              blurRadius: 14,
+                              offset: const Offset(2, 6)),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: CachedNetworkImage(
+                          imageUrl: pick.isVideo
+                              ? _videoThumb(pick.imageUrl)
+                              : pick.imageUrl,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, _, _) =>
+                              Container(color: AppColors.bgCardLight),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: -8,
+                      bottom: -8,
+                      child: SquishyTap(
+                        onTap: _shuffle,
+                        child: Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.bgMid,
+                            border: Border.all(color: accent, width: 1.5),
+                          ),
+                          child: Icon(Icons.refresh_rounded,
+                              color: accent, size: 16),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _videoThumb(String videoUrl) {
+  if (videoUrl.contains('cloudinary.com')) {
+    return videoUrl.replaceAll(RegExp(r'\.(mp4|mov|avi|webm)$'), '.jpg');
+  }
+  return videoUrl;
+}
+
+// ── Collections Row — each card shows a 4-photo collage from that album ──
 
 const _kLikedCollectionId = '__liked__';
 
@@ -411,10 +693,33 @@ class _CollectionsRow extends ConsumerWidget {
     return palette[name.hashCode.abs() % palette.length];
   }
 
-  // Deterministic cute sticker per collection name
-  String _collectionEmoji(String name) {
-    const stickers = ['🧸', '🌈', '🍓', '⭐', '🦋', '🌻', '🍰', '🐣', '🫧', '🌙'];
-    return stickers[name.hashCode.abs() % stickers.length];
+  IconData _collectionIcon(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('trip') || lower.contains('travel')) {
+      return Icons.flight_rounded;
+    }
+    if (lower.contains('college') || lower.contains('school') ||
+        lower.contains('uni')) {
+      return Icons.school_rounded;
+    }
+    if (lower.contains('cutie') || lower.contains('cute') ||
+        lower.contains('love')) {
+      return Icons.nightlight_round;
+    }
+    if (lower.contains('family')) return Icons.home_rounded;
+    if (lower.contains('food')) return Icons.restaurant_rounded;
+    return Icons.folder_rounded;
+  }
+
+  /// Same 4 photos every rebuild (seeded by the collection id) until the
+  /// underlying photo list actually changes — a real random pick, but a
+  /// stable-looking one instead of reshuffling on every rebuild.
+  List<String> _collageFor(String seedKey, List<MemoryModel> photos) {
+    if (photos.isEmpty) return const [];
+    final urls = photos.map((m) => m.isVideo ? _videoThumb(m.imageUrl) : m.imageUrl).toList();
+    final rng = math.Random(seedKey.hashCode ^ urls.length);
+    urls.shuffle(rng);
+    return urls.take(4).toList();
   }
 
   @override
@@ -426,16 +731,15 @@ class _CollectionsRow extends ConsumerWidget {
     final collections = collectionsAsync.valueOrNull ?? [];
     final memories = memoriesAsync.valueOrNull ?? [];
 
-    // Count memories per collection
-    Map<String, int> counts = {};
+    final photosByCollection = <String, List<MemoryModel>>{};
     for (final m in memories) {
       if (m.collectionId != null) {
-        counts[m.collectionId!] = (counts[m.collectionId!] ?? 0) + 1;
+        photosByCollection.putIfAbsent(m.collectionId!, () => []).add(m);
       }
     }
+    final liked = memories.where((m) => m.favorite).toList();
 
-    final likedCount = memories.where((m) => m.favorite).length;
-    if (collections.isEmpty && activeCollectionId == null && likedCount == 0) {
+    if (collections.isEmpty && activeCollectionId == null && liked.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -443,15 +747,10 @@ class _CollectionsRow extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
           child: Row(
             children: [
-              Text('Collections',
-                  style: TextStyle(
-                      color: accent,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5)),
+              Text('Collections', style: Theme.of(context).textTheme.titleLarge),
               const Spacer(),
               if (activeCollectionId != null)
                 GestureDetector(
@@ -477,143 +776,44 @@ class _CollectionsRow extends ConsumerWidget {
                       ],
                     ),
                   ),
-                ),
+                )
+              else
+                Text('See all',
+                    style: TextStyle(
+                        color: accent, fontSize: 13, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
         SizedBox(
-          height: 88,
+          height: 148,
           child: ListView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             children: [
-              // ── Liked ♡ virtual collection ──────────────────────────────
-              if (likedCount > 0) ...[
-                GestureDetector(
-                  onTap: () => onSelect(activeCollectionId == _kLikedCollectionId
-                      ? null
-                      : _kLikedCollectionId),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 90,
-                    margin: const EdgeInsets.only(right: 10, bottom: 4),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: activeCollectionId == _kLikedCollectionId
-                          ? AppColors.rose.withValues(alpha: 0.25)
-                          : AppColors.bgCard,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: activeCollectionId == _kLikedCollectionId
-                            ? AppColors.rose
-                            : AppColors.divider,
-                        width: activeCollectionId == _kLikedCollectionId ? 1.5 : 0.5,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.favorite_rounded,
-                            color: activeCollectionId == _kLikedCollectionId
-                                ? AppColors.rose
-                                : AppColors.textMuted,
-                            size: 22),
-                        const Spacer(),
-                        Text('Liked',
-                            style: TextStyle(
-                              color: activeCollectionId == _kLikedCollectionId
-                                  ? AppColors.rose
-                                  : AppColors.textPrimary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            )),
-                        Text('$likedCount',
-                            style: const TextStyle(
-                                color: AppColors.textMuted, fontSize: 10)),
-                      ],
-                    ),
-                  ),
+              if (liked.isNotEmpty)
+                _CollectionCard(
+                  title: 'Liked',
+                  count: liked.length,
+                  color: AppColors.rose,
+                  icon: Icons.favorite_rounded,
+                  collage: _collageFor(_kLikedCollectionId, liked),
+                  isActive: activeCollectionId == _kLikedCollectionId,
+                  onTap: () => onSelect(
+                      activeCollectionId == _kLikedCollectionId ? null : _kLikedCollectionId),
                 ),
-              ],
               ...collections.map((col) {
-                final isActive = activeCollectionId == col.id;
-                final color = _collectionColor(col.name);
-                final count = counts[col.id] ?? 0;
-                return GestureDetector(
+                final photos = photosByCollection[col.id] ?? [];
+                return _CollectionCard(
+                  title: col.name,
+                  count: photos.length,
+                  color: _collectionColor(col.name),
+                  icon: _collectionIcon(col.name),
+                  collage: _collageFor(col.id, photos),
+                  isActive: activeCollectionId == col.id,
                   onTap: () {
                     HapticFeedback.selectionClick();
-                    onSelect(isActive ? null : col.id);
+                    onSelect(activeCollectionId == col.id ? null : col.id);
                   },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOutBack,
-                    width: 92,
-                    margin: const EdgeInsets.only(right: 10, bottom: 4),
-                    padding: const EdgeInsets.all(10),
-                    transform: Matrix4.identity()
-                      ..scaleByDouble(isActive ? 1.04 : 1.0,
-                          isActive ? 1.04 : 1.0, 1.0, 1.0),
-                    transformAlignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: isActive
-                            ? [
-                                color.withValues(alpha: 0.35),
-                                color.withValues(alpha: 0.15)
-                              ]
-                            : [
-                                color.withValues(alpha: 0.12),
-                                AppColors.bgCard
-                              ],
-                      ),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: isActive
-                            ? color
-                            : color.withValues(alpha: 0.25),
-                        width: isActive ? 1.5 : 0.5,
-                      ),
-                      boxShadow: isActive
-                          ? [
-                              BoxShadow(
-                                  color: color.withValues(alpha: 0.35),
-                                  blurRadius: 10)
-                            ]
-                          : null,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.folder_rounded, color: color, size: 20),
-                            const SizedBox(width: 3),
-                            Text(_collectionEmoji(col.name),
-                                style: const TextStyle(fontSize: 13)),
-                          ],
-                        ),
-                        const Spacer(),
-                        Text(
-                          col.name,
-                          style: TextStyle(
-                            color: isActive
-                                ? color
-                                : AppColors.textPrimary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(count == 1 ? '1 memory' : '$count memories',
-                            style: const TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 9.5)),
-                      ],
-                    ),
-                  ),
                 );
               }),
               // + New collection card
@@ -623,11 +823,11 @@ class _CollectionsRow extends ConsumerWidget {
                     : () => _showNewCollectionDialog(
                         context, ref, coupleId, accent),
                 child: Container(
-                  width: 84,
+                  width: 96,
                   margin: const EdgeInsets.only(right: 10, bottom: 4),
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                         color: accent.withValues(alpha: 0.35), width: 1),
                   ),
@@ -635,19 +835,19 @@ class _CollectionsRow extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(6),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           color: accent.withValues(alpha: 0.15),
                           shape: BoxShape.circle,
                         ),
                         child:
-                            Icon(Icons.add_rounded, color: accent, size: 18),
+                            Icon(Icons.add_rounded, color: accent, size: 20),
                       ),
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 6),
                       Text('New album',
                           style: TextStyle(
                               color: accent,
-                              fontSize: 10.5,
+                              fontSize: 11,
                               fontWeight: FontWeight.w600)),
                     ],
                   ),
@@ -709,6 +909,197 @@ class _CollectionsRow extends ConsumerWidget {
             .ignore();
       }
     });
+  }
+}
+
+class _CollectionCard extends StatelessWidget {
+  final String title;
+  final int count;
+  final Color color;
+  final IconData icon;
+  final List<String> collage;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _CollectionCard({
+    required this.title,
+    required this.count,
+    required this.color,
+    required this.icon,
+    required this.collage,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SquishyTap(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutBack,
+        width: 128,
+        margin: const EdgeInsets.only(right: 10, bottom: 4),
+        transform: Matrix4.identity()
+          ..scaleByDouble(isActive ? 1.04 : 1.0, isActive ? 1.04 : 1.0, 1.0, 1.0),
+        transformAlignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? color : Colors.transparent,
+            width: 1.5,
+          ),
+          boxShadow: isActive
+              ? [BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 10)]
+              : null,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(19),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (collage.isEmpty)
+                Container(color: color.withValues(alpha: 0.35))
+              else
+                _CollagePhotoGrid(urls: collage, tint: color),
+              // Darken for legibility
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.15),
+                      Colors.black.withValues(alpha: 0.65),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                  child: Icon(icon, color: Colors.white, size: 14),
+                ),
+              ),
+              Positioned(
+                left: 10,
+                right: 10,
+                bottom: 10,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700)),
+                    Text(count == 1 ? '1 memory' : '$count memories',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.75),
+                            fontSize: 10.5)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A 2x2 collage of (up to) 4 photos — the collection's "folder cover".
+/// Fewer than 4 photos just repeats the tint color for the empty slots.
+class _CollagePhotoGrid extends StatelessWidget {
+  final List<String> urls;
+  final Color tint;
+  const _CollagePhotoGrid({required this.urls, required this.tint});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget cell(int i) {
+      if (i >= urls.length) return ColoredBox(color: tint.withValues(alpha: 0.3));
+      return CachedNetworkImage(
+        imageUrl: urls[i],
+        fit: BoxFit.cover,
+        placeholder: (_, _) => ColoredBox(color: tint.withValues(alpha: 0.3)),
+        errorWidget: (_, _, _) => ColoredBox(color: tint.withValues(alpha: 0.3)),
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(child: Row(children: [Expanded(child: cell(0)), Expanded(child: cell(1))])),
+        Expanded(child: Row(children: [Expanded(child: cell(2)), Expanded(child: cell(3))])),
+      ],
+    );
+  }
+}
+
+// ── Type filter chips ─────────────────────────────────────────────────────
+
+class _TypeFilterRow extends StatelessWidget {
+  final _TypeFilter value;
+  final ValueChanged<_TypeFilter> onChanged;
+  const _TypeFilterRow({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip(_TypeFilter f, IconData icon, String label) {
+      final selected = value == f;
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: SquishyTap(
+          onTap: () => onChanged(f),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.rose.withValues(alpha: 0.22) : AppColors.bgCardLight,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                  color: selected ? AppColors.rose : AppColors.divider,
+                  width: selected ? 1.2 : 0.5),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon,
+                    size: 15,
+                    color: selected ? AppColors.rose : AppColors.textMuted),
+                const SizedBox(width: 6),
+                Text(label,
+                    style: TextStyle(
+                        color: selected ? AppColors.rose : AppColors.textSecondary,
+                        fontSize: 12.5,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.normal)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: SizedBox(
+        height: 40,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            chip(_TypeFilter.all, Icons.grid_view_rounded, 'All'),
+            chip(_TypeFilter.photos, Icons.image_outlined, 'Photos'),
+            chip(_TypeFilter.videos, Icons.play_circle_outline_rounded, 'Videos'),
+            chip(_TypeFilter.favorites, Icons.favorite_border_rounded, 'Favorites'),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -872,12 +1263,14 @@ class _AddToCollectionSheet extends ConsumerWidget {
   }
 }
 
-// ── Memories Tab — masonry grid ───────────────────────────────────────────
+// ── Memories grid — grouped by date, like a real timeline ─────────────────
 
 class _MemoriesTab extends ConsumerWidget {
   final void Function(MemoryModel, String, String) onLongPress;
   final VoidCallback onUpload;
   final String? activeCollectionId;
+  final _TypeFilter typeFilter;
+  final String query;
   final bool selectMode;
   final Set<String> selectedIds;
   final void Function(String) onSelectToggle;
@@ -886,11 +1279,29 @@ class _MemoriesTab extends ConsumerWidget {
     required this.onLongPress,
     required this.onUpload,
     this.activeCollectionId,
+    required this.typeFilter,
+    required this.query,
     required this.selectMode,
     required this.selectedIds,
     required this.onSelectToggle,
   });
 
+  Map<String, List<MemoryModel>> _groupByDate(List<MemoryModel> memories) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final map = <String, List<MemoryModel>>{};
+    for (final m in memories) {
+      final d = DateTime(m.createdAt.year, m.createdAt.month, m.createdAt.day);
+      final diff = today.difference(d).inDays;
+      final key = diff == 0
+          ? 'Today'
+          : diff == 1
+              ? 'Yesterday'
+              : DateFormat('MMM d, yyyy').format(d);
+      map.putIfAbsent(key, () => []).add(m);
+    }
+    return map;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -906,14 +1317,32 @@ class _MemoriesTab extends ConsumerWidget {
           child: Text('Error: $e',
               style: const TextStyle(color: AppColors.textSecondary))),
       data: (allMemories) {
-        // Filter by active collection if one is selected
-        final memories = activeCollectionId == null
+        var memories = activeCollectionId == null
             ? allMemories
             : activeCollectionId == _kLikedCollectionId
                 ? allMemories.where((m) => m.favorite).toList()
                 : allMemories
                     .where((m) => m.collectionId == activeCollectionId)
                     .toList();
+
+        switch (typeFilter) {
+          case _TypeFilter.all:
+            break;
+          case _TypeFilter.photos:
+            memories = memories.where((m) => !m.isVideo).toList();
+          case _TypeFilter.videos:
+            memories = memories.where((m) => m.isVideo).toList();
+          case _TypeFilter.favorites:
+            memories = memories.where((m) => m.favorite).toList();
+        }
+
+        if (query.isNotEmpty) {
+          final q = query.toLowerCase();
+          memories = memories.where((m) {
+            return (m.caption?.toLowerCase().contains(q) ?? false) ||
+                (m.location?.toLowerCase().contains(q) ?? false);
+          }).toList();
+        }
 
         if (allMemories.isEmpty) {
           return Center(
@@ -938,145 +1367,96 @@ class _MemoriesTab extends ConsumerWidget {
 
         if (memories.isEmpty) {
           return const Center(
-            child: Text('No memories in this collection yet.',
+            child: Text('No memories match this filter.',
                 style: TextStyle(color: AppColors.textSecondary)),
           );
         }
 
-        // Two-column masonry: split memories into left and right columns
-        final leftItems = <MemoryModel>[];
-        final rightItems = <MemoryModel>[];
-        for (var i = 0; i < memories.length; i++) {
-          if (i.isEven) {
-            leftItems.add(memories[i]);
-          } else {
-            rightItems.add(memories[i]);
-          }
-        }
+        final groups = _groupByDate(memories);
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _MasonryColumn(
-                  items: leftItems,
-                  startIndex: 0,
-                  stepIndex: 2,
-                  allItems: memories,
-                  accent: accent,
-                  myUid: myUid,
-                  coupleId: coupleId,
-                  onLongPress: onLongPress,
-                  selectMode: selectMode,
-                  selectedIds: selectedIds,
-                  onSelectToggle: onSelectToggle,
-                  ref: ref,
-                ),
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: groups.entries.map((entry) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                            color: accent, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(entry.key,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
+                      childAspectRatio: 0.85,
+                    ),
+                    itemCount: entry.value.length,
+                    itemBuilder: (ctx, i) {
+                      final memory = entry.value[i];
+                      return _MemoryTile(
+                        memory: memory,
+                        accent: accent,
+                        myUid: myUid,
+                        selectMode: selectMode,
+                        selected: selectedIds.contains(memory.id),
+                        onTap: selectMode
+                            ? () => onSelectToggle(memory.id)
+                            : () {
+                                if (memory.isVideo) {
+                                  Navigator.push(context, MaterialPageRoute(
+                                    builder: (_) => _FullscreenVideoPlayer(
+                                        url: memory.imageUrl),
+                                  ));
+                                } else {
+                                  context.push('/memory/${memory.id}');
+                                }
+                              },
+                        onFavorite: selectMode
+                            ? () {}
+                            : () async {
+                                if (coupleId.isEmpty) return;
+                                await ref
+                                    .read(firestoreServiceProvider)
+                                    .toggleFavoriteMemory(coupleId, memory.id,
+                                        !memory.favorite);
+                              },
+                        onLongPress: coupleId.isNotEmpty
+                            ? () => onLongPress(memory, myUid, coupleId)
+                            : null,
+                      ).animate().fadeIn(delay: Duration(milliseconds: i * 30));
+                    },
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _MasonryColumn(
-                  items: rightItems,
-                  startIndex: 1,
-                  stepIndex: 2,
-                  allItems: memories,
-                  accent: accent,
-                  myUid: myUid,
-                  coupleId: coupleId,
-                  onLongPress: onLongPress,
-                  selectMode: selectMode,
-                  selectedIds: selectedIds,
-                  onSelectToggle: onSelectToggle,
-                  ref: ref,
-                ),
-              ),
-            ],
-          ),
+            );
+          }).toList(),
         );
       },
     );
   }
 }
 
-class _MasonryColumn extends StatelessWidget {
-  final List<MemoryModel> items;
-  final int startIndex;
-  final int stepIndex;
-  final List<MemoryModel> allItems;
-  final Color accent;
-  final String myUid;
-  final String coupleId;
-  final void Function(MemoryModel, String, String) onLongPress;
-  final bool selectMode;
-  final Set<String> selectedIds;
-  final void Function(String) onSelectToggle;
-  final WidgetRef ref;
-
-  const _MasonryColumn({
-    required this.items,
-    required this.startIndex,
-    required this.stepIndex,
-    required this.allItems,
-    required this.accent,
-    required this.myUid,
-    required this.coupleId,
-    required this.onLongPress,
-    required this.selectMode,
-    required this.selectedIds,
-    required this.onSelectToggle,
-    required this.ref,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: items.asMap().entries.map((entry) {
-        final localIndex = entry.key;
-        final memory = entry.value;
-        final globalIndex = startIndex + localIndex * stepIndex;
-        // Alternate aspect ratios: tall (1.4 height factor) and short (0.8)
-        final isTall = localIndex.isEven;
-        final aspectRatio = isTall ? 0.72 : 1.25; // width/height
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _MasonryCard(
-            memory: memory,
-            aspectRatio: aspectRatio,
-            accent: accent,
-            myUid: myUid,
-            selectMode: selectMode,
-            selected: selectedIds.contains(memory.id),
-            onTap: selectMode
-                ? () => onSelectToggle(memory.id)
-                : () {
-                    if (memory.isVideo) {
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => _FullscreenVideoPlayer(url: memory.imageUrl),
-                      ));
-                    } else {
-                      context.push('/memory/${memory.id}');
-                    }
-                  },
-            onFavorite: selectMode ? () {} : () async {
-              if (coupleId.isEmpty) return;
-              await ref.read(firestoreServiceProvider).toggleFavoriteMemory(
-                  coupleId, memory.id, !memory.favorite);
-            },
-            onLongPress: coupleId.isNotEmpty
-                ? () => onLongPress(memory, myUid, coupleId)
-                : null,
-          ).animate().fadeIn(delay: Duration(milliseconds: globalIndex * 50)),
-        );
-      }).toList(),
-    );
-  }
-}
-
-class _MasonryCard extends StatelessWidget {
+class _MemoryTile extends StatelessWidget {
   final MemoryModel memory;
-  final double aspectRatio;
   final Color accent;
   final String myUid;
   final bool selectMode;
@@ -1085,9 +1465,8 @@ class _MasonryCard extends StatelessWidget {
   final VoidCallback onFavorite;
   final VoidCallback? onLongPress;
 
-  const _MasonryCard({
+  const _MemoryTile({
     required this.memory,
-    required this.aspectRatio,
     required this.accent,
     required this.myUid,
     required this.selectMode,
@@ -1097,168 +1476,158 @@ class _MasonryCard extends StatelessWidget {
     this.onLongPress,
   });
 
-  static String _videoThumb(String videoUrl) {
-    if (videoUrl.contains('cloudinary.com')) {
-      return videoUrl.replaceAll(RegExp(r'\.(mp4|mov|avi|webm)$'), '.jpg');
-    }
-    return videoUrl;
-  }
-
   @override
   Widget build(BuildContext context) {
     final hasDeletionRequest = memory.deletionRequestedBy != null;
     final partnerRequested = hasDeletionRequest && memory.deletionRequestedBy != myUid;
-    final dateStr = DateFormat('MMM d, yyyy').format(memory.createdAt);
+    final timeStr = DateFormat('h:mm a').format(memory.createdAt);
 
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
       child: Hero(
         tag: 'memory_${memory.id}',
-        child: AspectRatio(
-          aspectRatio: aspectRatio,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (memory.isVideo)
-                  Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CachedNetworkImage(
-                        imageUrl: _MasonryCard._videoThumb(memory.imageUrl),
-                        fit: BoxFit.cover,
-                        placeholder: (ctx, url) =>
-                            Container(color: Colors.black87),
-                        errorWidget: (ctx, url, err) =>
-                            Container(color: Colors.black87),
-                      ),
-                      const Center(
-                        child: Icon(Icons.play_circle_outline,
-                            color: Colors.white, size: 48),
-                      ),
-                    ],
-                  )
-                else
-                  CachedNetworkImage(
-                    imageUrl: memory.imageUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                        color: AppColors.bgCard,
-                        child: const Center(
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: AppColors.rose))),
-                    errorWidget: (context, url, error) => Container(
-                        color: AppColors.bgCard,
-                        child: const Icon(Icons.broken_image_outlined,
-                            color: AppColors.textMuted)),
-                  ),
-                // Bottom gradient overlay
-                Positioned(
-                  bottom: 0, left: 0, right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(10, 24, 10, 10),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [Colors.black87, Colors.transparent],
-                      ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (memory.isVideo)
+                Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CachedNetworkImage(
+                      imageUrl: _videoThumb(memory.imageUrl),
+                      fit: BoxFit.cover,
+                      placeholder: (ctx, url) =>
+                          Container(color: Colors.black87),
+                      errorWidget: (ctx, url, err) =>
+                          Container(color: Colors.black87),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (memory.caption != null)
-                          Text(memory.caption!,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis),
-                        Text(dateStr,
+                    const Center(
+                      child: Icon(Icons.play_circle_outline,
+                          color: Colors.white, size: 34),
+                    ),
+                  ],
+                )
+              else
+                CachedNetworkImage(
+                  imageUrl: memory.imageUrl,
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => Container(
+                      color: AppColors.bgCard,
+                      child: const Center(
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppColors.rose))),
+                  errorWidget: (context, url, error) => Container(
+                      color: AppColors.bgCard,
+                      child: const Icon(Icons.broken_image_outlined,
+                          color: AppColors.textMuted)),
+                ),
+              // Bottom gradient overlay — time + location
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(8, 20, 8, 6),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [Colors.black87, Colors.transparent],
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(timeStr,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600)),
+                      if (memory.location != null && memory.location!.isNotEmpty)
+                        Text(memory.location!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                color: Colors.white70, fontSize: 10)),
-                      ],
+                                color: Colors.white70, fontSize: 9.5)),
+                    ],
+                  ),
+                ),
+              ),
+              // Deletion badge
+              if (hasDeletionRequest)
+                Positioned(
+                  top: 6, left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: partnerRequested
+                          ? Colors.orange.withValues(alpha: 0.9)
+                          : Colors.red.withValues(alpha: 0.75),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text(
+                      partnerRequested ? '🗑' : '🗑…',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
-                // Deletion badge
-                if (hasDeletionRequest)
-                  Positioned(
-                    top: 8, left: 8,
+              // Favorite button (hidden in select mode)
+              if (!selectMode)
+                Positioned(
+                  top: 6, right: 6,
+                  child: GestureDetector(
+                    onTap: onFavorite,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: partnerRequested
-                            ? Colors.orange.withValues(alpha: 0.9)
-                            : Colors.red.withValues(alpha: 0.75),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        partnerRequested ? '🗑 Delete?' : '🗑 Pending',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold),
+                      padding: const EdgeInsets.all(5),
+                      decoration: const BoxDecoration(
+                          color: Colors.black38, shape: BoxShape.circle),
+                      child: Icon(
+                        memory.favorite
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        color: memory.favorite ? AppColors.rose : Colors.white,
+                        size: 14,
                       ),
                     ),
                   ),
-                // Favorite button (hidden in select mode)
-                if (!selectMode)
-                  Positioned(
-                    top: 8, right: 8,
-                    child: GestureDetector(
-                      onTap: onFavorite,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(
-                            color: Colors.black38, shape: BoxShape.circle),
-                        child: Icon(
-                          memory.favorite
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
-                          color: memory.favorite ? AppColors.rose : Colors.white,
-                          size: 16,
-                        ),
-                      ),
+                ),
+              // Selection overlay
+              if (selectMode)
+                Positioned.fill(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? AppColors.rose.withValues(alpha: 0.35)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                // Selection overlay
-                if (selectMode)
-                  Positioned.fill(
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? AppColors.rose.withValues(alpha: 0.35)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                ),
+              if (selectMode)
+                Positioned(
+                  top: 6, right: 6,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 22, height: 22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: selected ? AppColors.rose : Colors.black38,
+                      border: Border.all(color: Colors.white, width: 2),
                     ),
+                    child: selected
+                        ? const Icon(Icons.check_rounded,
+                            color: Colors.white, size: 13)
+                        : null,
                   ),
-                if (selectMode)
-                  Positioned(
-                    top: 8, right: 8,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      width: 24, height: 24,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: selected ? AppColors.rose : Colors.black38,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: selected
-                          ? const Icon(Icons.check_rounded,
-                              color: Colors.white, size: 14)
-                          : null,
-                    ),
-                  ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),
