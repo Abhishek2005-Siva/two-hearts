@@ -1,9 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -20,12 +23,6 @@ class YouAndMeScreen extends ConsumerWidget {
 
     final accent = ref.watch(accentColorProvider);
     final partner = ref.watch(partnerUserProvider).valueOrNull;
-    final moods = ref.watch(moodsProvider).valueOrNull ?? [];
-    final uid = authUser.uid;
-
-    final myMood = moods.where((m) => m.uid == uid).firstOrNull;
-    final partnerMood = moods.where((m) => m.uid != uid).firstOrNull;
-    final bothHaveMood = myMood != null && partnerMood != null;
 
     return Scaffold(
       body: Container(
@@ -37,52 +34,39 @@ class YouAndMeScreen extends ConsumerWidget {
           ),
         ),
         child: SafeArea(
-          child: CustomScrollView(
-            slivers: [
-              const SliverAppBar(
-                pinned: true,
-                backgroundColor: Colors.transparent,
-                title: Text('Settings'),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+            children: [
+              Center(
+                child: Text('Settings',
+                    style: Theme.of(context).textTheme.displayMedium),
+              ).animate().fadeIn(),
+              const SizedBox(height: 24),
 
-                    // Profile picture
-                    const _ProfilePicSection()
-                        .animate().fadeIn(),
-                    const SizedBox(height: 20),
+              // Profile picture
+              const _ProfilePicSection().animate().fadeIn(delay: 40.ms),
+              const SizedBox(height: 20),
 
-                    // Appearance toggle
-                    _AppearanceSection(accent: accent),
-                    const SizedBox(height: 20),
+              // Appearance toggle
+              _AppearanceSection(accent: accent)
+                  .animate().fadeIn(delay: 80.ms),
+              const SizedBox(height: 20),
 
-                    // Mood match banner
-                    if (bothHaveMood) ...[
-                      _MoodMatchCard(
-                        myMood: myMood.mood,
-                        partnerMood: partnerMood.mood,
-                        partnerName: partner?.displayName.split(' ').first ?? 'Partner',
-                        accent: accent,
-                      ).animate().fadeIn().scale(begin: const Offset(0.95, 0.95)),
-                      const SizedBox(height: 20),
-                    ],
+              // Love Dial Connection — mood link, alerts, theme
+              _LoveDialCard(accent: accent, partner: partner)
+                  .animate().fadeIn(delay: 120.ms),
+              const SizedBox(height: 20),
 
-                    // Once you're connected, you're connected — forever ♡
-                    if (partner != null)
-                      _ForeverCard(partner: partner, accent: accent)
-                          .animate().fadeIn(delay: 50.ms),
-                  ]),
-                ),
-              ),
+              // Once you're connected, you're connected — forever ♡
+              if (partner != null)
+                _ForeverCard(partner: partner, accent: accent)
+                    .animate().fadeIn(delay: 160.ms),
             ],
           ),
         ),
       ),
     );
   }
-
 }
 
 // ── Forever Card — you two are locked in ♡ ────────────────────────────────
@@ -142,7 +126,16 @@ class _ForeverCard extends StatelessWidget {
               ],
             ),
           ),
-          const Text('🔒', style: TextStyle(fontSize: 20)),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.18),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.lock_rounded, color: Colors.amber, size: 16),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 20),
         ],
       ),
     );
@@ -169,14 +162,21 @@ class _AppearanceSection extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Icon(isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-              color: accent, size: 22),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                color: accent, size: 20),
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Appearance',
+                const Text('Appearance',
                     style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 15,
@@ -202,65 +202,295 @@ class _AppearanceSection extends ConsumerWidget {
   }
 }
 
-// ── Mood Match Banner ─────────────────────────────────────────────────────
+// ── Love Dial Connection — mood link + alerts + theme, all in one card ───
 
-class _MoodMatchCard extends StatelessWidget {
-  final MoodType myMood;
-  final MoodType partnerMood;
-  final String partnerName;
+class _LoveDialCard extends ConsumerStatefulWidget {
   final Color accent;
+  final UserModel? partner;
+  const _LoveDialCard({required this.accent, required this.partner});
 
-  const _MoodMatchCard({
-    required this.myMood,
-    required this.partnerMood,
-    required this.partnerName,
-    required this.accent,
-  });
+  @override
+  ConsumerState<_LoveDialCard> createState() => _LoveDialCardState();
+}
+
+class _LoveDialCardState extends ConsumerState<_LoveDialCard> {
+  bool _expanded = true;
+  bool _notificationsEnabled = true;
+  bool _prefLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotificationPref();
+  }
+
+  Future<void> _loadNotificationPref() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+        _prefLoaded = true;
+      });
+    }
+  }
+
+  Future<void> _toggleNotifications(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notifications_enabled', value);
+    if (value) {
+      await FirebaseMessaging.instance.subscribeToTopic('all');
+    } else {
+      await FirebaseMessaging.instance.unsubscribeFromTopic('all');
+    }
+    if (mounted) setState(() => _notificationsEnabled = value);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final matched = myMood == partnerMood;
-    final message = moodComboMessage(myMood, partnerMood);
+    final accent = widget.accent;
+    final authUser = FirebaseAuth.instance.currentUser;
+    final moods = ref.watch(moodsProvider).valueOrNull ?? [];
+    final couple = ref.watch(coupleProvider).valueOrNull;
+    final uid = authUser?.uid;
+
+    final myMood = moods.where((m) => m.uid == uid).firstOrNull;
+    final partnerMood = moods.where((m) => m.uid != uid).firstOrNull;
+    final partnerName = widget.partner?.displayName.split(' ').first ?? 'Partner';
 
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: matched
-              ? [accent.withValues(alpha: 0.25), AppColors.rose.withValues(alpha: 0.15)]
-              : [AppColors.bgCard.withValues(alpha: 0.9), AppColors.bgMid.withValues(alpha: 0.8)],
-          begin: Alignment.topLeft, end: Alignment.bottomRight,
-        ),
+        color: AppColors.bgCard,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: matched ? accent.withValues(alpha: 0.4) : AppColors.divider,
-          width: matched ? 1.5 : 0.5,
-        ),
+        border: Border.all(color: AppColors.divider, width: 0.5),
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _MoodBubble(mood: myMood, label: 'You', accent: accent),
-              const SizedBox(width: 16),
-              matched
-                  ? const Text('💞', style: TextStyle(fontSize: 28))
-                  : const Text('↔️', style: TextStyle(fontSize: 24)),
-              const SizedBox(width: 16),
-              _MoodBubble(mood: partnerMood, label: partnerName, accent: accent),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(14),
+          // Header
+          GestureDetector(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.favorite_rounded, color: accent, size: 20),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Love Dial Connection',
+                            style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700)),
+                        const Text('Your connection, your world.',
+                            style: TextStyle(
+                                color: AppColors.textMuted, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                        color: AppColors.bgCardLight, shape: BoxShape.circle),
+                    child: Icon(
+                        _expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.textSecondary,
+                        size: 18),
+                  ),
+                ],
+              ),
             ),
-            child: Text(message,
-                style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.4),
-                textAlign: TextAlign.center),
+          ),
+          if (_expanded) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _MoodBubble(mood: myMood?.mood, label: 'You', accent: accent),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: _DottedLink(accent: accent),
+                        ),
+                      ),
+                      _MoodBubble(
+                          mood: partnerMood?.mood,
+                          label: partnerName,
+                          accent: accent),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: accent.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.favorite_rounded, color: accent, size: 16),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            myMood != null && partnerMood != null
+                                ? moodComboMessage(myMood.mood, partnerMood.mood)
+                                : 'Set your mood on Home to see how you two align ♡',
+                            style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 12.5,
+                                height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: AppColors.divider, height: 1),
+            // Connection alerts
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.notifications_outlined,
+                      color: AppColors.textMuted, size: 20),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Connection Alerts',
+                            style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600)),
+                        Text('Get notified about important moments',
+                            style: TextStyle(
+                                color: AppColors.textMuted, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                  if (_prefLoaded)
+                    Switch(
+                      value: _notificationsEnabled,
+                      onChanged: _toggleNotifications,
+                      activeThumbColor: AppColors.rose,
+                    ),
+                ],
+              ),
+            ),
+            const Divider(color: AppColors.divider, height: 1),
+            // Theme
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              child: Row(
+                children: [
+                  const Icon(Icons.palette_outlined,
+                      color: AppColors.textMuted, size: 20),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Theme',
+                            style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600)),
+                        Text('Choose your couple theme',
+                            style: TextStyle(
+                                color: AppColors.textMuted, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                  ...kCoupleAccents.take(4).map((a) {
+                    final color = a['color'] as Color;
+                    final selected = couple?.themeColor == color.toARGB32();
+                    return Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: GestureDetector(
+                        onTap: () {
+                          if (couple != null) {
+                            HapticFeedback.selectionClick();
+                            ref
+                                .read(firestoreServiceProvider)
+                                .updateCoupleTheme(couple.id, color.toARGB32());
+                          }
+                        },
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                            border: selected
+                                ? Border.all(color: Colors.white, width: 2)
+                                : null,
+                          ),
+                          child: selected
+                              ? const Icon(Icons.check_rounded,
+                                  color: Colors.white, size: 14)
+                              : null,
+                        ),
+                      ),
+                    );
+                  }),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right_rounded,
+                      color: AppColors.textMuted, size: 18),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DottedLink extends StatelessWidget {
+  final Color accent;
+  const _DottedLink({required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 32,
+      child: Row(
+        children: [
+          Expanded(
+            child: CustomPaint(painter: _DotsPainter(color: accent.withValues(alpha: 0.5))),
+          ),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+              border: Border.all(color: accent.withValues(alpha: 0.4)),
+            ),
+            child: Icon(Icons.link_rounded, color: accent, size: 15),
+          ),
+          Expanded(
+            child: CustomPaint(painter: _DotsPainter(color: accent.withValues(alpha: 0.5))),
           ),
         ],
       ),
@@ -268,8 +498,29 @@ class _MoodMatchCard extends StatelessWidget {
   }
 }
 
+class _DotsPainter extends CustomPainter {
+  final Color color;
+  const _DotsPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    const dotRadius = 1.6;
+    const gap = 7.0;
+    final y = size.height / 2;
+    var x = dotRadius;
+    while (x < size.width - dotRadius) {
+      canvas.drawCircle(Offset(x, y), dotRadius, paint);
+      x += gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DotsPainter oldDelegate) => oldDelegate.color != color;
+}
+
 class _MoodBubble extends StatelessWidget {
-  final MoodType mood;
+  final MoodType? mood;
   final String label;
   final Color accent;
   const _MoodBubble({required this.mood, required this.label, required this.accent});
@@ -279,19 +530,26 @@ class _MoodBubble extends StatelessWidget {
     return Column(
       children: [
         Container(
-          width: 64, height: 64,
+          width: 58, height: 58,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: AppColors.bgCard,
-            border: Border.all(color: AppColors.divider, width: 0.5),
+            color: AppColors.bgCardLight,
+            border: Border.all(
+                color: mood != null ? accent.withValues(alpha: 0.4) : AppColors.divider,
+                width: mood != null ? 1.5 : 0.5),
           ),
-          child: Center(child: Text(mood.emoji, style: const TextStyle(fontSize: 32))),
+          child: Center(
+            child: Text(mood?.emoji ?? '❔', style: const TextStyle(fontSize: 28)),
+          ),
         ),
         const SizedBox(height: 6),
-        Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
-        Text(mood.label,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary)),
+        Text(label,
+            style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+        Text(mood?.label ?? 'Not set',
+            style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: mood != null ? AppColors.textPrimary : AppColors.textMuted)),
       ],
     );
   }
@@ -456,9 +714,9 @@ class _ProfilePicSectionState extends ConsumerState<_ProfilePicSection> {
               ],
             ),
           ),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 20),
         ],
       ),
     );
   }
 }
-
