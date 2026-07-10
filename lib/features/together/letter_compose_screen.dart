@@ -771,21 +771,14 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                               ],
                             ),
                             padding: const EdgeInsets.all(14),
-                            child: Theme(
-                              data: Theme.of(context).copyWith(
-                                textTheme: Theme.of(context)
-                                    .textTheme
-                                    .apply(bodyColor: const Color(0xFF2A1A0A)),
-                              ),
-                              child: DefaultTextStyle.merge(
-                                style: const TextStyle(color: Color(0xFF2A1A0A)),
-                                child: RichContentEditor(
-                                  initialBlocks: _blocks,
-                                  onChanged: (blocks) => setState(() => _blocks = blocks),
-                                  textColor: const Color(0xFF2A1A0A),
-                                  hintColor: const Color(0xFF2A1A0A).withValues(alpha: 0.4),
-                                  toolbarIconColor: const Color(0xFF5C3D1E),
-                                ),
+                            child: DefaultTextStyle.merge(
+                              style: const TextStyle(color: Color(0xFF2A1A0A)),
+                              child: RichContentEditor(
+                                initialBlocks: _blocks,
+                                onChanged: (blocks) => setState(() => _blocks = blocks),
+                                textColor: const Color(0xFF2A1A0A),
+                                hintColor: const Color(0xFF2A1A0A).withValues(alpha: 0.4),
+                                toolbarIconColor: const Color(0xFF5C3D1E),
                               ),
                             ),
                           ),

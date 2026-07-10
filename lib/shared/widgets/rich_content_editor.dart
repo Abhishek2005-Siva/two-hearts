@@ -321,6 +321,8 @@ class _RichContentEditorState extends State<RichContentEditor> {
         return _LinkBlockEditor(
           key: ValueKey(block.id),
           block: block,
+          textColor: widget.textColor,
+          mutedColor: widget.hintColor,
           onDelete: () => _removeBlock(block.id),
         );
     }
@@ -706,9 +708,17 @@ class _VideoBlockEditor extends StatelessWidget {
 
 class _LinkBlockEditor extends StatelessWidget {
   final ContentBlock block;
+  final Color textColor;
+  final Color mutedColor;
   final VoidCallback onDelete;
 
-  const _LinkBlockEditor({super.key, required this.block, required this.onDelete});
+  const _LinkBlockEditor({
+    super.key,
+    required this.block,
+    this.textColor = Colors.white,
+    this.mutedColor = Colors.white38,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -730,8 +740,8 @@ class _LinkBlockEditor extends StatelessWidget {
               children: [
                 Text(
                   block.linkTitle ?? block.linkUrl ?? '',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: textColor,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -739,7 +749,7 @@ class _LinkBlockEditor extends StatelessWidget {
                 if (block.linkTitle != null && block.linkUrl != null)
                   Text(
                     block.linkUrl!,
-                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                    style: TextStyle(color: mutedColor, fontSize: 11),
                   ),
               ],
             ),

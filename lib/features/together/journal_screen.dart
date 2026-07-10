@@ -1224,10 +1224,8 @@ class _LetterBodyPreview extends StatelessWidget {
         style: const TextStyle(fontSize: 15, height: 1.7, color: Color(0xFF2A1A0A)),
       );
     }
-    return Theme(
-      data: Theme.of(context).copyWith(
-        textTheme: Theme.of(context).textTheme.apply(bodyColor: const Color(0xFF2A1A0A)),
-      ),
+    return DefaultTextStyle.merge(
+      style: const TextStyle(color: Color(0xFF2A1A0A)),
       child: RichContentViewer(blocks: blocks),
     );
   }
