@@ -2061,10 +2061,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          border: const Border(
+                          border: Border(
                               left: BorderSide(
-                                  color: AppColors.rose, width: 3)),
-                          color: Colors.black.withValues(alpha: 0.18),
+                                  color: isMe ? Colors.white : AppColors.rose,
+                                  width: 3)),
+                          color: Colors.black.withValues(alpha: isMe ? 0.24 : 0.28),
                           borderRadius: const BorderRadius.only(
                             topRight: Radius.circular(8),
                             bottomRight: Radius.circular(8),
@@ -2074,8 +2075,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
                           msg.replyToContent!.length > 80
                               ? '${msg.replyToContent!.substring(0, 80)}…'
                               : msg.replyToContent!,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.88),
                             fontSize: 12,
                             height: 1.3,
                           ),
