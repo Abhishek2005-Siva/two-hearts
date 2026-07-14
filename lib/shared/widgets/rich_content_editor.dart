@@ -123,7 +123,7 @@ class _RichContentEditorState extends State<RichContentEditor> {
     final picker = ImagePicker();
     final XFile? xf;
     try {
-      xf = await picker.pickMedia();
+      xf = await picker.pickMedia(maxWidth: 1920, maxHeight: 1920, imageQuality: 85);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
