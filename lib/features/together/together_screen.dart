@@ -12,6 +12,7 @@ import '../../core/models/content_block.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/rich_content_viewer.dart';
+import 'wildcards_screen.dart';
 
 class TogetherScreen extends ConsumerWidget {
   const TogetherScreen({super.key});
@@ -244,6 +245,18 @@ class TogetherScreen extends ConsumerWidget {
                   ),
                 ],
               ).animate().fadeIn(delay: 360.ms),
+              if (isWildcardGranter()) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: (MediaQuery.of(context).size.width - 40 - 30) / 4,
+                  child: _QuickPick(
+                    icon: Icons.style_outlined,
+                    label: 'Give a\nWildcard',
+                    accent: accent,
+                    onTap: () => showGiveWildcardSheet(context, ref),
+                  ),
+                ).animate().fadeIn(delay: 400.ms),
+              ],
             ],
           ),
         ),

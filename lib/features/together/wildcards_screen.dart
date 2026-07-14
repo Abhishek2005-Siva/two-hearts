@@ -14,7 +14,7 @@ import '../../core/theme/app_theme.dart';
 // never send one directly.
 const _kGranterEmail = 'abhishek2005.siva@gmail.com';
 
-bool _isGranter() => FirebaseAuth.instance.currentUser?.email == _kGranterEmail;
+bool isWildcardGranter() => FirebaseAuth.instance.currentUser?.email == _kGranterEmail;
 
 const List<String> _kFavorIdeas = [
   'Free pass to bite me 😈',
@@ -106,17 +106,13 @@ Color _suitColor(WildcardSuit? s) {
   return (rank, suit);
 }
 
-// ── Main screen ─────────────────────────────────────────────────────────
+/// Shows the "give a Wildcard" compose sheet — draws a random card and sends
+/// it once submitted. Reused by both the Wildcards screen itself and any
+/// other quick-access entry point (e.g. Together's Quick Picks row).
+void showGiveWildcardSheet(BuildContext context, WidgetRef ref, {WildcardRequest? forRequest}) {
+  final ctrl = TextEditingController(text: forRequest?.note ?? '');
 
-class WildcardsScreen extends ConsumerStatefulWidget {
-  const WildcardsScreen({super.key});
-
-  @override
-  ConsumerState<WildcardsScreen> createState() => _WildcardsScreenState();
-}
-
-class _WildcardsScreenState extends ConsumerState<WildcardsScreen> {
-  Future<void> _sendCard(String favorText, {WildcardRequest? forRequest}) async {
+  Future<void> sendCard(String favorText) async {
     final coupleId = ref.read(coupleIdProvider);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (coupleId == null || uid == null) return;
@@ -136,7 +132,7 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen> {
           .read(firestoreServiceProvider)
           .respondToWildcardRequest(coupleId, forRequest.id, WildcardRequestStatus.approved);
     }
-    if (mounted) {
+    if (context.mounted) {
       await showDialog(
         context: context,
         barrierDismissible: false,
@@ -145,91 +141,100 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen> {
     }
   }
 
-  void _showComposeSheet({WildcardRequest? forRequest}) {
-    final ctrl = TextEditingController(text: forRequest?.note ?? '');
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetCtx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
-        child: Container(
-          padding: EdgeInsets.fromLTRB(
-              24, 20, 24, MediaQuery.of(sheetCtx).padding.bottom + 24),
-          decoration: const BoxDecoration(
-            color: AppColors.bgMid,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36, height: 4,
-                  decoration: BoxDecoration(
-                      color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
-                ),
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (sheetCtx) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
+      child: Container(
+        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(sheetCtx).padding.bottom + 24),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
               ),
-              const SizedBox(height: 18),
-              Text(
-                forRequest != null ? 'Grant this Wildcard' : 'Give a Wildcard',
-                style: const TextStyle(
-                    color: AppColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              forRequest != null ? 'Grant this Wildcard' : 'Give a Wildcard',
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            const Text('A random card will be drawn when you send it ♡',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              maxLines: 3,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                hintText: 'What\'s the favor?',
+                hintStyle: TextStyle(color: AppColors.textMuted),
               ),
-              const SizedBox(height: 4),
-              const Text('A random card will be drawn when you send it ♡',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5)),
-              const SizedBox(height: 16),
-              TextField(
-                controller: ctrl,
-                autofocus: true,
-                maxLines: 3,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                  hintText: 'What\'s the favor?',
-                  hintStyle: TextStyle(color: AppColors.textMuted),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _kFavorIdeas
-                    .map((idea) => GestureDetector(
-                          onTap: () => ctrl.text = idea,
-                          child: Container(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: AppColors.bgCard,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppColors.divider, width: 0.5),
-                            ),
-                            child: Text(idea,
-                                style: const TextStyle(
-                                    color: AppColors.textSecondary, fontSize: 12)),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _kFavorIdeas
+                  .map((idea) => GestureDetector(
+                        onTap: () => ctrl.text = idea,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.bgCard,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.divider, width: 0.5),
                           ),
-                        ))
-                    .toList(),
-              ),
-              const SizedBox(height: 20),
-              GradientButton(
-                label: 'Draw & Send 🎴',
-                onTap: () {
-                  final text = ctrl.text.trim();
-                  if (text.isEmpty) return;
-                  Navigator.pop(sheetCtx);
-                  _sendCard(text, forRequest: forRequest);
-                },
-              ),
-            ],
-          ),
+                          child: Text(idea,
+                              style: const TextStyle(
+                                  color: AppColors.textSecondary, fontSize: 12)),
+                        ),
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 20),
+            GradientButton(
+              label: 'Draw & Send 🎴',
+              onTap: () {
+                final text = ctrl.text.trim();
+                if (text.isEmpty) return;
+                Navigator.pop(sheetCtx);
+                sendCard(text);
+              },
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+// ── Main screen ─────────────────────────────────────────────────────────
+
+class WildcardsScreen extends ConsumerStatefulWidget {
+  const WildcardsScreen({super.key});
+
+  @override
+  ConsumerState<WildcardsScreen> createState() => _WildcardsScreenState();
+}
+
+class _WildcardsScreenState extends ConsumerState<WildcardsScreen> {
+  void _showComposeSheet({WildcardRequest? forRequest}) =>
+      showGiveWildcardSheet(context, ref, forRequest: forRequest);
 
   void _showRequestSheet() {
     final ctrl = TextEditingController();
@@ -371,7 +376,7 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen> {
     final cards = ref.watch(wildcardsProvider).valueOrNull ?? [];
     final requests = ref.watch(wildcardRequestsProvider).valueOrNull ?? [];
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    final isGranter = _isGranter();
+    final isGranter = isWildcardGranter();
     final pendingRequests =
         requests.where((r) => r.status == WildcardRequestStatus.pending).toList();
     final myPendingRequest = !isGranter
