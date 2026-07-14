@@ -358,6 +358,17 @@ class FirestoreService {
       .doc(msgId)
       .delete();
 
+  Future<void> editMessage(String coupleId, String msgId, String newContent) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('messages')
+      .doc(msgId)
+      .update({
+        'content': newContent,
+        'edited': true,
+        'editedAt': Timestamp.now(),
+      });
+
   Future<void> viewSnap(String coupleId, String msgId) => _db
       .collection('couples')
       .doc(coupleId)
@@ -575,12 +586,30 @@ class FirestoreService {
             return isReceiver && l.isUnlocked;
           }).toList());
 
+  Stream<List<LetterModel>> watchSentLetters(String coupleId, String myUid) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('letters')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs
+          .map(LetterModel.fromDoc)
+          .where((l) => l.authorId == myUid)
+          .toList());
+
   Future<void> openLetter(String coupleId, String letterId) => _db
       .collection('couples')
       .doc(coupleId)
       .collection('letters')
       .doc(letterId)
       .update({'opened': true});
+
+  Future<void> incrementLetterView(String coupleId, String letterId, String uid) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('letters')
+      .doc(letterId)
+      .update({'viewCounts.$uid': FieldValue.increment(1)});
 
   // ── Journal ───────────────────────────────────────────────────────────────
 
@@ -693,6 +722,10 @@ class FirestoreService {
   Future<void> toggleFavoriteMemory(String coupleId, String memoryId, bool fav) =>
       _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
           .update({'favorite': fav});
+
+  Future<void> incrementMemoryView(String coupleId, String memoryId, String uid) =>
+      _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
+          .update({'viewCounts.$uid': FieldValue.increment(1)});
 
   Future<void> requestMemoryDeletion(String coupleId, String memoryId) =>
       _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)

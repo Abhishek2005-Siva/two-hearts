@@ -70,6 +70,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   String _searchQuery = '';
   final _scheduledDeletes = <String>{};
   MessageModel? _replyingTo;
+  MessageModel? _editingMessage;
 
   // Character reactions — track reaction changes so the partner's avatar can
   // "perform" the emotion when they react to a message.
@@ -165,6 +166,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null) return;
+
+    final editing = _editingMessage;
+    if (editing != null) {
+      _controller.clear();
+      setState(() {
+        _sending = true;
+        _editingMessage = null;
+      });
+      HapticFeedback.lightImpact();
+      try {
+        await ref.read(firestoreServiceProvider).editMessage(coupleId, editing.id, text);
+      } finally {
+        if (mounted) setState(() => _sending = false);
+      }
+      return;
+    }
+
     _controller.clear();
     _isTyping = false;
     ref.read(firestoreServiceProvider).setTyping(coupleId, false).ignore();
@@ -192,6 +210,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  void _startEditingMessage(MessageModel msg) {
+    setState(() {
+      _editingMessage = msg;
+      _replyingTo = null;
+      _controller.text = msg.content;
+      _controller.selection =
+          TextSelection.collapsed(offset: _controller.text.length);
+    });
   }
 
   Future<void> _sendSnap() async {
@@ -608,8 +636,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                   .ignore();
                             },
                             onReply: () {
-                              setState(() => _replyingTo = msg);
+                              setState(() {
+                                _replyingTo = msg;
+                                _editingMessage = null;
+                              });
                             },
+                            onEdit: (msg.senderId == uid && msg.type == MessageType.text)
+                                ? () => _startEditingMessage(msg)
+                                : null,
                             onDoubleTap: coupleId == null ? null : () {
                               final isLiked = msg.reactionEmoji == '❤️';
                               HapticFeedback.lightImpact();
@@ -659,6 +693,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               ),
 
+            if (_editingMessage != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: AppColors.bgCard,
+                child: Row(
+                  children: [
+                    const Icon(Icons.edit_rounded, color: AppColors.gold, size: 16),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text('Editing message',
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    ),
+                    SquishyTap(
+                      onTap: () => setState(() {
+                        _editingMessage = null;
+                        _controller.clear();
+                      }),
+                      child: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 16),
+                    ),
+                  ],
+                ),
+              ),
             if (_replyingTo != null)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1809,6 +1865,7 @@ class _MessageBubble extends StatefulWidget {
   final VoidCallback? onDelete;
   final VoidCallback onReply;
   final VoidCallback? onDoubleTap;
+  final VoidCallback? onEdit;
 
   const _MessageBubble({
     required this.msg,
@@ -1820,6 +1877,7 @@ class _MessageBubble extends StatefulWidget {
     required this.onReply,
     this.onDelete,
     this.onDoubleTap,
+    this.onEdit,
   });
 
   @override
@@ -2031,6 +2089,15 @@ class _MessageBubbleState extends State<_MessageBubble> {
                         height: 1.4,
                       ),
                     ),
+                    if (msg.edited)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Text('edited',
+                            style: TextStyle(
+                                color: Colors.white54,
+                                fontSize: 10.5,
+                                fontStyle: FontStyle.italic)),
+                      ),
                   ],
                 ),
               ),
@@ -2309,10 +2376,18 @@ class _MessageBubbleState extends State<_MessageBubble> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _EmojiPickerSheet(onPick: (e) {
-        Navigator.pop(context);
-        widget.onReact(e);
-      }),
+      builder: (_) => _EmojiPickerSheet(
+        onPick: (e) {
+          Navigator.pop(context);
+          widget.onReact(e);
+        },
+        onEdit: widget.onEdit == null
+            ? null
+            : () {
+                Navigator.pop(context);
+                widget.onEdit!();
+              },
+      ),
     );
   }
 }
@@ -2468,7 +2543,8 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
 
 class _EmojiPickerSheet extends StatelessWidget {
   final void Function(String) onPick;
-  const _EmojiPickerSheet({required this.onPick});
+  final VoidCallback? onEdit;
+  const _EmojiPickerSheet({required this.onPick, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -2495,6 +2571,17 @@ class _EmojiPickerSheet extends StatelessWidget {
                   borderRadius: BorderRadius.circular(2)),
             ),
           ),
+          if (onEdit != null) ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.edit_rounded, color: AppColors.textPrimary),
+              title: const Text('Edit message',
+                  style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+              onTap: onEdit,
+            ),
+            const Divider(color: AppColors.divider, height: 1),
+            const SizedBox(height: 10),
+          ],
           // Quick-pick row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,

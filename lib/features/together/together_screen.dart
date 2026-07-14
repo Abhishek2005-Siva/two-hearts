@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -945,14 +946,25 @@ class _CoinTossDialogState extends State<_CoinTossDialog>
 // Only shows letters the current user received (sender cannot see their own sent letters).
 // Locked letters are invisible.
 
-class _LettersSheet extends ConsumerWidget {
+class _LettersSheet extends ConsumerStatefulWidget {
   final Color accent;
   const _LettersSheet({required this.accent});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LettersSheet> createState() => _LettersSheetState();
+}
+
+class _LettersSheetState extends ConsumerState<_LettersSheet> {
+  bool _showSent = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.accent;
     // lettersProvider already filters to receiver-only + unlocked-only
     final letters = ref.watch(lettersProvider).valueOrNull ?? [];
+    final sentLetters = ref.watch(sentLettersProvider).valueOrNull ?? [];
+    final partnerUid = ref.watch(partnerUserProvider).valueOrNull?.uid;
+
     return _Sheet(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -978,25 +990,184 @@ class _LettersSheet extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            padding: const EdgeInsets.all(4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _LetterTabButton(
+                    label: 'Received',
+                    selected: !_showSent,
+                    accent: accent,
+                    onTap: () => setState(() => _showSent = false),
+                  ),
+                ),
+                Expanded(
+                  child: _LetterTabButton(
+                    label: 'Sent',
+                    selected: _showSent,
+                    accent: accent,
+                    onTap: () => setState(() => _showSent = true),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           Text(
-            'Letters written for you — locked ones are invisible until they unlock ♡',
+            _showSent
+                ? 'Long-press a letter to see how many times it\'s been opened ♡'
+                : 'Letters written for you — locked ones are invisible until they unlock ♡',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 20),
-          if (letters.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  'No letters from your partner yet.\nThey\'ll write you something special ♡',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium,
+          if (_showSent) ...[
+            if (sentLetters.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Text(
+                    'You haven\'t sent any letters yet ♡',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                 ),
+              )
+            else
+              ...sentLetters.map((l) => _SentLetterTile(
+                    letter: l,
+                    accent: accent,
+                    partnerUid: partnerUid,
+                  )),
+          ] else ...[
+            if (letters.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Text(
+                    'No letters from your partner yet.\nThey\'ll write you something special ♡',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              )
+            else
+              ...letters.map((l) => _LetterTile(letter: l, accent: accent, ref: ref)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LetterTabButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _LetterTabButton({
+    required this.label,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: 0.2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: selected ? accent : AppColors.textMuted,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SentLetterTile extends StatelessWidget {
+  final LetterModel letter;
+  final Color accent;
+  final String? partnerUid;
+
+  const _SentLetterTile({required this.letter, required this.accent, required this.partnerUid});
+
+  @override
+  Widget build(BuildContext context) {
+    final viewCount = letter.viewCountOf(partnerUid);
+    return GestureDetector(
+      onLongPress: () => _showViewCount(context),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.bgCardLight,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.divider, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            const Text('📤', style: TextStyle(fontSize: 24)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(letter.title, style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    letter.isUnlocked ? 'Unlocked' : 'Still locked',
+                    style: TextStyle(fontSize: 12, color: accent),
+                  ),
+                ],
               ),
-            )
-          else
-            ...letters.map((l) => _LetterTile(letter: l, accent: accent, ref: ref)),
+            ),
+            Icon(Icons.remove_red_eye_outlined, color: AppColors.textMuted, size: 16),
+            const SizedBox(width: 4),
+            Text('$viewCount', style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showViewCount(BuildContext context) {
+    HapticFeedback.mediumImpact();
+    final viewCount = letter.viewCountOf(partnerUid);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('"${letter.title}"', style: const TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          viewCount == 0
+              ? 'Not opened yet ♡'
+              : 'Opened $viewCount time${viewCount == 1 ? '' : 's'} ♡',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Close', style: TextStyle(color: accent)),
+          ),
         ],
       ),
     );
@@ -1056,6 +1227,10 @@ class _LetterTile extends StatelessWidget {
     if (coupleId == null) return;
     // Mark as opened (idempotent)
     ref.read(firestoreServiceProvider).openLetter(coupleId, letter.id).ignore();
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    if (myUid != null) {
+      ref.read(firestoreServiceProvider).incrementLetterView(coupleId, letter.id, myUid).ignore();
+    }
 
     showDialog(
       context: context,

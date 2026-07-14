@@ -87,6 +87,13 @@ final lettersProvider = StreamProvider<List<LetterModel>>((ref) {
   return ref.read(firestoreServiceProvider).watchLetters(coupleId, myUid);
 });
 
+final sentLettersProvider = StreamProvider<List<LetterModel>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final myUid = ref.watch(currentUserProvider).valueOrNull?.uid;
+  if (coupleId == null || myUid == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchSentLetters(coupleId, myUid);
+});
+
 // ── Journal ───────────────────────────────────────────────────────────────
 
 final journalProvider = StreamProvider<List<JournalDay>>((ref) {

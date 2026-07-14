@@ -18,6 +18,7 @@ class MemoryDetailScreen extends ConsumerStatefulWidget {
 class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
   late PageController _pageCtrl;
   int _currentIndex = 0;
+  final Set<String> _countedThisSession = {};
 
   @override
   void initState() {
@@ -31,11 +32,21 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
     super.dispose();
   }
 
+  void _countView(String memoryId) {
+    if (_countedThisSession.contains(memoryId)) return;
+    _countedThisSession.add(memoryId);
+    final coupleId = ref.read(coupleIdProvider);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (coupleId == null || uid == null) return;
+    ref.read(firestoreServiceProvider).incrementMemoryView(coupleId, memoryId, uid).ignore();
+  }
+
   @override
   Widget build(BuildContext context) {
     final memoriesAsync = ref.watch(memoriesProvider);
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final coupleId = ref.watch(coupleIdProvider) ?? '';
+    final partnerUid = ref.watch(partnerUserProvider).valueOrNull?.uid;
 
     if (memoriesAsync.isLoading) {
       return const Scaffold(
@@ -61,6 +72,11 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
 
     // Clamp current index
     final safeIndex = _currentIndex.clamp(0, memories.length - 1);
+    if (safeIndex < memories.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _countView(memories[safeIndex].id);
+      });
+    }
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -207,6 +223,25 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
                     onPressed: () => context.pop(),
                   ),
                   const Spacer(),
+                  if (partnerUid != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.remove_red_eye_outlined,
+                              color: Colors.white70, size: 15),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${memories[safeIndex].viewCountOf(partnerUid)}',
+                            style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (memories.length > 1)
                     Text(
                       '${safeIndex + 1} / ${memories.length}',

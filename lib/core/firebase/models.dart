@@ -162,6 +162,8 @@ class MessageModel {
   final String? replyToId;
   final String? replyToContent;
   final int? voiceDurationSeconds;
+  final bool edited;
+  final DateTime? editedAt;
 
   const MessageModel({
     required this.id,
@@ -177,6 +179,8 @@ class MessageModel {
     this.replyToId,
     this.replyToContent,
     this.voiceDurationSeconds,
+    this.edited = false,
+    this.editedAt,
   });
 
   factory MessageModel.fromDoc(DocumentSnapshot doc) {
@@ -195,6 +199,8 @@ class MessageModel {
       replyToId: d['replyToId'],
       replyToContent: d['replyToContent'],
       voiceDurationSeconds: d['voiceDurationSeconds'] as int?,
+      edited: d['edited'] ?? false,
+      editedAt: (d['editedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -211,6 +217,8 @@ class MessageModel {
         if (replyToId != null) 'replyToId': replyToId,
         if (replyToContent != null) 'replyToContent': replyToContent,
         if (voiceDurationSeconds != null) 'voiceDurationSeconds': voiceDurationSeconds,
+        if (edited) 'edited': true,
+        if (editedAt != null) 'editedAt': Timestamp.fromDate(editedAt!),
       };
 }
 
@@ -317,6 +325,7 @@ class LetterModel {
   final DateTime? unlockAt;
   final bool opened;
   final DateTime createdAt;
+  final Map<String, int> viewCounts;
 
   const LetterModel({
     required this.id,
@@ -328,10 +337,14 @@ class LetterModel {
     this.unlockAt,
     this.opened = false,
     required this.createdAt,
+    this.viewCounts = const {},
   });
+
+  int viewCountOf(String? uid) => uid == null ? 0 : (viewCounts[uid] ?? 0);
 
   factory LetterModel.fromDoc(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
+    final viewsRaw = d['viewCounts'] as Map<String, dynamic>? ?? {};
     return LetterModel(
       id: doc.id,
       authorId: d['authorId'] ?? '',
@@ -342,6 +355,7 @@ class LetterModel {
       unlockAt: (d['unlockAt'] as Timestamp?)?.toDate(),
       opened: d['opened'] ?? false,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      viewCounts: viewsRaw.map((uid, v) => MapEntry(uid, (v as num).toInt())),
     );
   }
 
@@ -360,6 +374,7 @@ class LetterModel {
         'unlockAt': unlockAt != null ? Timestamp.fromDate(unlockAt!) : null,
         'opened': opened,
         'createdAt': Timestamp.fromDate(createdAt),
+        if (viewCounts.isNotEmpty) 'viewCounts': viewCounts,
       };
 }
 
@@ -436,6 +451,7 @@ class MemoryModel {
   final String? deletionRequestedBy;
   final String? collectionId;
   final bool isVideo;
+  final Map<String, int> viewCounts;
 
   const MemoryModel({
     required this.id,
@@ -449,10 +465,14 @@ class MemoryModel {
     this.deletionRequestedBy,
     this.collectionId,
     this.isVideo = false,
+    this.viewCounts = const {},
   });
+
+  int viewCountOf(String? uid) => uid == null ? 0 : (viewCounts[uid] ?? 0);
 
   factory MemoryModel.fromDoc(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
+    final viewsRaw = d['viewCounts'] as Map<String, dynamic>? ?? {};
     return MemoryModel(
       id: doc.id,
       uploaderUid: d['uploaderUid'] ?? '',
@@ -465,6 +485,7 @@ class MemoryModel {
       deletionRequestedBy: d['deletionRequestedBy'],
       collectionId: d['collectionId'],
       isVideo: d['isVideo'] ?? false,
+      viewCounts: viewsRaw.map((uid, v) => MapEntry(uid, (v as num).toInt())),
     );
   }
 
@@ -479,6 +500,7 @@ class MemoryModel {
         'deletionRequestedBy': deletionRequestedBy,
         'isVideo': isVideo,
         if (collectionId != null) 'collectionId': collectionId,
+        if (viewCounts.isNotEmpty) 'viewCounts': viewCounts,
       };
 }
 
