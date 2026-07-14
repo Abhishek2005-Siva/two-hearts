@@ -14,6 +14,7 @@ import '../../features/together/together_screen.dart';
 import '../../features/you_and_me/you_and_me_screen.dart';
 import '../../features/together/letter_compose_screen.dart';
 import '../../features/together/journal_screen.dart';
+import '../../features/together/recipes_screen.dart';
 import '../../features/memory/memory_detail_screen.dart';
 import '../../features/games/games_screen.dart';
 import '../../features/games/date_ideas_screen.dart';
@@ -176,6 +177,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/together/journal',
             builder: (_, _) => const JournalScreen(),
+          ),
+          GoRoute(
+            path: '/together/recipes',
+            builder: (_, _) => const RecipesScreen(),
           ),
           GoRoute(
             path: '/you',

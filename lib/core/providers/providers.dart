@@ -291,6 +291,12 @@ final booksProvider = StreamProvider<List<BookWish>>((ref) {
   return ref.read(firestoreServiceProvider).watchBooks(coupleId);
 });
 
+final recipesProvider = StreamProvider<List<RecipeModel>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchRecipes(coupleId);
+});
+
 // ── Incoming Video Call ───────────────────────────────────────────────────
 
 final incomingCallProvider = StreamProvider<Map<String, dynamic>?>((ref) {

@@ -194,6 +194,14 @@ class TogetherScreen extends ConsumerWidget {
               ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.04),
               const SizedBox(height: 12),
               _FeatureCard(
+                emoji: '🍳',
+                title: 'Recipes',
+                subtitle: 'Our cookbook shelf',
+                colors: const [Color(0xFF5C4A1F), Color(0xFF2E2612)],
+                onTap: () => context.push('/together/recipes'),
+              ).animate().fadeIn(delay: 320.ms).slideY(begin: 0.04),
+              const SizedBox(height: 12),
+              _FeatureCard(
                 emoji: '🃏',
                 title: 'Wildcards',
                 subtitle: wildcards.isEmpty

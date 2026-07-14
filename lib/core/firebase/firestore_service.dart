@@ -1399,6 +1399,44 @@ class FirestoreService {
           .doc(noteId)
           .delete();
 
+  // ── Recipes ──────────────────────────────────────────────────────────────
+
+  Stream<List<RecipeModel>> watchRecipes(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('recipes')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map(RecipeModel.fromDoc).toList());
+
+  Future<void> addRecipe(String coupleId, RecipeModel recipe) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('recipes')
+      .doc(recipe.id)
+      .set(recipe.toMap());
+
+  Future<void> updateRecipe(String coupleId, RecipeModel recipe) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('recipes')
+      .doc(recipe.id)
+      .set(recipe.toMap());
+
+  Future<void> deleteRecipe(String coupleId, String recipeId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('recipes')
+      .doc(recipeId)
+      .delete();
+
+  Future<void> toggleFavoriteRecipe(String coupleId, String recipeId, bool fav) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('recipes')
+      .doc(recipeId)
+      .update({'favorite': fav});
+
   // ── FCM token ─────────────────────────────────────────────────────────────
 
   Future<void> saveFCMToken(String token) => _db

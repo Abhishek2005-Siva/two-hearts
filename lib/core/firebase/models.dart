@@ -669,6 +669,60 @@ class BookProgress {
       };
 }
 
+// ──────────────── Recipe ────────────────
+
+enum RecipeCategory { breakfast, lunch, dinner, dessert, drink, snack, other }
+
+class RecipeModel {
+  final String id;
+  final String title;
+  final RecipeCategory category;
+  final String? ingredients;
+  final String? instructions;
+  final String? imageUrl;
+  final bool favorite;
+  final String addedBy;
+  final DateTime createdAt;
+
+  const RecipeModel({
+    required this.id,
+    required this.title,
+    this.category = RecipeCategory.other,
+    this.ingredients,
+    this.instructions,
+    this.imageUrl,
+    this.favorite = false,
+    required this.addedBy,
+    required this.createdAt,
+  });
+
+  factory RecipeModel.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return RecipeModel(
+      id: doc.id,
+      title: d['title'] ?? '',
+      category: RecipeCategory.values.byName(d['category'] ?? 'other'),
+      ingredients: d['ingredients'],
+      instructions: d['instructions'],
+      imageUrl: d['imageUrl'],
+      favorite: d['favorite'] ?? false,
+      addedBy: d['addedBy'] ?? '',
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'title': title,
+        'category': category.name,
+        if (ingredients != null) 'ingredients': ingredients,
+        if (instructions != null) 'instructions': instructions,
+        if (imageUrl != null) 'imageUrl': imageUrl,
+        'favorite': favorite,
+        'addedBy': addedBy,
+        'createdAt': Timestamp.fromDate(createdAt),
+      };
+}
+
 class BookWish {
   final String id;
   final String title;
