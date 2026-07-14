@@ -39,6 +39,7 @@ dependencies:
   flutter_sound: ^9.15.10
   audioplayers: ^6.1.0
   path_provider: ^2.1.5
+  image: ^4.3.0
 
   # Utils
   intl: ^0.20.2

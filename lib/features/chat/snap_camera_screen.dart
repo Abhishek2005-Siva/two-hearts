@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 
 enum SnapCameraResult { photo, video }
 
@@ -86,6 +89,21 @@ class _SnapCameraScreenState extends State<SnapCameraScreen> with WidgetsBinding
     _initCamera(index: (_cameraIndex + 1) % _cameras.length);
   }
 
+  bool get _isFrontCamera =>
+      _cameras.isNotEmpty && _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+
+  /// The front camera's sensor capture comes out "unmirrored" (backwards
+  /// relative to the mirrored preview the user actually framed their shot
+  /// with) — flip it horizontally so the sent photo matches what they saw.
+  Future<String> _fixSelfieMirroring(String path) async {
+    final bytes = await File(path).readAsBytes();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return path;
+    final flipped = img.flipHorizontal(decoded);
+    await File(path).writeAsBytes(img.encodeJpg(flipped, quality: 92));
+    return path;
+  }
+
   Future<void> _takePhoto() async {
     final ctrl = _controller;
     if (ctrl == null || !ctrl.value.isInitialized || _isProcessing) return;
@@ -93,8 +111,10 @@ class _SnapCameraScreenState extends State<SnapCameraScreen> with WidgetsBinding
     HapticFeedback.mediumImpact();
     try {
       final file = await ctrl.takePicture();
+      final path =
+          _isFrontCamera ? await _fixSelfieMirroring(file.path) : file.path;
       if (!mounted) return;
-      Navigator.of(context).pop(SnapCameraCapture(type: SnapCameraResult.photo, path: file.path));
+      Navigator.of(context).pop(SnapCameraCapture(type: SnapCameraResult.photo, path: path));
     } catch (_) {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -147,7 +167,15 @@ class _SnapCameraScreenState extends State<SnapCameraScreen> with WidgetsBinding
         children: [
           // Camera preview
           if (_isReady && _controller != null)
-            Center(child: CameraPreview(_controller!))
+            Center(
+              child: Transform(
+                alignment: Alignment.center,
+                transform: _isFrontCamera
+                    ? Matrix4.rotationY(math.pi)
+                    : Matrix4.identity(),
+                child: CameraPreview(_controller!),
+              ),
+            )
           else
             const Center(child: CircularProgressIndicator(color: Colors.white)),
 
