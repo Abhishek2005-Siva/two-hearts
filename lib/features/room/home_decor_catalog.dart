@@ -130,6 +130,14 @@ class HomeCatalogEntry {
   final bool glow;
   final String? routeTo;
   final String? routeLabel;
+  // When set, the item renders as a real pre-rendered sprite image instead of
+  // a vector-painted box. `spriteBase` is the asset path with no extension
+  // and no direction suffix (e.g. 'assets/images/decor/bed'); if `rotatable`
+  // is also true, four direction variants (_NE/_NW/_SE/_SW) are expected,
+  // otherwise a single `${spriteBase}.png` is used. `spriteAspect` is the
+  // sprite's native width/height ratio, used to size it without distortion.
+  final String? spriteBase;
+  final double spriteAspect;
 
   const HomeCatalogEntry({
     required this.id,
@@ -147,6 +155,8 @@ class HomeCatalogEntry {
     this.glow = false,
     this.routeTo,
     this.routeLabel,
+    this.spriteBase,
+    this.spriteAspect = 1.0,
   });
 }
 
@@ -173,26 +183,26 @@ List<HomeCatalogEntry> itemsInCategory(HomeCategory c) =>
 
 const List<HomeCatalogEntry> kHomeDecorCatalog = [
   // ── Furniture ──────────────────────────────────────────────────────────
-  HomeCatalogEntry(id: 'bed', label: 'Bed', emoji: '🛏️', color: Color(0xFF6B3F5E), category: HomeCategory.furniture, shape: HomeItemShape.seating, footprintCols: 2, footprintRows: 2, heightPx: 24),
-  HomeCatalogEntry(id: 'sofa', label: 'Sofa', emoji: '🛋️', color: Color(0xFF8B4A6A), category: HomeCategory.furniture, shape: HomeItemShape.seating, footprintCols: 2, footprintRows: 1, heightPx: 28, rotatable: true),
-  HomeCatalogEntry(id: 'loveseat', label: 'Loveseat', emoji: '🛋️', color: Color(0xFFB06A7A), category: HomeCategory.furniture, shape: HomeItemShape.seating, footprintCols: 2, footprintRows: 1, heightPx: 26, rotatable: true),
-  HomeCatalogEntry(id: 'armchair', label: 'Armchair', emoji: '🪑', color: Color(0xFF7B5A4A), category: HomeCategory.furniture, shape: HomeItemShape.seating, heightPx: 28),
+  HomeCatalogEntry(id: 'bed', label: 'Bed', emoji: '🛏️', color: Color(0xFF6B3F5E), category: HomeCategory.furniture, shape: HomeItemShape.seating, footprintCols: 2, footprintRows: 2, heightPx: 24, spriteBase: 'assets/images/decor/bed', spriteAspect: 1.132),
+  HomeCatalogEntry(id: 'sofa', label: 'Sofa', emoji: '🛋️', color: Color(0xFF8B4A6A), category: HomeCategory.furniture, shape: HomeItemShape.seating, footprintCols: 2, footprintRows: 1, heightPx: 28, rotatable: true, spriteBase: 'assets/images/decor/sofa', spriteAspect: 1.0),
+  HomeCatalogEntry(id: 'loveseat', label: 'Loveseat', emoji: '🛋️', color: Color(0xFFB06A7A), category: HomeCategory.furniture, shape: HomeItemShape.seating, footprintCols: 2, footprintRows: 1, heightPx: 26, rotatable: true, spriteBase: 'assets/images/decor/loveseat', spriteAspect: 1.099),
+  HomeCatalogEntry(id: 'armchair', label: 'Armchair', emoji: '🪑', color: Color(0xFF7B5A4A), category: HomeCategory.furniture, shape: HomeItemShape.seating, heightPx: 28, spriteBase: 'assets/images/decor/armchair', spriteAspect: 0.858),
   HomeCatalogEntry(id: 'bean_bag', label: 'Bean Bag', emoji: '🟤', color: Color(0xFF6B4A7A), category: HomeCategory.furniture, shape: HomeItemShape.blob, heightPx: 16),
-  HomeCatalogEntry(id: 'ottoman', label: 'Ottoman', emoji: '🪑', color: Color(0xFFA07850), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 14),
-  HomeCatalogEntry(id: 'rocking_chair', label: 'Rocking Chair', emoji: '🪑', color: Color(0xFF6B4226), category: HomeCategory.furniture, shape: HomeItemShape.seating, heightPx: 30),
-  HomeCatalogEntry(id: 'window_seat', label: 'Window Seat', emoji: '🪟', color: Color(0xFFD8C4A0), category: HomeCategory.furniture, shape: HomeItemShape.seating, footprintCols: 2, heightPx: 18),
+  HomeCatalogEntry(id: 'ottoman', label: 'Ottoman', emoji: '🪑', color: Color(0xFFA07850), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 14, spriteBase: 'assets/images/decor/ottoman', spriteAspect: 1.057),
+  HomeCatalogEntry(id: 'rocking_chair', label: 'Rocking Chair', emoji: '🪑', color: Color(0xFF6B4226), category: HomeCategory.furniture, shape: HomeItemShape.seating, heightPx: 30, spriteBase: 'assets/images/decor/rocking_chair', spriteAspect: 0.789),
+  HomeCatalogEntry(id: 'window_seat', label: 'Window Seat', emoji: '🪟', color: Color(0xFFD8C4A0), category: HomeCategory.furniture, shape: HomeItemShape.seating, footprintCols: 2, heightPx: 18, spriteBase: 'assets/images/decor/window_seat', spriteAspect: 0.667),
   HomeCatalogEntry(id: 'hammock', label: 'Hammock', emoji: '🕸️', color: Color(0xFFD8B888), category: HomeCategory.furniture, shape: HomeItemShape.blob, footprintCols: 2, heightPx: 12),
   HomeCatalogEntry(id: 'swing_chair', label: 'Swing Chair', emoji: '🪑', color: Color(0xFFB5681F), category: HomeCategory.furniture, shape: HomeItemShape.seating, heightPx: 34),
-  HomeCatalogEntry(id: 'coffee_table', label: 'Coffee Table', emoji: '🪵', color: Color(0xFF6B4226), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 16),
-  HomeCatalogEntry(id: 'side_table', label: 'Side Table', emoji: '🪵', color: Color(0xFF7A5230), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 18),
-  HomeCatalogEntry(id: 'study_desk', label: 'Study Desk', emoji: '📝', color: Color(0xFF8B5A2B), category: HomeCategory.furniture, shape: HomeItemShape.table, footprintCols: 2, heightPx: 22),
-  HomeCatalogEntry(id: 'vanity', label: 'Vanity', emoji: '💄', color: Color(0xFFEDE0C8), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 24),
-  HomeCatalogEntry(id: 'dining_table', label: 'Dining Table', emoji: '🍽️', color: Color(0xFF6B3A22), category: HomeCategory.furniture, shape: HomeItemShape.table, footprintCols: 2, footprintRows: 2, heightPx: 20),
-  HomeCatalogEntry(id: 'breakfast_bar', label: 'Breakfast Bar', emoji: '🍳', color: Color(0xFF8B5A2B), category: HomeCategory.furniture, shape: HomeItemShape.table, footprintCols: 2, heightPx: 26),
-  HomeCatalogEntry(id: 'nightstand', label: 'Nightstand', emoji: '🛌', color: Color(0xFF7A5230), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 16),
-  HomeCatalogEntry(id: 'tv_cabinet', label: 'TV Cabinet', emoji: '📺', color: Color(0xFF5A3A22), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, footprintCols: 2, heightPx: 18),
-  HomeCatalogEntry(id: 'console_table', label: 'Console Table', emoji: '🪞', color: Color(0xFFEDE0C8), category: HomeCategory.furniture, shape: HomeItemShape.table, footprintCols: 2, heightPx: 18),
-  HomeCatalogEntry(id: 'shelf', label: 'Shelf', emoji: '📚', color: Color(0xFF8B5A2B), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, heightPx: 32),
+  HomeCatalogEntry(id: 'coffee_table', label: 'Coffee Table', emoji: '🪵', color: Color(0xFF6B4226), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 16, spriteBase: 'assets/images/decor/coffee_table', spriteAspect: 1.078),
+  HomeCatalogEntry(id: 'side_table', label: 'Side Table', emoji: '🪵', color: Color(0xFF7A5230), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 18, spriteBase: 'assets/images/decor/side_table', spriteAspect: 0.821),
+  HomeCatalogEntry(id: 'study_desk', label: 'Study Desk', emoji: '📝', color: Color(0xFF8B5A2B), category: HomeCategory.furniture, shape: HomeItemShape.table, footprintCols: 2, heightPx: 22, spriteBase: 'assets/images/decor/study_desk', spriteAspect: 0.951),
+  HomeCatalogEntry(id: 'vanity', label: 'Vanity', emoji: '💄', color: Color(0xFFEDE0C8), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 24, spriteBase: 'assets/images/decor/vanity', spriteAspect: 0.716),
+  HomeCatalogEntry(id: 'dining_table', label: 'Dining Table', emoji: '🍽️', color: Color(0xFF6B3A22), category: HomeCategory.furniture, shape: HomeItemShape.table, footprintCols: 2, footprintRows: 2, heightPx: 20, spriteBase: 'assets/images/decor/dining_table', spriteAspect: 1.031),
+  HomeCatalogEntry(id: 'breakfast_bar', label: 'Breakfast Bar', emoji: '🍳', color: Color(0xFF8B5A2B), category: HomeCategory.furniture, shape: HomeItemShape.table, footprintCols: 2, heightPx: 26, spriteBase: 'assets/images/decor/breakfast_bar', spriteAspect: 0.761),
+  HomeCatalogEntry(id: 'nightstand', label: 'Nightstand', emoji: '🛌', color: Color(0xFF7A5230), category: HomeCategory.furniture, shape: HomeItemShape.table, heightPx: 16, spriteBase: 'assets/images/decor/nightstand', spriteAspect: 0.821),
+  HomeCatalogEntry(id: 'tv_cabinet', label: 'TV Cabinet', emoji: '📺', color: Color(0xFF5A3A22), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, footprintCols: 2, heightPx: 18, spriteBase: 'assets/images/decor/tv_cabinet', spriteAspect: 0.991),
+  HomeCatalogEntry(id: 'console_table', label: 'Console Table', emoji: '🪞', color: Color(0xFFEDE0C8), category: HomeCategory.furniture, shape: HomeItemShape.table, footprintCols: 2, heightPx: 18, spriteBase: 'assets/images/decor/console_table', spriteAspect: 0.821),
+  HomeCatalogEntry(id: 'shelf', label: 'Shelf', emoji: '📚', color: Color(0xFF8B5A2B), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, heightPx: 32, spriteBase: 'assets/images/decor/shelf', spriteAspect: 0.744),
   HomeCatalogEntry(id: 'floating_shelves', label: 'Floating Shelves', emoji: '📚', color: Color(0xFF8B5A2B), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, footprintCols: 2, heightPx: 10),
   HomeCatalogEntry(
     id: 'bookshelf',
@@ -204,12 +214,14 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
     heightPx: 48,
     routeTo: '/together/journal',
     routeLabel: 'Open Journal',
+    spriteBase: 'assets/images/decor/bookshelf',
+    spriteAspect: 0.479,
   ),
-  HomeCatalogEntry(id: 'display_cabinet', label: 'Display Cabinet', emoji: '🏺', color: Color(0xFF5A3A22), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, heightPx: 40),
-  HomeCatalogEntry(id: 'wardrobe', label: 'Wardrobe', emoji: '👗', color: Color(0xFF4A2E18), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, heightPx: 52),
-  HomeCatalogEntry(id: 'drawer_chest', label: 'Drawer Chest', emoji: '🗄️', color: Color(0xFF7A5230), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, heightPx: 28),
+  HomeCatalogEntry(id: 'display_cabinet', label: 'Display Cabinet', emoji: '🏺', color: Color(0xFF5A3A22), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, heightPx: 40, spriteBase: 'assets/images/decor/display_cabinet', spriteAspect: 0.489),
+  HomeCatalogEntry(id: 'wardrobe', label: 'Wardrobe', emoji: '👗', color: Color(0xFF4A2E18), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, heightPx: 52, spriteBase: 'assets/images/decor/wardrobe', spriteAspect: 0.681),
+  HomeCatalogEntry(id: 'drawer_chest', label: 'Drawer Chest', emoji: '🗄️', color: Color(0xFF7A5230), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, heightPx: 28, spriteBase: 'assets/images/decor/drawer_chest', spriteAspect: 0.806),
   HomeCatalogEntry(id: 'shoe_rack', label: 'Shoe Rack', emoji: '👟', color: Color(0xFFA07850), category: HomeCategory.furniture, shape: HomeItemShape.shelfUnit, heightPx: 16),
-  HomeCatalogEntry(id: 'coat_stand', label: 'Coat Stand', emoji: '🧥', color: Color(0xFF4A2E18), category: HomeCategory.furniture, shape: HomeItemShape.postBox, heightPx: 46),
+  HomeCatalogEntry(id: 'coat_stand', label: 'Coat Stand', emoji: '🧥', color: Color(0xFF4A2E18), category: HomeCategory.furniture, shape: HomeItemShape.postBox, heightPx: 46, spriteBase: 'assets/images/decor/coat_stand', spriteAspect: 0.32),
 
   // ── Letter & Journal ───────────────────────────────────────────────────
   HomeCatalogEntry(
@@ -246,6 +258,8 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
     heightPx: 24,
     routeTo: '/together/letter/new',
     routeLabel: 'Write a Letter',
+    spriteBase: 'assets/images/decor/writing_desk',
+    spriteAspect: 0.951,
   ),
   HomeCatalogEntry(id: 'fountain_pen', label: 'Fountain Pen', emoji: '🖋️', color: Color(0xFF1A1A1A), accent: Color(0xFFD4A84B), category: HomeCategory.letterJournal, heightPx: 8),
   HomeCatalogEntry(id: 'feather_pen', label: 'Feather Pen', emoji: '🪶', color: Color(0xFFEDE4D3), category: HomeCategory.letterJournal, heightPx: 10),
@@ -265,7 +279,7 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
   HomeCatalogEntry(id: 'postcard_display', label: 'Postcard Display', emoji: '🖼️', color: Color(0xFFEDE4D3), category: HomeCategory.letterJournal, shape: HomeItemShape.wallFlat, heightPx: 12),
 
   // ── Books & Knowledge ───────────────────────────────────────────────────
-  HomeCatalogEntry(id: 'large_library', label: 'Large Library', emoji: '📚', color: Color(0xFF4A2E18), category: HomeCategory.books, shape: HomeItemShape.shelfUnit, footprintCols: 2, heightPx: 54),
+  HomeCatalogEntry(id: 'large_library', label: 'Large Library', emoji: '📚', color: Color(0xFF4A2E18), category: HomeCategory.books, shape: HomeItemShape.shelfUnit, footprintCols: 2, heightPx: 54, spriteBase: 'assets/images/decor/large_library', spriteAspect: 0.489),
   HomeCatalogEntry(id: 'open_books', label: 'Open Books', emoji: '📖', color: Color(0xFFEDE4D3), category: HomeCategory.books, heightPx: 8),
   HomeCatalogEntry(
     id: 'globe',
@@ -324,6 +338,8 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
     heightPx: 26,
     routeTo: '/you',
     routeLabel: 'Open Profile',
+    spriteBase: 'assets/images/decor/mirrors',
+    spriteAspect: 0.622,
   ),
   HomeCatalogEntry(id: 'curtains', label: 'Curtains', emoji: '🪟', color: Color(0xFFB06A7A), category: HomeCategory.decorations, shape: HomeItemShape.wallFlat, heightPx: 40),
   HomeCatalogEntry(id: 'blinds', label: 'Blinds', emoji: '🪟', color: Color(0xFF9E9E9E), category: HomeCategory.decorations, shape: HomeItemShape.wallFlat, heightPx: 34),
@@ -337,7 +353,7 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
   HomeCatalogEntry(id: 'music_box', label: 'Music Box', emoji: '🎵', color: Color(0xFFB06A7A), category: HomeCategory.decorations, heightPx: 14),
 
   // ── Nature ──────────────────────────────────────────────────────────────
-  HomeCatalogEntry(id: 'plant', label: 'Indoor Plant', emoji: '🪴', color: Color(0xFF4A7C59), category: HomeCategory.nature, shape: HomeItemShape.plant, heightPx: 38),
+  HomeCatalogEntry(id: 'plant', label: 'Indoor Plant', emoji: '🪴', color: Color(0xFF4A7C59), category: HomeCategory.nature, shape: HomeItemShape.plant, heightPx: 38, spriteBase: 'assets/images/decor/plant', spriteAspect: 0.329),
   HomeCatalogEntry(id: 'bonsai', label: 'Bonsai', emoji: '🌳', color: Color(0xFF2F5F3F), category: HomeCategory.nature, shape: HomeItemShape.plant, heightPx: 20),
   HomeCatalogEntry(id: 'bamboo', label: 'Bamboo', emoji: '🎋', color: Color(0xFF6FBFA0), category: HomeCategory.nature, shape: HomeItemShape.plant, heightPx: 42),
   HomeCatalogEntry(id: 'fern', label: 'Fern', emoji: '🌿', color: Color(0xFF2F5F3F), category: HomeCategory.nature, shape: HomeItemShape.plant, heightPx: 22),
@@ -357,8 +373,8 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
   HomeCatalogEntry(id: 'butterfly_terrarium', label: 'Butterfly Terrarium', emoji: '🦋', color: Color(0xFFB8A0D9), category: HomeCategory.nature, heightPx: 20),
 
   // ── Technology ──────────────────────────────────────────────────────────
-  HomeCatalogEntry(id: 'desktop_pc', label: 'Desktop PC', emoji: '🖥️', color: Color(0xFF2A2A2A), accent: Color(0xFF5B9BD5), category: HomeCategory.tech, shape: HomeItemShape.electronics, heightPx: 26),
-  HomeCatalogEntry(id: 'laptop', label: 'Laptop', emoji: '💻', color: Color(0xFFB8C4C8), accent: Color(0xFF5B9BD5), category: HomeCategory.tech, shape: HomeItemShape.electronics, heightPx: 12),
+  HomeCatalogEntry(id: 'desktop_pc', label: 'Desktop PC', emoji: '🖥️', color: Color(0xFF2A2A2A), accent: Color(0xFF5B9BD5), category: HomeCategory.tech, shape: HomeItemShape.electronics, heightPx: 26, spriteBase: 'assets/images/decor/desktop_pc', spriteAspect: 0.797),
+  HomeCatalogEntry(id: 'laptop', label: 'Laptop', emoji: '💻', color: Color(0xFFB8C4C8), accent: Color(0xFF5B9BD5), category: HomeCategory.tech, shape: HomeItemShape.electronics, heightPx: 12, spriteBase: 'assets/images/decor/laptop', spriteAspect: 0.962),
   HomeCatalogEntry(id: 'tablet', label: 'Tablet', emoji: '📱', color: Color(0xFF2A2A2A), accent: Color(0xFF5B9BD5), category: HomeCategory.tech, shape: HomeItemShape.electronics, heightPx: 8),
   HomeCatalogEntry(id: 'phone_dock', label: 'Phone Dock', emoji: '📱', color: Color(0xFFEDE4D3), category: HomeCategory.tech, heightPx: 10),
   HomeCatalogEntry(id: 'smart_speaker', label: 'Smart Speaker', emoji: '🔊', color: Color(0xFF7A7A7A), category: HomeCategory.tech, heightPx: 16),
@@ -367,12 +383,12 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
   HomeCatalogEntry(id: 'instant_camera', label: 'Instant Camera', emoji: '📸', color: Color(0xFFEDE4D3), accent: Color(0xFFFF8C42), category: HomeCategory.tech, heightPx: 12),
   HomeCatalogEntry(id: 'printer', label: 'Printer', emoji: '🖨️', color: Color(0xFFEDEDED), category: HomeCategory.tech, heightPx: 16),
   HomeCatalogEntry(id: 'projector', label: 'Projector', emoji: '📽️', color: Color(0xFF2A2A2A), accent: Color(0xFFFFD166), category: HomeCategory.tech, heightPx: 14, glow: true),
-  HomeCatalogEntry(id: 'television', label: 'Television', emoji: '📺', color: Color(0xFF1A1A1A), accent: Color(0xFF5B9BD5), category: HomeCategory.tech, shape: HomeItemShape.electronics, footprintCols: 2, heightPx: 30),
+  HomeCatalogEntry(id: 'television', label: 'Television', emoji: '📺', color: Color(0xFF1A1A1A), accent: Color(0xFF5B9BD5), category: HomeCategory.tech, shape: HomeItemShape.electronics, footprintCols: 2, heightPx: 30, spriteBase: 'assets/images/decor/television', spriteAspect: 0.796),
   HomeCatalogEntry(id: 'gaming_console', label: 'Gaming Console', emoji: '🎮', color: Color(0xFF2A2A2A), category: HomeCategory.tech, heightPx: 10),
-  HomeCatalogEntry(id: 'keyboard', label: 'Keyboard', emoji: '⌨️', color: Color(0xFF3D3D3D), category: HomeCategory.tech, heightPx: 6),
-  HomeCatalogEntry(id: 'mouse', label: 'Mouse', emoji: '🖱️', color: Color(0xFF2A2A2A), category: HomeCategory.tech, heightPx: 6),
+  HomeCatalogEntry(id: 'keyboard', label: 'Keyboard', emoji: '⌨️', color: Color(0xFF3D3D3D), category: HomeCategory.tech, heightPx: 6, spriteBase: 'assets/images/decor/keyboard', spriteAspect: 1.242),
+  HomeCatalogEntry(id: 'mouse', label: 'Mouse', emoji: '🖱️', color: Color(0xFF2A2A2A), category: HomeCategory.tech, heightPx: 6, spriteBase: 'assets/images/decor/mouse', spriteAspect: 1.0),
   HomeCatalogEntry(id: 'headphones', label: 'Headphones', emoji: '🎧', color: Color(0xFF2A2A2A), category: HomeCategory.tech, heightPx: 10),
-  HomeCatalogEntry(id: 'smart_display', label: 'Smart Display', emoji: '🖥️', color: Color(0xFFEDEDED), accent: Color(0xFF5B9BD5), category: HomeCategory.tech, shape: HomeItemShape.electronics, heightPx: 14),
+  HomeCatalogEntry(id: 'smart_display', label: 'Smart Display', emoji: '🖥️', color: Color(0xFFEDEDED), accent: Color(0xFF5B9BD5), category: HomeCategory.tech, shape: HomeItemShape.electronics, heightPx: 14, spriteBase: 'assets/images/decor/smart_display', spriteAspect: 0.797),
 
   // ── Music ───────────────────────────────────────────────────────────────
   HomeCatalogEntry(id: 'piano', label: 'Piano', emoji: '🎹', color: Color(0xFF1A1A1A), accent: Color(0xFFFDF0F5), category: HomeCategory.music, shape: HomeItemShape.instrument, footprintCols: 2, heightPx: 32),
@@ -414,7 +430,7 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
     routeLabel: 'Listen Together',
   ),
   HomeCatalogEntry(id: 'music_stand', label: 'Music Stand', emoji: '🎼', color: Color(0xFF2A2A2A), category: HomeCategory.music, shape: HomeItemShape.postBox, heightPx: 30),
-  HomeCatalogEntry(id: 'speaker', label: 'Speaker', emoji: '🔊', color: Color(0xFF1A1A1A), category: HomeCategory.music, heightPx: 22),
+  HomeCatalogEntry(id: 'speaker', label: 'Speaker', emoji: '🔊', color: Color(0xFF1A1A1A), category: HomeCategory.music, heightPx: 22, spriteBase: 'assets/images/decor/speaker', spriteAspect: 0.337),
   HomeCatalogEntry(id: 'microphone', label: 'Microphone', emoji: '🎤', color: Color(0xFFB8C4C8), category: HomeCategory.music, shape: HomeItemShape.postBox, heightPx: 26),
 
   // ── Hobby ───────────────────────────────────────────────────────────────
@@ -432,7 +448,7 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
   HomeCatalogEntry(id: 'drone_dock', label: 'Drone Dock', emoji: '🛸', color: Color(0xFF7A7A7A), category: HomeCategory.hobby, heightPx: 10),
 
   // ── Food ────────────────────────────────────────────────────────────────
-  HomeCatalogEntry(id: 'coffee_machine', label: 'Coffee Machine', emoji: '☕', color: Color(0xFF2A2A2A), accent: Color(0xFF8B5A2B), category: HomeCategory.food, heightPx: 20),
+  HomeCatalogEntry(id: 'coffee_machine', label: 'Coffee Machine', emoji: '☕', color: Color(0xFF2A2A2A), accent: Color(0xFF8B5A2B), category: HomeCategory.food, heightPx: 20, spriteBase: 'assets/images/decor/coffee_machine', spriteAspect: 0.814),
   HomeCatalogEntry(id: 'tea_set', label: 'Tea Set', emoji: '🫖', color: Color(0xFFFDF0F5), category: HomeCategory.food, heightPx: 12),
   HomeCatalogEntry(id: 'kettle', label: 'Kettle', emoji: '🫖', color: Color(0xFF8B2323), category: HomeCategory.food, heightPx: 14),
   HomeCatalogEntry(id: 'mug_rack', label: 'Mug Rack', emoji: '☕', color: Color(0xFF8B5A2B), category: HomeCategory.food, shape: HomeItemShape.shelfUnit, heightPx: 16),
@@ -440,7 +456,7 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
   HomeCatalogEntry(id: 'fruit_basket', label: 'Fruit Basket', emoji: '🍎', color: Color(0xFFD8B888), category: HomeCategory.food, heightPx: 14),
   HomeCatalogEntry(id: 'wine_rack', label: 'Wine Rack', emoji: '🍷', color: Color(0xFF4A2E18), category: HomeCategory.food, shape: HomeItemShape.shelfUnit, heightPx: 22),
   HomeCatalogEntry(id: 'snack_shelf', label: 'Snack Shelf', emoji: '🍿', color: Color(0xFFD8C4A0), category: HomeCategory.food, shape: HomeItemShape.shelfUnit, heightPx: 20),
-  HomeCatalogEntry(id: 'mini_fridge', label: 'Mini Fridge', emoji: '🧊', color: Color(0xFFEDEDED), accent: Color(0xFFFF6B8A), category: HomeCategory.food, shape: HomeItemShape.electronics, heightPx: 26),
+  HomeCatalogEntry(id: 'mini_fridge', label: 'Mini Fridge', emoji: '🧊', color: Color(0xFFEDEDED), accent: Color(0xFFFF6B8A), category: HomeCategory.food, shape: HomeItemShape.electronics, heightPx: 26, spriteBase: 'assets/images/decor/mini_fridge', spriteAspect: 0.643),
   HomeCatalogEntry(id: 'cake_stand', label: 'Cake Stand', emoji: '🍰', color: Color(0xFFFDF0F5), accent: Color(0xFFD4A84B), category: HomeCategory.food, shape: HomeItemShape.table, heightPx: 16),
 
   // ── Collectibles ────────────────────────────────────────────────────────
@@ -566,7 +582,7 @@ const List<HomeCatalogEntry> kHomeDecorCatalog = [
   HomeCatalogEntry(id: 'porch', label: 'Porch', emoji: '🏡', color: Color(0xFFEDE4D3), category: HomeCategory.outdoor, heightPx: 16),
   HomeCatalogEntry(id: 'gazebo', label: 'Gazebo', emoji: '⛺', color: Color(0xFFFDF0F5), category: HomeCategory.outdoor, footprintCols: 2, footprintRows: 2, heightPx: 44),
   HomeCatalogEntry(id: 'outdoor_swing', label: 'Swing', emoji: '🎠', color: Color(0xFF8B5A2B), category: HomeCategory.outdoor, shape: HomeItemShape.seating, heightPx: 30),
-  HomeCatalogEntry(id: 'bench', label: 'Bench', emoji: '🪑', color: Color(0xFF6B4226), category: HomeCategory.outdoor, shape: HomeItemShape.seating, footprintCols: 2, heightPx: 20),
+  HomeCatalogEntry(id: 'bench', label: 'Bench', emoji: '🪑', color: Color(0xFF6B4226), category: HomeCategory.outdoor, shape: HomeItemShape.seating, footprintCols: 2, heightPx: 20, spriteBase: 'assets/images/decor/bench', spriteAspect: 0.66),
   HomeCatalogEntry(id: 'bird_feeder', label: 'Bird Feeder', emoji: '🐦', color: Color(0xFF8B5A2B), category: HomeCategory.outdoor, shape: HomeItemShape.postBox, heightPx: 28),
   HomeCatalogEntry(id: 'fountain', label: 'Fountain', emoji: '⛲', color: Color(0xFFB8C4C8), accent: Color(0xFF5B9BD5), category: HomeCategory.outdoor, heightPx: 26),
   HomeCatalogEntry(id: 'campfire', label: 'Campfire', emoji: '🔥', color: Color(0xFFFF8C42), category: HomeCategory.outdoor, shape: HomeItemShape.lampGlow, heightPx: 18, glow: true),

@@ -63,6 +63,43 @@ List<Widget> _buildPhotoThumbs(_PlacedRender r) {
   return widgets;
 }
 
+const _kSpriteDirs = ['SE', 'SW', 'NW', 'NE'];
+
+/// A real pre-rendered sprite image for items that have one, positioned so
+/// its bottom-center sits on the footprint's front ground corner — matching
+/// where the vector-drawn boxes touch down for everything else.
+List<Widget> _buildSpriteWidgets(_PlacedRender r) {
+  final entry = r.entry;
+  if (entry.spriteBase == null) return const [];
+  final box = _isoBoxFor(r.item.col, r.item.row, r.cols, r.rows, entry.heightPx);
+  final cols = r.cols.toDouble();
+  final rows = r.rows.toDouble();
+  final groundAnchorLocal = Offset(
+    (cols + rows) * kIsoTileW / 4,
+    (cols + rows) * kIsoTileH / 2 + entry.heightPx,
+  );
+  final anchor = _kOrigin + box.topLeft + groundAnchorLocal;
+
+  final spanW = (cols + rows) * (kIsoTileW / 2);
+  final displayW = spanW * 1.08;
+  final displayH = displayW / entry.spriteAspect;
+
+  final path = entry.rotatable
+      ? '${entry.spriteBase}_${_kSpriteDirs[(r.item.rotation ~/ 90) % 4]}.png'
+      : '${entry.spriteBase}.png';
+
+  return [
+    Positioned(
+      key: ValueKey('sprite_${r.item.id}'),
+      left: anchor.dx - displayW / 2,
+      top: anchor.dy - displayH,
+      width: displayW,
+      height: displayH,
+      child: IgnorePointer(child: Image.asset(path, fit: BoxFit.contain)),
+    ),
+  ];
+}
+
 Color _lighten(Color c, double amt) => Color.lerp(c, Colors.white, amt)!;
 Color _darken(Color c, double amt) => Color.lerp(c, Colors.black, amt)!;
 Offset _lerpOffset(Offset a, Offset b, double t) =>
@@ -556,6 +593,7 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen>
                                 ),
                               ),
                             ),
+                            for (final r in renders) ..._buildSpriteWidgets(r),
                             for (final r in renders)
                               if (r.entry.id == 'photo_wall' && r.photoUrls.isNotEmpty)
                                 ..._buildPhotoThumbs(r),
@@ -1056,6 +1094,17 @@ class _IsoScenePainter extends CustomPainter {
 
     if (r.entry.isRug) {
       _drawRug(canvas, g);
+      return;
+    }
+
+    if (r.entry.spriteBase != null) {
+      // The real image sprite (drawn as a widget, not on this canvas) carries
+      // the visual — just ground it with a soft contact shadow here.
+      final shadowW = (g.groundRight.dx - g.groundLeft.dx).abs() * 0.62;
+      canvas.drawOval(
+        Rect.fromCenter(center: g.groundBottom, width: shadowW, height: shadowW * 0.32),
+        Paint()..color = Colors.black.withValues(alpha: 0.28),
+      );
       return;
     }
 
