@@ -59,7 +59,7 @@ class ChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends ConsumerState<ChatScreen> {
+class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _searchCtrl = TextEditingController();
@@ -78,11 +78,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _reactionsSeeded = false;
   final Set<String> _myRecentReactions = {};
 
+  // Messages should only be marked "seen" while this screen is genuinely
+  // in front of the user's eyes — not while the app is backgrounded/locked,
+  // even though the Firestore listener here can keep receiving updates then.
+  bool _isForeground = true;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final wasForeground = _isForeground;
+    _isForeground = state == AppLifecycleState.resumed;
+    if (_isForeground && !wasForeground) _markRead();
   }
 
   void _onTextChanged() {
@@ -96,6 +109,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _markRead() {
+    if (!_isForeground) return;
     final coupleId = ref.read(coupleIdProvider);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final messages = ref.read(messagesProvider).valueOrNull;
@@ -401,6 +415,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     final coupleId = ref.read(coupleIdProvider);
     if (coupleId != null) {
       ref.read(firestoreServiceProvider).setTyping(coupleId, false).ignore();
