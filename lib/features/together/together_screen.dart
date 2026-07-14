@@ -27,6 +27,8 @@ class TogetherScreen extends ConsumerWidget {
 
     final unlockedLetters = letters.where((l) => l.isUnlocked && !l.opened).length;
     final bucketDone = bucket.where((b) => b.status == BucketStatus.done).length;
+    final wildcards = ref.watch(wildcardsProvider).valueOrNull ?? [];
+    final wildcardsUnredeemed = wildcards.where((w) => !w.redeemed).length;
     final todayKey = _todayKey();
     final todayEntry = journal.where((j) => j.id == todayKey).firstOrNull;
 
@@ -188,6 +190,16 @@ class TogetherScreen extends ConsumerWidget {
                   ),
                 ],
               ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.04),
+              const SizedBox(height: 12),
+              _FeatureCard(
+                emoji: '🃏',
+                title: 'Wildcards',
+                subtitle: wildcards.isEmpty
+                    ? 'Special favors, just for us ♡'
+                    : '$wildcardsUnredeemed waiting to be redeemed',
+                colors: const [Color(0xFF5E1F3A), Color(0xFF2E0F1D)],
+                onTap: () => context.push('/together/wildcards'),
+              ).animate().fadeIn(delay: 330.ms).slideY(begin: 0.04),
               const SizedBox(height: 28),
 
               _SectionHeader(title: 'Quick Picks'),

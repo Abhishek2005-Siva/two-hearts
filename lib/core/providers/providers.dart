@@ -141,6 +141,20 @@ final homeRoomStyleProvider = StreamProvider<HomeRoomStyle>((ref) {
   return ref.read(firestoreServiceProvider).watchHomeRoomStyle(coupleId);
 });
 
+// ── Wildcards ──────────────────────────────────────────────────────────────
+
+final wildcardsProvider = StreamProvider<List<WildCard>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchWildcards(coupleId);
+});
+
+final wildcardRequestsProvider = StreamProvider<List<WildcardRequest>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchWildcardRequests(coupleId);
+});
+
 // ── Partner User ──────────────────────────────────────────────────────────
 
 final partnerUserProvider = StreamProvider<UserModel?>((ref) {

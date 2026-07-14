@@ -857,6 +857,64 @@ class FirestoreService {
   Stream<HomeRoomStyle> watchHomeRoomStyle(String coupleId) =>
       _homeStyleDoc(coupleId).snapshots().map(HomeRoomStyle.fromDoc);
 
+  // ── Wildcards ────────────────────────────────────────────────────────────
+
+  Future<void> sendWildcard(String coupleId, WildCard card) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('wildcards')
+      .doc(card.id)
+      .set(card.toMap());
+
+  Future<void> setWildcardRedeemed(String coupleId, String cardId, bool redeemed) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('wildcards')
+      .doc(cardId)
+      .update({
+        'redeemed': redeemed,
+        'redeemedAt': redeemed ? Timestamp.now() : FieldValue.delete(),
+      });
+
+  Future<void> deleteWildcard(String coupleId, String cardId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('wildcards')
+      .doc(cardId)
+      .delete();
+
+  Stream<List<WildCard>> watchWildcards(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('wildcards')
+      .orderBy('givenAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map(WildCard.fromDoc).toList());
+
+  Future<void> requestWildcard(String coupleId, WildcardRequest req) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('wildcardRequests')
+      .doc(req.id)
+      .set(req.toMap());
+
+  Future<void> respondToWildcardRequest(
+          String coupleId, String requestId, WildcardRequestStatus status) =>
+      _db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('wildcardRequests')
+          .doc(requestId)
+          .update({'status': status.name});
+
+  Stream<List<WildcardRequest>> watchWildcardRequests(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('wildcardRequests')
+      .orderBy('requestedAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map(WildcardRequest.fromDoc).toList());
+
   // ── Typing indicator ─────────────────────────────────────────────────────
 
   Future<void> setTyping(String coupleId, bool typing) => _db

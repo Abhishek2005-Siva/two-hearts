@@ -855,6 +855,101 @@ class HomeRoomStyle {
   }
 }
 
+// ──────────────── Wildcards (special favor/grace cards) ────────────────
+
+enum WildcardRank {
+  ace, two, three, four, five, six, seven, eight, nine, ten, jack, queen, king, joker
+}
+
+enum WildcardSuit { hearts, diamonds, clubs, spades }
+
+class WildCard {
+  final String id;
+  final String favorText;
+  final WildcardRank rank;
+  final WildcardSuit? suit; // null when rank == joker
+  final String givenBy;
+  final DateTime givenAt;
+  final bool redeemed;
+  final DateTime? redeemedAt;
+  final String? requestId; // set if this card fulfilled a request
+
+  const WildCard({
+    required this.id,
+    required this.favorText,
+    required this.rank,
+    this.suit,
+    required this.givenBy,
+    required this.givenAt,
+    this.redeemed = false,
+    this.redeemedAt,
+    this.requestId,
+  });
+
+  factory WildCard.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    final suitName = d['suit'] as String?;
+    return WildCard(
+      id: doc.id,
+      favorText: d['favorText'] ?? '',
+      rank: WildcardRank.values.byName(d['rank'] ?? 'joker'),
+      suit: suitName == null ? null : WildcardSuit.values.byName(suitName),
+      givenBy: d['givenBy'] ?? '',
+      givenAt: (d['givenAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      redeemed: d['redeemed'] ?? false,
+      redeemedAt: (d['redeemedAt'] as Timestamp?)?.toDate(),
+      requestId: d['requestId'],
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'favorText': favorText,
+        'rank': rank.name,
+        if (suit != null) 'suit': suit!.name,
+        'givenBy': givenBy,
+        'givenAt': Timestamp.fromDate(givenAt),
+        'redeemed': redeemed,
+        if (redeemedAt != null) 'redeemedAt': Timestamp.fromDate(redeemedAt!),
+        if (requestId != null) 'requestId': requestId,
+      };
+}
+
+enum WildcardRequestStatus { pending, approved, declined }
+
+class WildcardRequest {
+  final String id;
+  final String? note;
+  final String requestedBy;
+  final DateTime requestedAt;
+  final WildcardRequestStatus status;
+
+  const WildcardRequest({
+    required this.id,
+    this.note,
+    required this.requestedBy,
+    required this.requestedAt,
+    this.status = WildcardRequestStatus.pending,
+  });
+
+  factory WildcardRequest.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return WildcardRequest(
+      id: doc.id,
+      note: d['note'],
+      requestedBy: d['requestedBy'] ?? '',
+      requestedAt: (d['requestedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      status: WildcardRequestStatus.values.byName(d['status'] ?? 'pending'),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        if (note != null) 'note': note,
+        'requestedBy': requestedBy,
+        'requestedAt': Timestamp.fromDate(requestedAt),
+        'status': status.name,
+      };
+}
+
 // ──────────────── Game Round (Would You Rather) ────────────────
 
 class GameRound {
