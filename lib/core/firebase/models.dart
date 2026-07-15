@@ -1064,3 +1064,44 @@ class GameRound {
         'picks': picks,
       };
 }
+
+// ──────────────── Notification (in-app activity feed) ────────────────
+
+class AppNotification {
+  final String id;
+  final String type;
+  final String title;
+  final String body;
+  final String? route;
+  final String createdBy;
+  final DateTime createdAt;
+  final List<String> readBy;
+
+  const AppNotification({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.body,
+    this.route,
+    required this.createdBy,
+    required this.createdAt,
+    this.readBy = const [],
+  });
+
+  /// Unread means: someone else did this, and I haven't opened it yet.
+  bool isUnreadFor(String uid) => createdBy != uid && !readBy.contains(uid);
+
+  factory AppNotification.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return AppNotification(
+      id: doc.id,
+      type: d['type'] as String? ?? '',
+      title: d['title'] as String? ?? '',
+      body: d['body'] as String? ?? '',
+      route: d['route'] as String?,
+      createdBy: d['createdBy'] as String? ?? '',
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      readBy: List<String>.from(d['readBy'] as List? ?? const []),
+    );
+  }
+}

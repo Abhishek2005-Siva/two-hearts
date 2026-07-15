@@ -247,6 +247,67 @@ class FirestoreService {
   static String _anyOf(List<String> options) =>
       options[Random().nextInt(options.length)];
 
+  // ── Notifications (in-app activity feed) ─────────────────────────────────
+
+  CollectionReference<Map<String, dynamic>> _notificationsCol(String coupleId) =>
+      _db.collection('couples').doc(coupleId).collection('notifications');
+
+  Stream<List<AppNotification>> watchNotifications(String coupleId) =>
+      _notificationsCol(coupleId)
+          .orderBy('createdAt', descending: true)
+          .limit(100)
+          .snapshots()
+          .map((s) => s.docs.map(AppNotification.fromDoc).toList());
+
+  Future<void> markNotificationRead(String coupleId, String notificationId) =>
+      _notificationsCol(coupleId).doc(notificationId).update({
+        'readBy': FieldValue.arrayUnion([_uid]),
+      });
+
+  Future<void> markAllNotificationsRead(String coupleId, List<String> ids) async {
+    if (ids.isEmpty) return;
+    final batch = _db.batch();
+    for (final id in ids) {
+      batch.update(_notificationsCol(coupleId).doc(id), {
+        'readBy': FieldValue.arrayUnion([_uid]),
+      });
+    }
+    await batch.commit();
+  }
+
+  /// Records an activity in the shared notification feed — the "you did a
+  /// new thing" moments: pinning a place, adding a book/recipe, requesting
+  /// a Wildcard, writing today's journal entry, sending a letter. Also
+  /// pushes to the partner's device unless [push] is false (pass false when
+  /// the caller already sends its own richer push, to avoid a double
+  /// notification for one action).
+  Future<void> recordNotification(
+    String coupleId, {
+    required String type,
+    required String title,
+    required String body,
+    String? route,
+    bool push = true,
+  }) async {
+    await _notificationsCol(coupleId).add({
+      'type': type,
+      'title': title,
+      'body': body,
+      'route': ?route,
+      'createdBy': _uid,
+      'createdAt': FieldValue.serverTimestamp(),
+      'readBy': [_uid],
+    });
+    if (!push) return;
+    final token = await _partnerToken(coupleId);
+    await FcmService.send(
+      recipientToken: token,
+      title: title,
+      body: body,
+      data: {'type': type, 'coupleId': coupleId, 'route': ?route},
+    );
+  }
+
   /// Pushes a high-priority "incoming video call" notification so the
   /// partner hears about the call even when the app is backgrounded.
   Future<void> notifyIncomingCall(String coupleId, String callId) async {
@@ -550,23 +611,35 @@ class FirestoreService {
     final token = await _partnerToken(coupleId);
     final name = await _myFirstName();
     final locked = !letter.isUnlocked;
+    final title = _anyOf([
+      '💌 A sealed letter from $name',
+      '✉️ $name wrote you something',
+      '💌 Mail\'s here! From: $name. To: you.',
+    ]);
+    final body = locked
+        ? _anyOf([
+            'It\'s locked for now… the wait makes it sweeter 🔐',
+            'No peeking yet — it opens when the time is right ⏳',
+          ])
+        : _anyOf([
+            'It\'s ready to open. Go on, we\'ll wait ♡',
+            'Words written just for you are waiting 💗',
+          ]);
     await FcmService.send(
       recipientToken: token,
-      title: _anyOf([
-        '💌 A sealed letter from $name',
-        '✉️ $name wrote you something',
-        '💌 Mail\'s here! From: $name. To: you.',
-      ]),
-      body: locked
-          ? _anyOf([
-              'It\'s locked for now… the wait makes it sweeter 🔐',
-              'No peeking yet — it opens when the time is right ⏳',
-            ])
-          : _anyOf([
-              'It\'s ready to open. Go on, we\'ll wait ♡',
-              'Words written just for you are waiting 💗',
-            ]),
+      title: title,
+      body: body,
       data: {'type': 'letter', 'coupleId': coupleId, 'route': '/together'},
+    );
+    // Push already sent above with custom flavor text — record only, no
+    // second push, so opening a letter doesn't double-notify.
+    await recordNotification(
+      coupleId,
+      type: 'letter',
+      title: title,
+      body: body,
+      route: '/together',
+      push: false,
     );
   }
 
@@ -924,12 +997,22 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(WildCard.fromDoc).toList());
 
-  Future<void> requestWildcard(String coupleId, WildcardRequest req) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('wildcardRequests')
-      .doc(req.id)
-      .set(req.toMap());
+  Future<void> requestWildcard(String coupleId, WildcardRequest req) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('wildcardRequests')
+        .doc(req.id)
+        .set(req.toMap());
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'wildcard_request',
+      title: '🥺 $name asked for a Wildcard',
+      body: req.note?.isNotEmpty == true ? req.note! : 'Tap to grant it',
+      route: '/together/wildcards',
+    );
+  }
 
   Future<void> respondToWildcardRequest(
           String coupleId, String requestId, WildcardRequestStatus status) =>
@@ -1292,12 +1375,22 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(PlacePin.fromDoc).toList());
 
-  Future<void> addPlace(String coupleId, PlacePin place) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('places')
-      .doc(place.id)
-      .set(place.toMap());
+  Future<void> addPlace(String coupleId, PlacePin place) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('places')
+        .doc(place.id)
+        .set(place.toMap());
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'place',
+      title: '📍 $name pinned a new spot',
+      body: '${place.emoji ?? ''} ${place.name}'.trim(),
+      route: '/places',
+    );
+  }
 
   Future<void> deletePlace(String coupleId, String placeId) => _db
       .collection('couples')
@@ -1323,12 +1416,22 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(BookWish.fromDoc).toList());
 
-  Future<void> addBook(String coupleId, BookWish book) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('books')
-      .doc(book.id)
-      .set(book.toMap());
+  Future<void> addBook(String coupleId, BookWish book) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('books')
+        .doc(book.id)
+        .set(book.toMap());
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'book',
+      title: '📚 $name added a book',
+      body: book.title,
+      route: '/books',
+    );
+  }
 
   Future<void> deleteBook(String coupleId, String bookId) => _db
       .collection('couples')
@@ -1409,12 +1512,22 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(RecipeModel.fromDoc).toList());
 
-  Future<void> addRecipe(String coupleId, RecipeModel recipe) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('recipes')
-      .doc(recipe.id)
-      .set(recipe.toMap());
+  Future<void> addRecipe(String coupleId, RecipeModel recipe) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('recipes')
+        .doc(recipe.id)
+        .set(recipe.toMap());
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'recipe',
+      title: '🍳 $name added a recipe',
+      body: recipe.title,
+      route: '/together/recipes',
+    );
+  }
 
   Future<void> updateRecipe(String coupleId, RecipeModel recipe) => _db
       .collection('couples')

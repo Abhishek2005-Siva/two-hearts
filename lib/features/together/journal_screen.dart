@@ -1258,6 +1258,7 @@ class _BookViewState extends ConsumerState<_BookView> {
 
   bool _editing = false;
   bool _saving = false;
+  bool _notifiedCreation = false;
   Timer? _debounce;
 
   List<ContentBlock> _blocks = [];
@@ -1311,6 +1312,20 @@ class _BookViewState extends ConsumerState<_BookView> {
             encoded,
             title: _titleCtrl.text.trim().isEmpty ? null : _titleCtrl.text.trim(),
           );
+      if (widget.isNew && !_notifiedCreation) {
+        // Only the very first save of a brand-new entry notifies — later
+        // edits (including every silent 3s autosave) stay quiet.
+        _notifiedCreation = true;
+        ref.read(firestoreServiceProvider).recordNotification(
+              coupleId,
+              type: 'journal',
+              title: '📖 New journal entry',
+              body: _titleCtrl.text.trim().isEmpty
+                  ? 'Today\'s page is written'
+                  : _titleCtrl.text.trim(),
+              route: '/together/journal',
+            );
+      }
       if (mounted && !silent) {
         setState(() {
           _editing = false;
