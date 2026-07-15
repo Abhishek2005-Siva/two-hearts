@@ -285,6 +285,14 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
   String _selectedEmoji = '✨';
 
   @override
+  void initState() {
+    super.initState();
+    // Starts on a world view otherwise — fly to the user's location as
+    // soon as the map's attached, same as Google Maps opening on you.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _flyToCurrentLocation());
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _noteCtrl.dispose();
@@ -453,9 +461,21 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
   Future<void> _runSearch(String query) async {
     setState(() => _searchLoading = true);
     try {
-      final encoded = Uri.encodeQueryComponent(query);
-      final uri = Uri.parse(
-          'https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=5');
+      // Bias results toward what's currently on screen — like Google Maps,
+      // a search for a shop or street name should prefer nearby matches
+      // over an unrelated same-named place on the other side of the world.
+      // `bounded=0` keeps this a soft bias, not a hard filter, so a full
+      // address or well-known place elsewhere can still be found.
+      final bounds = _mapController.camera.visibleBounds;
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': query,
+        'format': 'json',
+        'limit': '10',
+        'addressdetails': '1',
+        'bounded': '0',
+        'viewbox':
+            '${bounds.west},${bounds.north},${bounds.east},${bounds.south}',
+      });
       final response = await http.get(
         uri,
         headers: {
@@ -928,6 +948,16 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // All pinned locations, in one tap
+                FloatingActionButton.small(
+                  heroTag: 'all_pins',
+                  backgroundColor: AppColors.bgCard,
+                  onPressed: places.isEmpty ? null : () => _showAllPinsSheet(places),
+                  child: Icon(Icons.list_rounded,
+                      color: places.isEmpty ? AppColors.textMuted : _kRose,
+                      size: 20),
+                ),
+                const SizedBox(height: 10),
                 // Location button above + button
                 FloatingActionButton.small(
                   heroTag: 'locate_me',
@@ -976,6 +1006,95 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
           selectedEmoji: _selectedEmoji,
           onEmojiSelected: (e) => setState(() => _selectedEmoji = e),
           onConfirm: () => _confirmAdd(latlng),
+        ),
+      ),
+    );
+  }
+
+  void _showAllPinsSheet(List<PlacePin> places) {
+    final sorted = [...places]..sort((a, b) {
+        if (a.visited != b.visited) return a.visited ? 1 : -1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.35,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: AppColors.bgMid,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Row(
+                  children: [
+                    const Text('All Pinned Locations',
+                        style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    Text('${places.length}',
+                        style: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 13)),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+                  itemCount: sorted.length,
+                  separatorBuilder: (_, i) => const SizedBox(height: 4),
+                  itemBuilder: (_, i) {
+                    final p = sorted[i];
+                    return ListTile(
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        _flyTo(p);
+                      },
+                      leading: Text(p.emoji ?? '📍',
+                          style: const TextStyle(fontSize: 24)),
+                      title: Text(p.name,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14)),
+                      subtitle: p.note != null
+                          ? Text(p.note!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: AppColors.textSecondary, fontSize: 12))
+                          : null,
+                      trailing: Icon(
+                        p.visited
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        color: p.visited ? _kGreen : AppColors.textMuted,
+                        size: 18,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
