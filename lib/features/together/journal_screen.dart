@@ -1353,6 +1353,7 @@ class _BookViewState extends ConsumerState<_BookView> {
                 ),
                 decoration: const InputDecoration(
                   border: InputBorder.none,
+                  filled: false,
                   hintText: 'Entry title...',
                   hintStyle: TextStyle(color: Color(0x55F5DEB3)),
                 ),

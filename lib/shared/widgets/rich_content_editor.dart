@@ -380,6 +380,13 @@ class _TextBlockEditor extends StatelessWidget {
           ),
           decoration: InputDecoration(
             border: InputBorder.none,
+            // Without this, the field inherits the app's global
+            // InputDecorationTheme (filled: true, a dark plum fill) and
+            // that fill — being nearly as dark as this editor's own text
+            // colors — makes whatever's typed unreadable against it.
+            // Every caller already paints its own background behind this
+            // editor, so it must always render transparent.
+            filled: false,
             contentPadding: const EdgeInsets.symmetric(vertical: 4),
             hintText: _hintText,
             hintStyle: TextStyle(

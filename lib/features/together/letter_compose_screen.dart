@@ -439,6 +439,11 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                                       hintText: 'What\'s the occasion?',
                                       hintStyle: TextStyle(color: AppColors.textMuted),
                                       border: InputBorder.none,
+                                      // Otherwise the global dark-fill theme
+                                      // paints a solid layer under this
+                                      // frosted-glass field, defeating the
+                                      // blur.
+                                      filled: false,
                                       contentPadding: EdgeInsets.fromLTRB(18, 16, 8, 16),
                                     ),
                                   ),

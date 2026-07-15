@@ -1118,6 +1118,11 @@ class _PaperSection extends StatelessWidget {
                   style: GoogleFonts.lato(color: const Color(0xFF2A1A0A), fontSize: 14, height: 1.6),
                   decoration: InputDecoration(
                     border: InputBorder.none,
+                    // Without this, the field inherits the app's global
+                    // dark-fill InputDecorationTheme, which is nearly as
+                    // dark as this editor's own text color — hiding
+                    // whatever's typed against its own background.
+                    filled: false,
                     hintText: hint,
                     hintStyle: TextStyle(color: const Color(0xFF2A1A0A).withValues(alpha: 0.4)),
                   ),
