@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../delight/delight.dart';
 
 class AppColors {
   static const Color defaultAccent = Color(0xFFFF6B8A);
@@ -296,6 +297,8 @@ class GradientButton extends StatefulWidget {
   final VoidCallback? onTap;
   final bool loading;
   final double width;
+  // See SquishyTap.cuteStickers — same playful jump-burst accent.
+  final List<String>? cuteStickers;
 
   const GradientButton({
     super.key,
@@ -303,6 +306,7 @@ class GradientButton extends StatefulWidget {
     this.onTap,
     this.loading = false,
     this.width = double.infinity,
+    this.cuteStickers,
   });
 
   @override
@@ -344,6 +348,14 @@ class _GradientButtonState extends State<GradientButton>
     if (widget.loading || widget.onTap == null) return;
     HapticFeedback.lightImpact();
     _ctrl.forward(from: 0);
+    final stickers = widget.cuteStickers;
+    if (stickers != null && stickers.isNotEmpty) {
+      final box = context.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) {
+        final origin = box.localToGlobal(box.size.center(Offset.zero));
+        FloatingStickers.burst(context, stickers: stickers, count: 3, origin: origin);
+      }
+    }
     widget.onTap!();
   }
 
@@ -396,12 +408,17 @@ class SquishyTap extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  // When set, a couple of these emoji "jump" up from the widget and fade
+  // out on tap — a light, playful accent for primary actions. Keep it to
+  // the app's real delightful moments, not every single tap everywhere.
+  final List<String>? cuteStickers;
 
   const SquishyTap({
     super.key,
     required this.child,
     this.onTap,
     this.onLongPress,
+    this.cuteStickers,
   });
 
   @override
@@ -457,6 +474,14 @@ class _SquishyTapState extends State<SquishyTap>
           : () {
               HapticFeedback.selectionClick();
               _ctrl.forward(from: 0);
+              final stickers = widget.cuteStickers;
+              if (stickers != null && stickers.isNotEmpty) {
+                final box = context.findRenderObject() as RenderBox?;
+                if (box != null && box.hasSize) {
+                  final origin = box.localToGlobal(box.size.center(Offset.zero));
+                  FloatingStickers.burst(context, stickers: stickers, count: 3, origin: origin);
+                }
+              }
               widget.onTap!();
             },
       onLongPress: widget.onLongPress,

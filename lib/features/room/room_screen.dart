@@ -643,6 +643,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                       // lands as a present box on their screen.
                       SquishyTap(
                         onTap: _sendHomeGift,
+                        cuteStickers: const ['🎁', '💖'],
                         child: Container(
                           width: 38,
                           height: 38,

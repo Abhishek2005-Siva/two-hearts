@@ -146,6 +146,8 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen>
   String? _placingCatalogId;
   String? _movingItemId;
   late final AnimationController _glow;
+  final _viewerCtrl = TransformationController();
+  bool _centered = false;
 
   @override
   void initState() {
@@ -157,7 +159,19 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen>
   @override
   void dispose() {
     _glow.dispose();
+    _viewerCtrl.dispose();
     super.dispose();
+  }
+
+  // Center the room in the viewport the first time it's laid out — after
+  // that the user is free to pinch-zoom and pan wherever they like.
+  void _centerViewerOnce(BoxConstraints constraints) {
+    if (_centered) return;
+    _centered = true;
+    final dx = (constraints.maxWidth - _kCanvasW) / 2;
+    final dy = (constraints.maxHeight - _kCanvasH) / 2;
+    _viewerCtrl.value = Matrix4.identity()
+      ..translateByDouble(dx, dy.clamp(0, double.infinity), 0, 1);
   }
 
   bool get _isPlacing => _placingCatalogId != null || _movingItemId != null;
@@ -568,41 +582,49 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen>
               onMyItemsTap: () => _showMyItems(placed),
             ),
             Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: GestureDetector(
-                      onTapUp: (d) => _handleSceneTap(d.localPosition, renders, placed),
-                      child: SizedBox(
-                        width: _kCanvasW,
-                        height: _kCanvasH,
-                        child: Stack(
-                          children: [
-                            AnimatedBuilder(
-                              animation: _glow,
-                              builder: (_, _) => CustomPaint(
-                                size: const Size(_kCanvasW, _kCanvasH),
-                                painter: _IsoScenePainter(
-                                  floor: floor,
-                                  wall: wall,
-                                  lighting: lighting,
-                                  glowT: _glow.value,
-                                  items: renders,
-                                  highlightTiles: _isPlacing ? occupiedForHighlight : null,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  _centerViewerOnce(constraints);
+                  return InteractiveViewer(
+                    transformationController: _viewerCtrl,
+                    constrained: false,
+                    minScale: 0.6,
+                    maxScale: 3.0,
+                    boundaryMargin: const EdgeInsets.all(120),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: GestureDetector(
+                        onTapUp: (d) => _handleSceneTap(d.localPosition, renders, placed),
+                        child: SizedBox(
+                          width: _kCanvasW,
+                          height: _kCanvasH,
+                          child: Stack(
+                            children: [
+                              AnimatedBuilder(
+                                animation: _glow,
+                                builder: (_, _) => CustomPaint(
+                                  size: const Size(_kCanvasW, _kCanvasH),
+                                  painter: _IsoScenePainter(
+                                    floor: floor,
+                                    wall: wall,
+                                    lighting: lighting,
+                                    glowT: _glow.value,
+                                    items: renders,
+                                    highlightTiles: _isPlacing ? occupiedForHighlight : null,
+                                  ),
                                 ),
                               ),
-                            ),
-                            for (final r in renders) ..._buildSpriteWidgets(r),
-                            for (final r in renders)
-                              if (r.entry.id == 'photo_wall' && r.photoUrls.isNotEmpty)
-                                ..._buildPhotoThumbs(r),
-                          ],
+                              for (final r in renders) ..._buildSpriteWidgets(r),
+                              for (final r in renders)
+                                if (r.entry.id == 'photo_wall' && r.photoUrls.isNotEmpty)
+                                  ..._buildPhotoThumbs(r),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
             _InventoryDrawer(
@@ -651,9 +673,17 @@ class _Header extends StatelessWidget {
                 ? Text('Tap a tile to place it',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.textPrimary.withValues(alpha: 0.9), fontSize: 14))
-                : Text('Our Home',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.displayMedium?.copyWith(fontSize: 22)),
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Our Future Home',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.displayMedium?.copyWith(fontSize: 22)),
+                      const Text('Design it together — pinch to zoom ♡',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 11.5)),
+                    ],
+                  ),
           ),
           if (isPlacing)
             TextButton(

@@ -354,8 +354,9 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
                       child: _sending
                           ? const SizedBox(width: 24, height: 24,
                               child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))
-                          : GestureDetector(
+                          : SquishyTap(
                               onTap: _send,
+                              cuteStickers: const ['💌', '✨', '💕'],
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                                 decoration: BoxDecoration(

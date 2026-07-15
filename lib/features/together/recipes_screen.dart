@@ -827,6 +827,7 @@ class _RecipeWritingStation extends StatelessWidget {
           Expanded(
             child: SquishyTap(
               onTap: onTap,
+              cuteStickers: const ['🍰', '✨'],
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 decoration: BoxDecoration(

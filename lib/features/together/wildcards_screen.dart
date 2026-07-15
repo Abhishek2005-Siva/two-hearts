@@ -315,6 +315,7 @@ void showGiveWildcardSheet(BuildContext context, WidgetRef ref, {WildcardRequest
                 const SizedBox(height: 20),
                 GradientButton(
                   label: gifting ? 'Gift This Card 🎁' : 'Draw & Send 🎴',
+                  cuteStickers: const ['🎴', '✨', '🃏'],
                   onTap: () {
                     final text = ctrl.text.trim();
                     if (text.isEmpty) return;
@@ -419,6 +420,7 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen> {
               const SizedBox(height: 20),
               GradientButton(
                 label: 'Send Request',
+                cuteStickers: const ['🥺', '✨'],
                 onTap: () async {
                   final coupleId = ref.read(coupleIdProvider);
                   final uid = FirebaseAuth.instance.currentUser?.uid;

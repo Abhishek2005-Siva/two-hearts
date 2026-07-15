@@ -876,6 +876,7 @@ class _BookCard extends StatelessWidget {
             const SizedBox(height: 12),
             SquishyTap(
               onTap: onToggleRead,
+              cuteStickers: const ['📖', '💞'],
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 13),
@@ -1159,6 +1160,7 @@ class _AddBookSheetState extends State<_AddBookSheet> {
             GradientButton(
               label: 'Add to wishlist',
               loading: _loading,
+              cuteStickers: const ['📚', '✨'],
               onTap: _submit,
             ),
           ],

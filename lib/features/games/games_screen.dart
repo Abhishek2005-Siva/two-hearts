@@ -564,7 +564,11 @@ class _TruthJarTabState extends ConsumerState<_TruthJarTab> {
             ),
             const SizedBox(height: 14),
             if (myAnswer == null)
-              GradientButton(label: 'Submit answer', onTap: _submit, loading: _submitting)
+              GradientButton(
+                  label: 'Submit answer',
+                  onTap: _submit,
+                  loading: _submitting,
+                  cuteStickers: const ['🎉', '✨'])
             else
               Container(
                 padding: const EdgeInsets.all(16),
@@ -1032,7 +1036,10 @@ class _ScribbleTabState extends ConsumerState<_ScribbleTab> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 20),
-                  GradientButton(label: 'I\'ll Draw!', onTap: _startGame),
+                  GradientButton(
+                      label: 'I\'ll Draw!',
+                      onTap: _startGame,
+                      cuteStickers: const ['🎨', '✨']),
                 ],
               ),
             ),

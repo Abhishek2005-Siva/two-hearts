@@ -1637,8 +1637,9 @@ class _MemoryTile extends StatelessWidget {
               if (!selectMode)
                 Positioned(
                   top: 6, right: 6,
-                  child: GestureDetector(
+                  child: SquishyTap(
                     onTap: onFavorite,
+                    cuteStickers: memory.favorite ? null : const ['💖'],
                     child: Container(
                       padding: const EdgeInsets.all(5),
                       decoration: const BoxDecoration(
