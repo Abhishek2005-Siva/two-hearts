@@ -699,6 +699,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                           context.push('/room/decorate');
                         },
                       ),
+                      _NotificationBell(
+                        unreadCount: ref.watch(unreadNotificationsCountProvider),
+                        accent: accent,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          context.push('/notifications');
+                        },
+                      ),
                       IconButton(
                         icon: const Icon(Icons.tune_rounded, color: Colors.white),
                         onPressed: () => _showSettings(context),
@@ -998,6 +1006,97 @@ class _ThinkingOfYouPill extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Notification Bell ─────────────────────────────────────────────────────
+
+class _NotificationBell extends StatelessWidget {
+  final int unreadCount;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _NotificationBell({
+    required this.unreadCount,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasUnread = unreadCount > 0;
+    final bell = SquishyTap(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        margin: const EdgeInsets.only(right: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: hasUnread
+                ? accent.withValues(alpha: 0.7)
+                : Colors.white.withValues(alpha: 0.15),
+            width: hasUnread ? 1.2 : 0.8,
+          ),
+          boxShadow: hasUnread
+              ? [
+                  BoxShadow(
+                      color: accent.withValues(alpha: 0.55), blurRadius: 14),
+                  BoxShadow(
+                      color: accent.withValues(alpha: 0.25), blurRadius: 26),
+                ]
+              : null,
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Center(
+              child: Icon(Icons.mail_outline_rounded,
+                  color: Colors.white, size: 18),
+            ),
+            if (hasUnread)
+              Positioned(
+                top: -4,
+                right: -4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                  constraints: const BoxConstraints(minWidth: 17),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                        colors: [accent, AppColors.coral]),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                          color: accent.withValues(alpha: 0.7), blurRadius: 6),
+                    ],
+                  ),
+                  child: Text(
+                    unreadCount > 9 ? '9+' : '$unreadCount',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        height: 1.2),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!hasUnread) return bell;
+    return bell
+        .animate(onPlay: (c) => c.repeat(reverse: true))
+        .scale(
+          begin: const Offset(1, 1),
+          end: const Offset(1.06, 1.06),
+          duration: 900.ms,
+          curve: Curves.easeInOut,
+        );
   }
 }
 

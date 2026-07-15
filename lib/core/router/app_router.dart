@@ -27,6 +27,7 @@ import '../../features/places/places_screen.dart';
 import '../../features/books/book_wishlist_screen.dart';
 import '../../features/cinema/cinema_screen.dart';
 import '../../features/listen/listen_together_screen.dart';
+import '../../features/notifications/notifications_screen.dart';
 import '../firebase/models.dart';
 import '../providers/providers.dart';
 import '../shell/main_shell.dart';
@@ -196,6 +197,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/places', builder: (_, _) => const PlacesScreen()),
           GoRoute(path: '/books', builder: (_, _) => const BookWishlistScreen()),
           GoRoute(path: '/listen', builder: (_, _) => const ListenTogetherScreen()),
+          GoRoute(path: '/notifications', builder: (_, _) => const NotificationsScreen()),
         ],
       ),
     ],

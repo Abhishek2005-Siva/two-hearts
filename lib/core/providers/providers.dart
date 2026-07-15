@@ -212,6 +212,21 @@ final unreadChatCountProvider = Provider<int>((ref) {
       .length;
 });
 
+// ── Notifications (shared activity feed) ──────────────────────────────────
+
+final notificationsProvider = StreamProvider<List<AppNotification>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchNotifications(coupleId);
+});
+
+final unreadNotificationsCountProvider = Provider<int>((ref) {
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  final notifications = ref.watch(notificationsProvider).valueOrNull;
+  if (me == null || notifications == null) return 0;
+  return notifications.where((n) => n.isUnreadFor(me.uid)).length;
+});
+
 // ── Incoming Gift (wild idea present box) ─────────────────────────────────
 
 final incomingGiftProvider = StreamProvider<Map<String, dynamic>?>((ref) {
