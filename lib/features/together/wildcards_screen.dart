@@ -106,17 +106,22 @@ Color _suitColor(WildcardSuit? s) {
   return (rank, suit);
 }
 
-/// Shows the "give a Wildcard" compose sheet — draws a random card and sends
-/// it once submitted. Reused by both the Wildcards screen itself and any
-/// other quick-access entry point (e.g. Together's Quick Picks row).
+/// Shows the "give a Wildcard" compose sheet. Defaults to a random draw, but
+/// offers a "Gift a specific card" toggle so a rank + suit can be hand-picked
+/// instead — for when the card itself should mean something (e.g. the Queen
+/// of Hearts). Reused by both the Wildcards screen itself and any other
+/// quick-access entry point (e.g. Together's Quick Picks row).
 void showGiveWildcardSheet(BuildContext context, WidgetRef ref, {WildcardRequest? forRequest}) {
   final ctrl = TextEditingController(text: forRequest?.note ?? '');
+  bool gifting = false;
+  WildcardRank pickedRank = WildcardRank.ace;
+  WildcardSuit pickedSuit = WildcardSuit.hearts;
 
-  Future<void> sendCard(String favorText) async {
+  Future<void> sendCard(String favorText, (WildcardRank, WildcardSuit?)? chosen) async {
     final coupleId = ref.read(coupleIdProvider);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (coupleId == null || uid == null) return;
-    final (rank, suit) = _drawRandomCard();
+    final (rank, suit) = chosen ?? _drawRandomCard();
     final card = WildCard(
       id: const Uuid().v4(),
       favorText: favorText.trim(),
@@ -145,82 +150,220 @@ void showGiveWildcardSheet(BuildContext context, WidgetRef ref, {WildcardRequest
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
-    builder: (sheetCtx) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
-      child: Container(
-        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(sheetCtx).padding.bottom + 24),
-        decoration: const BoxDecoration(
-          color: AppColors.bgMid,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36, height: 4,
-                decoration: BoxDecoration(
-                    color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              forRequest != null ? 'Grant this Wildcard' : 'Give a Wildcard',
-              style: const TextStyle(
-                  color: AppColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            const Text('A random card will be drawn when you send it ♡',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              maxLines: 3,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(
-                hintText: 'What\'s the favor?',
-                hintStyle: TextStyle(color: AppColors.textMuted),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _kFavorIdeas
-                  .map((idea) => GestureDetector(
-                        onTap: () => ctrl.text = idea,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.bgCard,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppColors.divider, width: 0.5),
-                          ),
-                          child: Text(idea,
-                              style: const TextStyle(
-                                  color: AppColors.textSecondary, fontSize: 12)),
+    builder: (sheetCtx) => StatefulBuilder(
+      builder: (sheetCtx, setSheetState) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(sheetCtx).padding.bottom + 24),
+          decoration: const BoxDecoration(
+            color: AppColors.bgMid,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36, height: 4,
+                    decoration: BoxDecoration(
+                        color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  forRequest != null ? 'Grant this Wildcard' : 'Give a Wildcard',
+                  style: const TextStyle(
+                      color: AppColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  gifting
+                      ? 'Pick the exact card to gift ♡'
+                      : 'A random card will be drawn when you send it ♡',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
+                ),
+                const SizedBox(height: 14),
+                // Random draw / gift-a-specific-card toggle
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: AppColors.bgCard,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _ModeTab(
+                          label: '🎴 Random draw',
+                          selected: !gifting,
+                          onTap: () => setSheetState(() => gifting = false),
                         ),
-                      ))
-                  .toList(),
+                      ),
+                      Expanded(
+                        child: _ModeTab(
+                          label: '🎁 Gift a card',
+                          selected: gifting,
+                          onTap: () => setSheetState(() => gifting = true),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (gifting) ...[
+                  const SizedBox(height: 16),
+                  const Text('RANK',
+                      style: TextStyle(
+                          color: AppColors.textMuted, fontSize: 10.5, letterSpacing: 1)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: WildcardRank.values.map((r) {
+                      final selected = r == pickedRank;
+                      return GestureDetector(
+                        onTap: () => setSheetState(() => pickedRank = r),
+                        child: Container(
+                          width: 38, height: 38,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: selected ? AppColors.rose : AppColors.bgCard,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: selected ? AppColors.rose : AppColors.divider),
+                          ),
+                          child: Text(
+                            r == WildcardRank.joker ? '🃏' : _rankLabel(r),
+                            style: TextStyle(
+                                color: selected ? Colors.white : AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  if (pickedRank != WildcardRank.joker) ...[
+                    const SizedBox(height: 14),
+                    const Text('SUIT',
+                        style: TextStyle(
+                            color: AppColors.textMuted, fontSize: 10.5, letterSpacing: 1)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: WildcardSuit.values.map((s) {
+                        final selected = s == pickedSuit;
+                        final suitColor = _suitColor(s);
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () => setSheetState(() => pickedSuit = s),
+                            child: Container(
+                              width: 46, height: 46,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? suitColor.withValues(alpha: 0.18)
+                                    : AppColors.bgCard,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: selected ? suitColor : AppColors.divider,
+                                    width: selected ? 1.5 : 1),
+                              ),
+                              child: Text(_suitSymbol(s),
+                                  style: TextStyle(color: suitColor, fontSize: 20)),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ],
+                const SizedBox(height: 16),
+                TextField(
+                  controller: ctrl,
+                  autofocus: !gifting,
+                  maxLines: 3,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: const InputDecoration(
+                    hintText: 'What\'s the favor?',
+                    hintStyle: TextStyle(color: AppColors.textMuted),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _kFavorIdeas
+                      .map((idea) => GestureDetector(
+                            onTap: () => ctrl.text = idea,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppColors.bgCard,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: AppColors.divider, width: 0.5),
+                              ),
+                              child: Text(idea,
+                                  style: const TextStyle(
+                                      color: AppColors.textSecondary, fontSize: 12)),
+                            ),
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 20),
+                GradientButton(
+                  label: gifting ? 'Gift This Card 🎁' : 'Draw & Send 🎴',
+                  onTap: () {
+                    final text = ctrl.text.trim();
+                    if (text.isEmpty) return;
+                    Navigator.pop(sheetCtx);
+                    sendCard(
+                      text,
+                      gifting
+                          ? (pickedRank,
+                              pickedRank == WildcardRank.joker ? null : pickedSuit)
+                          : null,
+                    );
+                  },
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            GradientButton(
-              label: 'Draw & Send 🎴',
-              onTap: () {
-                final text = ctrl.text.trim();
-                if (text.isEmpty) return;
-                Navigator.pop(sheetCtx);
-                sendCard(text);
-              },
-            ),
-          ],
+          ),
         ),
       ),
     ),
   );
+}
+
+class _ModeTab extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ModeTab({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.rose : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Text(label,
+            style: TextStyle(
+                color: selected ? Colors.white : AppColors.textSecondary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
 }
 
 // ── Main screen ─────────────────────────────────────────────────────────
