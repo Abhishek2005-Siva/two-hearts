@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:video_player/video_player.dart';
+import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -39,6 +41,18 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (coupleId == null || uid == null) return;
     ref.read(firestoreServiceProvider).incrementMemoryView(coupleId, memoryId, uid).ignore();
+  }
+
+  void _showDetails(MemoryModel memory, String? partnerUid, String myUid) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MemoryDetailsSheet(
+        memory: memory,
+        partnerUid: partnerUid,
+        myUid: myUid,
+      ),
+    );
   }
 
   @override
@@ -254,6 +268,42 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
               ),
             ),
           ),
+
+          // Swipe-up-for-details handle. A dedicated small hit target (not a
+          // gesture layered over the photo itself) so it never fights
+          // InteractiveViewer's own pan/zoom for the vertical drag.
+          if (safeIndex < memories.length)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _showDetails(memories[safeIndex], partnerUid, myUid),
+                onVerticalDragEnd: (details) {
+                  if ((details.primaryVelocity ?? 0) < -200) {
+                    _showDetails(memories[safeIndex], partnerUid, myUid);
+                  }
+                },
+                child: Container(
+                  padding: EdgeInsets.fromLTRB(0, 14, 0, MediaQuery.of(context).padding.bottom + 8),
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.keyboard_arrow_up_rounded,
+                          color: Colors.white.withValues(alpha: 0.6), size: 22),
+                      Text('Details',
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -430,6 +480,94 @@ class _PartnerRequestBanner extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+// ── Swipe-up details sheet: location, date/time, view count ──────────────
+
+class _MemoryDetailsSheet extends StatelessWidget {
+  final MemoryModel memory;
+  final String? partnerUid;
+  final String myUid;
+
+  const _MemoryDetailsSheet({
+    required this.memory,
+    required this.partnerUid,
+    required this.myUid,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final when = memory.takenAt ?? memory.createdAt;
+    final myViews = memory.viewCountOf(myUid);
+    final partnerViews = memory.viewCountOf(partnerUid);
+    final totalViews = myViews + partnerViews;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                  color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text('Memory details',
+              style: TextStyle(
+                  color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 16),
+          _DetailRow(
+            icon: Icons.calendar_today_rounded,
+            label: DateFormat('EEEE, MMM d, yyyy · h:mm a').format(when),
+          ),
+          if (memory.location?.isNotEmpty == true) ...[
+            const SizedBox(height: 12),
+            _DetailRow(icon: Icons.location_on_rounded, label: memory.location!),
+          ],
+          const SizedBox(height: 12),
+          _DetailRow(
+            icon: Icons.remove_red_eye_rounded,
+            label: partnerUid == null
+                ? 'Viewed $totalViews time${totalViews == 1 ? '' : 's'}'
+                : 'Viewed $totalViews time${totalViews == 1 ? '' : 's'} '
+                    '(you: $myViews · them: $partnerViews)',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _DetailRow({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: AppColors.textSecondary, size: 18),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(label,
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontSize: 14, height: 1.4)),
         ),
       ],
     );
