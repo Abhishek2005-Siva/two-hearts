@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
 import '../../core/models/content_block.dart';
 import '../../core/providers/providers.dart';
@@ -221,7 +222,7 @@ class TogetherScreen extends ConsumerWidget {
                       icon: Icons.style_rounded,
                       label: 'Random\nQuestion',
                       accent: accent,
-                      onTap: () => _showRandomQuestion(context, accent),
+                      onTap: () => _showRandomQuestion(context, ref, accent),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -341,7 +342,7 @@ class TogetherScreen extends ConsumerWidget {
       () => context.push('/together/journal'),
       () => context.push('/places'),
       () => _showLettersSheet(context, ref, accent),
-      () => _showRandomQuestion(context, accent),
+      () => _showRandomQuestion(context, ref, accent),
       () => _showCoinToss(context, accent),
     ]..shuffle();
     options.first();
@@ -373,60 +374,21 @@ class TogetherScreen extends ConsumerWidget {
     'What\'s one dream you want us to chase together?',
   ];
 
-  void _showRandomQuestion(BuildContext context, Color accent) {
+  void _showRandomQuestion(BuildContext context, WidgetRef ref, Color accent) {
     HapticFeedback.selectionClick();
     final q = _questions[math.Random().nextInt(_questions.length)];
+    final container = ProviderScope.containerOf(context);
     showDialog(
       context: context,
-      builder: (dialogCtx) => Dialog(
-        backgroundColor: AppColors.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('🎴', style: TextStyle(fontSize: 32)),
-              const SizedBox(height: 16),
-              Text(q,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 18,
-                      height: 1.5,
-                      fontWeight: FontWeight.w600)),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(dialogCtx);
-                      _showRandomQuestion(context, accent);
-                    },
-                    child: const Text('Another one',
-                        style: TextStyle(color: AppColors.textMuted)),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(dialogCtx),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      decoration: BoxDecoration(
-                        gradient:
-                            LinearGradient(colors: [accent, AppColors.coral]),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Text('Done',
-                          style: TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.w700)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+      builder: (dialogCtx) => UncontrolledProviderScope(
+        container: container,
+        child: _RandomQuestionDialog(
+          question: q,
+          accent: accent,
+          onAnotherOne: () {
+            Navigator.pop(dialogCtx);
+            _showRandomQuestion(context, ref, accent);
+          },
         ),
       ),
     );
@@ -952,6 +914,141 @@ class _CoinTossDialogState extends State<_CoinTossDialog>
                     child: const Text('Flip again',
                         style: TextStyle(
                             color: Colors.white, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Random Question dialog ─────────────────────────────────────────────────
+
+class _RandomQuestionDialog extends ConsumerStatefulWidget {
+  final String question;
+  final Color accent;
+  final VoidCallback onAnotherOne;
+
+  const _RandomQuestionDialog({
+    required this.question,
+    required this.accent,
+    required this.onAnotherOne,
+  });
+
+  @override
+  ConsumerState<_RandomQuestionDialog> createState() => _RandomQuestionDialogState();
+}
+
+class _RandomQuestionDialogState extends ConsumerState<_RandomQuestionDialog> {
+  final _ctrl = TextEditingController();
+  bool _sending = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendToChat() async {
+    final answer = _ctrl.text.trim();
+    if (answer.isEmpty || _sending) return;
+    final coupleId = ref.read(coupleIdProvider);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (coupleId == null || uid == null) return;
+    setState(() => _sending = true);
+    try {
+      await ref.read(firestoreServiceProvider).sendMessage(
+            coupleId,
+            MessageModel(
+              id: const Uuid().v4(),
+              senderId: uid,
+              content: '🎴 ${widget.question}\n\n$answer',
+              type: MessageType.text,
+              sentAt: DateTime.now(),
+            ),
+          );
+      if (mounted) {
+        HapticFeedback.mediumImpact();
+        Navigator.pop(context);
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AppColors.bgCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('🎴', style: TextStyle(fontSize: 32)),
+            const SizedBox(height: 16),
+            Text(widget.question,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 18,
+                    height: 1.5,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 18),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.bgMid,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.divider),
+              ),
+              child: TextField(
+                controller: _ctrl,
+                autofocus: true,
+                maxLines: 3,
+                minLines: 2,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                decoration: const InputDecoration(
+                  hintText: 'Your answer…',
+                  hintStyle: TextStyle(color: AppColors.textMuted),
+                  border: InputBorder.none,
+                  filled: false,
+                  contentPadding: EdgeInsets.all(14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton(
+                  onPressed: _sending ? null : widget.onAnotherOne,
+                  child: const Text('Another one',
+                      style: TextStyle(color: AppColors.textMuted)),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _sendToChat,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                          colors: [widget.accent, AppColors.coral]),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: _sending
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Send to Chat',
+                            style: TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.w700)),
                   ),
                 ),
               ],
