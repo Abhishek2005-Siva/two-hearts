@@ -55,28 +55,32 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release --dart-define=SPOTIFY_CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}
 
+      - name: Zip APK
+        run: |
+          cd build/app/outputs/flutter-apk
+          zip app-release.zip app-release.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: two-hearts-${{ github.run_number }}
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-release.zip
           retention-days: 30
 
       # A rolling release — same tag every build — so there's one stable
-      # URL that always points at the newest raw .apk (no zip, unlike
-      # Actions artifacts), and so the notify step below can always link
-      # to the same place.
+      # URL that always points at the newest zipped build, and so the
+      # notify step below can always link to the same place.
       - name: Publish rolling release
         uses: ncipollo/release-action@v1
         with:
           tag: latest-build
           name: Latest build
           body: Automatically updated on every push to main. Run ${{ github.run_number }}.
-          artifacts: build/app/outputs/flutter-apk/app-release.apk
+          artifacts: build/app/outputs/flutter-apk/app-release.zip
           allowUpdates: true
           removeArtifacts: true
           makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Notify phone that a build is ready
-        run: node .github/scripts/notify_build.js assets/config/service_account.json "https://github.com/${{ github.repository }}/releases/download/latest-build/app-release.apk"
+        run: node .github/scripts/notify_build.js assets/config/service_account.json "https://github.com/${{ github.repository }}/releases/download/latest-build/app-release.zip"

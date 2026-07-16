@@ -213,16 +213,19 @@ screen looks the way it does, not just what the code does.
 
 ### CI/CD and phone delivery pipeline
 - `.github/workflows/build.yml` runs `flutter build apk` on every push to
-  `main`, then `ncipollo/release-action@v1` publishes/overwrites a single
-  rolling GitHub Release tagged `latest-build` (`allowUpdates: true,
-  removeArtifacts: true, makeLatest: true`) — one permanent download URL,
-  not per-commit releases.
+  `main`, zips the resulting `app-release.apk` into `app-release.zip`
+  (explicit user ask — download link is a zip, not the raw APK), then
+  `ncipollo/release-action@v1` publishes/overwrites a single rolling
+  GitHub Release tagged `latest-build` (`allowUpdates: true,
+  removeArtifacts: true, makeLatest: true`) with that zip — one permanent
+  download URL, not per-commit releases.
 - `.github/scripts/notify_build.js` (plain Node, no npm deps — uses
   built-in `crypto`/`fetch`) JWT-signs the Firebase service account,
   exchanges for an OAuth token, and POSTs an FCM v1 `messages:send` to
   topic `dev_builds` with a `data` payload (`type: build_ready`,
-  `apkUrl`). **Do not** put the link in `android.fcmOptions.link` — that
-  field only exists on `WebpushConfig`, using it on `AndroidConfig`
+  `apkUrl` — actually a `.zip` URL now, needs manual unzip before
+  installing). **Do not** put the link in `android.fcmOptions.link` —
+  that field only exists on `WebpushConfig`, using it on `AndroidConfig`
   causes a 400. `main.dart`'s `_handleNotificationTap` reads
   `message.data['type'] == 'build_ready'` and opens `apkUrl` via
   `url_launcher`.
