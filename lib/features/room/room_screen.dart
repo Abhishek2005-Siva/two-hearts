@@ -700,6 +700,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                           context.push('/room/decorate');
                         },
                       ),
+                      IconButton(
+                        tooltip: 'Draw for them',
+                        icon: const Icon(Icons.brush_rounded, color: Colors.white),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          context.push('/room/draw');
+                        },
+                      ),
                       _NotificationBell(
                         unreadCount: ref.watch(unreadNotificationsCountProvider),
                         accent: accent,

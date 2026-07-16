@@ -52,6 +52,7 @@ dependencies:
   confetti: ^0.7.0
   flutter_local_notifications: ^18.0.1
   vibration: ^2.0.0
+  home_widget: ^0.7.0
 
   # 3D / model viewer
   model_viewer_plus: ^1.10.0

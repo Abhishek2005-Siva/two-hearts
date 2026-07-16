@@ -148,6 +148,12 @@ final homeRoomStyleProvider = StreamProvider<HomeRoomStyle>((ref) {
   return ref.read(firestoreServiceProvider).watchHomeRoomStyle(coupleId);
 });
 
+final homeWidgetDrawingProvider = StreamProvider<HomeWidgetDrawing>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return Stream.value(const HomeWidgetDrawing());
+  return ref.read(firestoreServiceProvider).watchHomeWidgetDrawing(coupleId);
+});
+
 // ── Wildcards ──────────────────────────────────────────────────────────────
 
 final wildcardsProvider = StreamProvider<List<WildCard>>((ref) {

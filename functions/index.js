@@ -176,3 +176,42 @@ exports.onMoodChange = onDocumentWritten(
     });
   }
 );
+
+// ── 4. Drawing pushed to partner's home-screen widget ─────────────────────
+// Triggers on couples/{coupleId}/homeWidget/drawing (singleton doc, replaced
+// on every send). Data-only — no `notification` block — so it silently
+// wakes the app to redraw the widget instead of popping a system banner.
+
+exports.onNewHomeWidgetDrawing = onDocumentWritten(
+  'couples/{coupleId}/homeWidget/drawing',
+  async (event) => {
+    const after = event.data.after;
+    if (!after.exists) return;
+
+    const data = after.data();
+    const { coupleId } = event.params;
+    const senderUid = data.authorUid;
+    const imageUrl = data.imageUrl;
+    if (!imageUrl) return;
+
+    const partnerUid = await getPartnerUid(coupleId, senderUid);
+    if (!partnerUid) return;
+
+    const token = await getToken(partnerUid);
+    if (!token) return;
+
+    try {
+      await getMessaging().send({
+        token,
+        data: {
+          type: 'homeWidgetDrawing',
+          coupleId,
+          imageUrl,
+        },
+        android: { priority: 'high' },
+      });
+    } catch (err) {
+      console.error('FCM send error:', err.message);
+    }
+  }
+);

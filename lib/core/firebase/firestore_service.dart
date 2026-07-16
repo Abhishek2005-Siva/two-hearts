@@ -963,6 +963,27 @@ class FirestoreService {
   Stream<HomeRoomStyle> watchHomeRoomStyle(String coupleId) =>
       _homeStyleDoc(coupleId).snapshots().map(HomeRoomStyle.fromDoc);
 
+  // ── Shared drawing → partner's home-screen widget ───────────────────────
+
+  DocumentReference<Map<String, dynamic>> _homeWidgetDrawingDoc(
+    String coupleId,
+  ) =>
+      _db.collection('couples').doc(coupleId).collection('homeWidget').doc('drawing');
+
+  Future<void> setHomeWidgetDrawing(
+    String coupleId, {
+    required String imageUrl,
+    required String authorUid,
+  }) =>
+      _homeWidgetDrawingDoc(coupleId).set({
+        'imageUrl': imageUrl,
+        'authorUid': authorUid,
+        'createdAt': Timestamp.fromDate(DateTime.now()),
+      }, SetOptions(merge: true));
+
+  Stream<HomeWidgetDrawing> watchHomeWidgetDrawing(String coupleId) =>
+      _homeWidgetDrawingDoc(coupleId).snapshots().map(HomeWidgetDrawing.fromDoc);
+
   // ── Wildcards ────────────────────────────────────────────────────────────
 
   Future<void> sendWildcard(String coupleId, WildCard card) => _db

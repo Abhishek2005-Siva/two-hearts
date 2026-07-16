@@ -939,6 +939,33 @@ class HomeRoomStyle {
       };
 }
 
+/// The couple's current shared drawing — pushed to the partner's Android
+/// home-screen widget. One singleton per couple, replaced on every send
+/// (no history/gallery), same doc shape as [HomeRoomStyle].
+class HomeWidgetDrawing {
+  final String? imageUrl;
+  final String? authorUid;
+  final DateTime? createdAt;
+
+  const HomeWidgetDrawing({this.imageUrl, this.authorUid, this.createdAt});
+
+  factory HomeWidgetDrawing.fromDoc(DocumentSnapshot doc) {
+    if (!doc.exists) return const HomeWidgetDrawing();
+    final d = doc.data() as Map<String, dynamic>;
+    return HomeWidgetDrawing(
+      imageUrl: d['imageUrl'] as String?,
+      authorUid: d['authorUid'] as String?,
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'imageUrl': imageUrl,
+        'authorUid': authorUid,
+        'createdAt': Timestamp.fromDate(DateTime.now()),
+      };
+}
+
 // ──────────────── Wildcards (special favor/grace cards) ────────────────
 
 enum WildcardRank {
