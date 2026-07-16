@@ -205,3 +205,171 @@ The user then explicitly asked to throw all of that away for **genuine
   (`snap_camera_screen.dart`) to match the mirrored live preview — Android
   WebView/camera capture is not mirrored by default even though the
   preview usually is.
+
+## Session history / feature timeline (why things look the way they do)
+
+Roughly chronological. Written so a fresh agent understands *why* a
+screen looks the way it does, not just what the code does.
+
+### CI/CD and phone delivery pipeline
+- `.github/workflows/build.yml` runs `flutter build apk` on every push to
+  `main`, then `ncipollo/release-action@v1` publishes/overwrites a single
+  rolling GitHub Release tagged `latest-build` (`allowUpdates: true,
+  removeArtifacts: true, makeLatest: true`) — one permanent download URL,
+  not per-commit releases.
+- `.github/scripts/notify_build.js` (plain Node, no npm deps — uses
+  built-in `crypto`/`fetch`) JWT-signs the Firebase service account,
+  exchanges for an OAuth token, and POSTs an FCM v1 `messages:send` to
+  topic `dev_builds` with a `data` payload (`type: build_ready`,
+  `apkUrl`). **Do not** put the link in `android.fcmOptions.link` — that
+  field only exists on `WebpushConfig`, using it on `AndroidConfig`
+  causes a 400. `main.dart`'s `_handleNotificationTap` reads
+  `message.data['type'] == 'build_ready'` and opens `apkUrl` via
+  `url_launcher`.
+- Only the account matching `_devEmail` in `main.dart`
+  (`abhishek2005.siva@gmail.com`) auto-subscribes to `dev_builds` — same
+  literal email reused as the Wildcards `_kGranterEmail` gate.
+- Workflow needs `permissions: contents: write` for the release step.
+
+### Together / Memories / Settings visual overhaul (early pass)
+Redesigned to match reference screenshots the user provided, one at a
+time, before the Journal/Letters/Room work:
+- **Together ("Fun") screen**: data-driven "Tonight's Pick" hero card,
+  sectioned `_FeatureCard` grid (2-up, gradient per section), a
+  `_CoinTossDialog` with a real 3D-flip `Transform`+`AnimationController`
+  (`..setEntry(3,2,0.00x)..rotateY(spin)` — the same flip technique later
+  reused for the Wildcards card-reveal dialog).
+- **Memories wall**: `CustomScrollView` + slivers so the whole page is
+  one continuous scroll with a `SliverPersistentHeaderDelegate`-pinned
+  filter row (Google Photos/Apple Photos style) — this was a specific,
+  explicit ask (no "multiple independent scroll views"). Collection cards
+  show a real random 2×2 collage of that collection's own photos (seeded
+  `math.Random`, stable per collection, not literally random every
+  rebuild).
+- **You & Me (settings)**: Love Dial card with a dotted SVG-style
+  connector (`_DottedLink`/`_DotsPainter`), Connection Alerts toggle
+  wired to a real `notifications_enabled` SharedPreferences pref +
+  FCM topic subscribe/unsubscribe (not a fake switch).
+- Recurring principle applied throughout: no fabricated badges/labels —
+  e.g. no "Selfies" filter (can't actually detect selfies), Trips/Dates
+  filters are honest keyword-heuristic matches on titles, described as
+  such, not claimed as real tagging.
+
+### Journal rewrite (bookshelf metaphor)
+- Went through **two** rewrites. First pass had a fixed background image
+  with 3 hardcoded shelf y-positions (`_kShelfFractions`) — bug: a 4th+
+  shelf's books had nowhere to go and silently became horizontally
+  scrollable overflow on shelf 3 forever. Fixed by dropping the fixed
+  image, computing shelf capacity dynamically from available width,
+  grouping entries by year, rendering a scrollable list of `_ShelfRow`s
+  each with its own painted `_WoodPlank`.
+  - Later, a *real* candlelit-bookshelf photo the user supplied
+    (`assets/images/journal_bookshelf_bg.png`) replaced the flat brown
+    background — used as a fixed, non-scrolling full-screen backdrop;
+    the procedurally-drawn shelves/planks/spines scroll on top of it.
+    Pixel-perfect alignment with the photo's own painted shelves was
+    explicitly *not* attempted beyond the first screenful — flagged as a
+    known, accepted limitation.
+- Second pass unified journal entries and letters onto the same shelf via
+  a generic `_ShelfBook` shape, added real filter chips (Letters/Photos/
+  Trips/Dates/Random — Random uses a reroll-able seed, not true random
+  per rebuild), a `_StatsPlaque` with real counts, animated `_BookSpine`
+  (lift-on-press, category icon, bookmark ribbon), and a
+  "Memory of the Day" card (stable per-day pick of a real captioned
+  memory, not fabricated).
+- **Recipes reuses this exact visual system** (same background image,
+  same spine/plank/stats/filter-chip widgets, re-implemented in its own
+  file since Dart privacy means the Journal's widgets can't be imported
+  cross-file) — grouped by meal category instead of year.
+
+### Letters (envelope hero + polish passes)
+- Hero envelope illustration, subject field with an "Inspire me" random-
+  occasion button (explicitly *not* branded "AI" — it's a static curated
+  list), per-unlock-option tinted `_UnlockChip`s (Tomorrow/Next Week/Open
+  When/birthdays/anniversary/custom date, each a fixed accent color),
+  parchment-styled rich-text body editor.
+- Follow-up polish pass added floating sparkles by the title, illustrated
+  per-card background motifs (sunrise/wave/clouds/clock via a small
+  `CustomPainter`), a paperclip on the parchment editor, and a
+  glassmorphism subject field (`BackdropFilter` + translucent gradient) —
+  all explicitly scoped as "vector/illustrated," not photoreal, since
+  there is no image-generation tool available.
+- **Bug fixed once, don't reintroduce**: a multi-block rich-text letter
+  (containing an image/heading/etc., not just plain text) rendered
+  invisible text in the cream-colored preview dialog. Root cause:
+  wrapping `RichContentViewer`/`RichContentEditor` in a `Theme(...)`
+  override does *nothing* for `Text` widgets that don't set their own
+  color — `Text` inherits from the ambient `DefaultTextStyle`, not from
+  `Theme.of(context).textTheme` unless something re-establishes
+  `DefaultTextStyle` (a bare `Theme` widget doesn't). Fix was
+  `DefaultTextStyle.merge(style: TextStyle(color: ...))` around the
+  viewer/editor, and threading an explicit `textColor`/`hintColor` into
+  `_LinkBlockEditor` specifically (the one block type with hardcoded
+  white text).
+- Large-photo-upload bug fixed once: `RichContentEditor`'s image picker
+  used `picker.pickMedia()` with **no** `imageQuality`/`maxWidth` caps,
+  unlike every other upload path in the app (avatar, photo booth,
+  memories all compress first) — a full-res modern camera photo could
+  exceed Cloudinary's upload limit. Fixed by adding
+  `maxWidth: 1920, maxHeight: 1920, imageQuality: 85` to that one
+  `pickMedia()` call.
+
+### Book Wishlist
+- Redesigned around a supplied reference image: header with split-color
+  title, two real-count stat cards, a "wood plank" tab selector
+  (Wishlist/Read Together), and an "open book" parchment panel holding
+  the actual list (no card-per-item chrome) with a page-edge sliver and a
+  ribbon tail. Book covers are colored-spine placeholders with the
+  title's first letter (deterministic color from a hash), or a real
+  cover image if the book has one.
+- A background image the user supplied
+  (`assets/images/book_wishlist_bg.png`) is used as a fixed backdrop the
+  same way the Journal's bookshelf photo is.
+
+### Chat feature additions (pulled from a separate remote session)
+- Message editing, reply-with-preview, view counts, a notifications
+  inbox (bell icon on `/room` + `/notifications` screen), Destinations
+  search improvements (location-biased, opens on current location, "all
+  pins" list), Memories swipe-up detail sheet (location/date/time/view
+  count). A low-contrast reply-preview text color was fixed at some
+  point (check git log for exact commit if it resurfaces).
+
+### Wildcards and Recipes (this session, in order)
+- Wildcards: user's own real relationship tradition ("special cards" for
+  cheering up / apologizing) turned into a feature. Confirmed design
+  choices via direct questions before building: card rank/suit is pure
+  cosmetic flavor (not mechanic-gating), only one account can *grant* a
+  card directly (see gating note above), the other partner can request
+  one that needs approval. Ships with a curated favor-text suggestion
+  list (mirrors the user's own example phrasing) plus free-text entry.
+- Recipes: explicitly asked to reuse "the same UI design like Journal" —
+  built as a near-complete visual clone of the bookshelf system
+  (necessarily a separate implementation file, see above) with a
+  category-appropriate structured editor instead of the journal's
+  free-form rich text.
+
+### The room: isometric → real 3D (biggest single pivot this session)
+See the dedicated "shared 3D room" section above for the full technical
+detail. Order of events, for context: (1) built a from-scratch isometric
+CustomPainter room with a large (~222 item) hand-drawn vector catalog
+across many categories per the user's own wishlist; (2) user said the
+objects "look very very basic" and asked to import real assets from a
+site of their choosing — researched Kenney.nl, found the "Furniture Kit"
+pack's `Isometric/` folder has genuine pre-rendered CC0 PNG sprites (not
+the 3D-model-only pack it first looked like), integrated ~34 of them as
+real `Image.asset` billboards layered over the vector fallback for
+items with no good sprite match; (3) added `InteractiveViewer` pinch-
+zoom/pan and a first pass of app-wide "cute jump-burst" tap animations
+(see `cuteStickers` above); (4) user then asked to throw the *entire*
+isometric approach away for genuine 3D — rebuilt as the Three.js/WebView
+room described above, "basic furniture only." Each of these was its own
+approved decision point, not scope creep — don't be surprised the git
+history shows a feature being built twice in different technologies.
+
+### Memory-system note
+This project's Claude Code long-term memory store
+(`~/.claude/projects/.../memory/`) was **empty** as of this dump — no
+memory entries had been saved during this session. This `CLAUDE.md` is
+the intended substitute: durable, repo-tracked context available to any
+agent (local or cloud) that opens this repository, rather than
+personal cross-session recall tied to one harness/user pairing.
