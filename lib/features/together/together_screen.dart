@@ -13,6 +13,7 @@ import '../../core/models/content_block.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/rich_content_viewer.dart';
+import '../room/room_screen.dart';
 import 'wildcards_screen.dart';
 
 class TogetherScreen extends ConsumerWidget {
@@ -106,6 +107,57 @@ class TogetherScreen extends ConsumerWidget {
                   ),
                 ],
               ).animate().fadeIn(delay: 140.ms).slideY(begin: 0.04),
+              const SizedBox(height: 28),
+
+              _SectionHeader(title: 'Our Room'),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _FeatureCard(
+                      emoji: '🪑',
+                      title: 'Decorate',
+                      subtitle: 'Our shared 3D room',
+                      colors: const [Color(0xFF3E4A2E), Color(0xFF1F2A19)],
+                      onTap: () => context.push('/room/decorate'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _FeatureCard(
+                      emoji: '🎨',
+                      title: 'Draw for them',
+                      subtitle: 'Sends to their widget',
+                      colors: const [Color(0xFF2E3E4A), Color(0xFF19232A)],
+                      onTap: () => context.push('/room/draw'),
+                    ),
+                  ),
+                ],
+              ).animate().fadeIn(delay: 170.ms).slideY(begin: 0.04),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _FeatureCard(
+                      emoji: '🎁',
+                      title: 'Send a Gift',
+                      subtitle: 'A little surprise for them',
+                      colors: const [Color(0xFF5E2E45), Color(0xFF2E1723)],
+                      onTap: () => sendHomeGiftDialog(context, ref),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _FeatureCard(
+                      emoji: '💌',
+                      title: 'Surprises & Settings',
+                      subtitle: 'Nickname, wild ideas & alerts',
+                      colors: const [Color(0xFF4A3E2E), Color(0xFF2A2319)],
+                      onTap: () => showRoomSettingsSheet(context),
+                    ),
+                  ),
+                ],
+              ).animate().fadeIn(delay: 190.ms).slideY(begin: 0.04),
               const SizedBox(height: 28),
 
               _SectionHeader(title: 'Play Together'),

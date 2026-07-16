@@ -217,62 +217,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     _sendThinkingOfYou(message.isEmpty ? null : message);
   }
 
-  Future<void> _sendHomeGift() async {
-    final coupleId = ref.read(coupleIdProvider);
-    final partnerUid = ref.read(partnerUserProvider).valueOrNull?.uid;
-    if (coupleId == null || partnerUid == null) return;
-    HapticFeedback.selectionClick();
-    final ctrl = TextEditingController();
-    final message = await showDialog<String>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('🎁 Send a surprise',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLength: 200,
-          maxLines: 4,
-          minLines: 1,
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-          decoration: InputDecoration(
-            hintText: 'Write something only they should read…',
-            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-            counterStyle: const TextStyle(color: AppColors.textMuted, fontSize: 10),
-            filled: true,
-            fillColor: AppColors.bgMid,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textMuted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, ctrl.text.trim()),
-            child: const Text('Wrap it up 🎁',
-                style: TextStyle(
-                    color: AppColors.rose, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    if (message == null || message.isEmpty || !mounted) return;
-    HapticFeedback.mediumImpact();
-    FloatingStickers.burst(context, stickers: const ['🎁', '🎀'], count: 5);
-    await ref
-        .read(firestoreServiceProvider)
-        .sendGift(coupleId, toUid: partnerUid, message: message);
-  }
-
   void _showMoodPicker() {
     final coupleId = ref.read(coupleIdProvider);
     if (coupleId == null) return;
@@ -495,18 +439,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
     );
   }
 
-  void _showSettings(BuildContext context) {
-    final container = ProviderScope.containerOf(context);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => UncontrolledProviderScope(
-        container: container,
-        child: const _SettingsSheet(),
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _signalsSub?.cancel();
@@ -639,29 +571,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      // Send a custom gift — a little surprise letter that
-                      // lands as a present box on their screen.
-                      SquishyTap(
-                        onTap: _sendHomeGift,
-                        cuteStickers: const ['🎁', '💖'],
-                        child: Container(
-                          width: 38,
-                          height: 38,
-                          margin: const EdgeInsets.only(right: 4),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                                colors: [accent, AppColors.coral]),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                  color: accent.withValues(alpha: 0.4),
-                                  blurRadius: 12),
-                            ],
-                          ),
-                          child: const Icon(Icons.card_giftcard_rounded,
-                              color: Colors.white, size: 18),
-                        ),
-                      ),
                       // Listen Together — tap to open the shared Spotify room
                       SquishyTap(
                         onTap: () {
@@ -692,22 +601,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                             duration: 1200.ms,
                             curve: Curves.easeInOut,
                           ),
-                      IconButton(
-                        tooltip: 'Decorate Our Home',
-                        icon: const Icon(Icons.chair_rounded, color: Colors.white),
-                        onPressed: () {
-                          HapticFeedback.lightImpact();
-                          context.push('/room/decorate');
-                        },
-                      ),
-                      IconButton(
-                        tooltip: 'Draw for them',
-                        icon: const Icon(Icons.brush_rounded, color: Colors.white),
-                        onPressed: () {
-                          HapticFeedback.lightImpact();
-                          context.push('/room/draw');
-                        },
-                      ),
                       _NotificationBell(
                         unreadCount: ref.watch(unreadNotificationsCountProvider),
                         accent: accent,
@@ -715,10 +608,6 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                           HapticFeedback.lightImpact();
                           context.push('/notifications');
                         },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.tune_rounded, color: Colors.white),
-                        onPressed: () => _showSettings(context),
                       ),
                     ],
                   ),
@@ -783,6 +672,76 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
       ),
     );
   }
+}
+
+// ── Room actions — moved out of the home page top bar (kept: Spotify +
+// notifications bell only), exposed here so /together can link to them ────
+
+/// "Send a surprise" gift dialog — was the gift icon on the room top bar.
+Future<void> sendHomeGiftDialog(BuildContext context, WidgetRef ref) async {
+  final coupleId = ref.read(coupleIdProvider);
+  final partnerUid = ref.read(partnerUserProvider).valueOrNull?.uid;
+  if (coupleId == null || partnerUid == null) return;
+  HapticFeedback.selectionClick();
+  final ctrl = TextEditingController();
+  final message = await showDialog<String>(
+    context: context,
+    builder: (dialogCtx) => AlertDialog(
+      backgroundColor: AppColors.bgCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: const Text('🎁 Send a surprise',
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+      content: TextField(
+        controller: ctrl,
+        autofocus: true,
+        maxLength: 200,
+        maxLines: 4,
+        minLines: 1,
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Write something only they should read…',
+          hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+          counterStyle: const TextStyle(color: AppColors.textMuted, fontSize: 10),
+          filled: true,
+          fillColor: AppColors.bgMid,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx),
+          child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx, ctrl.text.trim()),
+          child: const Text('Wrap it up 🎁',
+              style: TextStyle(color: AppColors.rose, fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ),
+  );
+  ctrl.dispose();
+  if (message == null || message.isEmpty || !context.mounted) return;
+  HapticFeedback.mediumImpact();
+  FloatingStickers.burst(context, stickers: const ['🎁', '🎀'], count: 5);
+  await ref.read(firestoreServiceProvider).sendGift(coupleId, toUid: partnerUid, message: message);
+}
+
+/// The nickname / wild-ideas / notification-toggle sheet — was the tune
+/// icon on the room top bar.
+void showRoomSettingsSheet(BuildContext context) {
+  final container = ProviderScope.containerOf(context);
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => UncontrolledProviderScope(
+      container: container,
+      child: const _SettingsSheet(),
+    ),
+  );
 }
 
 // ── Room Scene Painter ────────────────────────────────────────────────────
