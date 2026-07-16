@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Our Future Home</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #0d0710; width: 100%; height: 100%; }
+  canvas { display: block; touch-action: none; }
+  #hint {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    background: rgba(20,12,18,0.72); color: #FDF0F5; font-family: sans-serif;
+    font-size: 13px; padding: 8px 16px; border-radius: 20px; pointer-events: none;
+    opacity: 0; transition: opacity 0.25s ease; white-space: nowrap;
+  }
+  #hint.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="hint"></div>
+<script src="three.min.js"></script>
+<script src="OrbitControls.js"></script>
+<script>
+(function () {
+  // ── Palette (interior-design-expert: warm-neutral Japandi/Scandi base +
+  // the app's own rose/coral/gold accent language) ──────────────────────
+  var FLOORS = {
+    oak:       { color: 0xC9A874, rough: 0.75 },
+    white_oak: { color: 0xE7DCC6, rough: 0.8 },
+    walnut:    { color: 0x6B4226, rough: 0.65 },
+    slate:     { color: 0x7C8593, rough: 0.5 }
+  };
+  var WALLS = {
+    greige:   0xE3DACB,
+    sage:     0xAFC0A4,
+    blush:    0xE8CFC9,
+    charcoal: 0x3A3640
+  };
+  // Ambient/hemisphere (fill) : directional (natural) : point (accent) —
+  // layered per the skill's ambient/task/accent/natural lighting model.
+  var LIGHTING = {
+    warm:    { hemi: 0xFFEEDD, ground: 0x554433, hemiI: 0.75, sunColor: 0xFFDDBB, sunI: 1.05, accent: 0xFFB877, accentI: 1.1 },
+    cool:    { hemi: 0xE8F0FF, ground: 0x445566, hemiI: 0.85, sunColor: 0xEFF6FF, sunI: 1.0,  accent: 0xBBD9FF, accentI: 0.7 },
+    evening: { hemi: 0x3A2E44, ground: 0x1A1420, hemiI: 0.4,  sunColor: 0x8899CC, sunI: 0.25, accent: 0xFF9F5A, accentI: 1.6 }
+  };
+  var ACCENT_ROSE = 0xE8899B, ACCENT_CORAL = 0xFF8C5A, ACCENT_GOLD = 0xE8C170;
+
+  var ROOM = 6.4;      // room is ROOM x ROOM meters
+  var WALL_H = 2.7;
+  var GRID = 0.5;       // placement snap, meters
+
+  var scene, camera, renderer, controls;
+  var floorMesh, wallGroup, hemiLight, sunLight, accentLight;
+  var furnitureGroup;
+  var raycaster, pointer;
+  var placingType = null;
+  var ghost = null;
+  var itemsById = {};   // id -> THREE.Group
+  var currentStyle = { floorId: 'oak', wallId: 'greige', lightingId: 'warm' };
+
+  function post(obj) {
+    if (window.FlutterBridge && window.FlutterBridge.postMessage) {
+      window.FlutterBridge.postMessage(JSON.stringify(obj));
+    }
+  }
+
+  function showHint(text) {
+    var el = document.getElementById('hint');
+    if (!text) { el.classList.remove('show'); return; }
+    el.textContent = text;
+    el.classList.add('show');
+  }
+
+  function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1220);
+    scene.fog = new THREE.Fog(0x1a1220, 9, 18);
+
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(4.2, 4.0, 5.6);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    document.body.appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.0, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 2.5;
+    controls.maxDistance = 11;
+    controls.maxPolarAngle = Math.PI * 0.49;
+    controls.minPolarAngle = Math.PI * 0.12;
+    controls.update();
+
+    hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+    scene.add(hemiLight);
+
+    sunLight = new THREE.DirectionalLight(0xffffff, 1);
+    sunLight.position.set(-4, 6, -3);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(1024, 1024);
+    sunLight.shadow.camera.left = -6;
+    sunLight.shadow.camera.right = 6;
+    sunLight.shadow.camera.top = 6;
+    sunLight.shadow.camera.bottom = -6;
+    sunLight.shadow.camera.far = 20;
+    sunLight.shadow.bias = -0.0015;
+    scene.add(sunLight);
+
+    accentLight = new THREE.PointLight(0xffb877, 1, 6, 2);
+    accentLight.position.set(1.6, 1.5, 1.6);
+    accentLight.castShadow = false;
+    scene.add(accentLight);
+
+    furnitureGroup = new THREE.Group();
+    scene.add(furnitureGroup);
+    wallGroup = new THREE.Group();
+    scene.add(wallGroup);
+
+    buildFloor();
+    buildWalls();
+    applyLighting('warm');
+
+    raycaster = new THREE.Raycaster();
+    pointer = new THREE.Vector2();
+
+    renderer.domElement.addEventListener('pointerdown', onPointerDown, { passive: true });
+    renderer.domElement.addEventListener('pointermove', onPointerMove, { passive: true });
+    renderer.domElement.addEventListener('pointerup', onPointerUp, { passive: true });
+    window.addEventListener('resize', onResize);
+
+    animate();
+    post({ type: 'ready' });
+  }
+
+  function onResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  // ── Room shell ───────────────────────────────────────────────────────
+
+  function buildFloor() {
+    if (floorMesh) { scene.remove(floorMesh); floorMesh.geometry.dispose(); floorMesh.material.dispose(); }
+    var f = FLOORS[currentStyle.floorId] || FLOORS.oak;
+    var geo = new THREE.PlaneGeometry(ROOM, ROOM, 12, 12);
+    var mat = new THREE.MeshStandardMaterial({ color: f.color, roughness: f.rough, metalness: 0.05 });
+    floorMesh = new THREE.Mesh(geo, mat);
+    floorMesh.rotation.x = -Math.PI / 2;
+    floorMesh.receiveShadow = true;
+    scene.add(floorMesh);
+
+    // Subtle plank seams
+    var seamMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.06 });
+    var seamGeo = new THREE.BufferGeometry();
+    var pts = [];
+    for (var i = -ROOM / 2; i <= ROOM / 2; i += 0.5) {
+      pts.push(-ROOM / 2, 0.001, i, ROOM / 2, 0.001, i);
+    }
+    seamGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    var seams = new THREE.LineSegments(seamGeo, seamMat);
+    floorMesh.add(seams);
+    seams.rotation.x = Math.PI / 2; // counter the floor's own rotation (child space)
+  }
+
+  function buildWalls() {
+    while (wallGroup.children.length) {
+      var c = wallGroup.children.pop();
+      c.geometry.dispose(); c.material.dispose();
+    }
+    var color = WALLS[currentStyle.wallId] || WALLS.greige;
+    var mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.92, metalness: 0.0 });
+
+    var back = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, WALL_H), mat);
+    back.position.set(0, WALL_H / 2, -ROOM / 2);
+    back.receiveShadow = true;
+    wallGroup.add(back);
+
+    var left = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, WALL_H), mat.clone());
+    left.material.color.multiplyScalar(0.9);
+    left.position.set(-ROOM / 2, WALL_H / 2, 0);
+    left.rotation.y = Math.PI / 2;
+    left.receiveShadow = true;
+    wallGroup.add(left);
+
+    // A simple lit "window" cutout on the back wall — natural-light cue.
+    var winMat = new THREE.MeshBasicMaterial({ color: 0xFFF4DE });
+    var win = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.6), winMat);
+    win.position.set(1.6, 1.55, -ROOM / 2 + 0.01);
+    wallGroup.add(win);
+    var frameMat = new THREE.LineBasicMaterial({ color: 0x2a2018 });
+    var frame = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.3, 1.6)),
+      frameMat
+    );
+    frame.position.copy(win.position);
+    frame.position.z += 0.005;
+    wallGroup.add(frame);
+  }
+
+  function applyLighting(moodId) {
+    var m = LIGHTING[moodId] || LIGHTING.warm;
+    hemiLight.color.setHex(m.hemi);
+    hemiLight.groundColor.setHex(m.ground);
+    hemiLight.intensity = m.hemiI;
+    sunLight.color.setHex(m.sunColor);
+    sunLight.intensity = m.sunI;
+    accentLight.color.setHex(m.accent);
+    accentLight.intensity = m.accentI;
+    var bg = moodId === 'evening' ? 0x0c0810 : 0x1a1220;
+    scene.background.setHex(bg);
+    scene.fog.color.setHex(bg);
+  }
+
+  // ── Basic furniture builders — simple primitives, not photoreal ────────
+
+  function mat(color, rough, metal) {
+    return new THREE.MeshStandardMaterial({ color: color, roughness: rough === undefined ? 0.7 : rough, metalness: metal === undefined ? 0.05 : metal });
+  }
+
+  function addBox(group, w, h, d, x, y, z, material) {
+    var mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  }
+
+  function addCyl(group, rT, rB, h, x, y, z, material) {
+    var mesh = new THREE.Mesh(new THREE.CylinderGeometry(rT, rB, h, 16), material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  }
+
+  var BUILDERS = {
+    sofa: function () {
+      var g = new THREE.Group();
+      var fabric = mat(ACCENT_ROSE, 0.85);
+      addBox(g, 1.7, 0.36, 0.72, 0, 0.2, 0, fabric);
+      addBox(g, 1.7, 0.42, 0.16, 0, 0.55, -0.28, fabric);
+      addBox(g, 0.16, 0.5, 0.72, -0.77, 0.45, 0, fabric);
+      addBox(g, 0.16, 0.5, 0.72, 0.77, 0.45, 0, fabric);
+      var legMat = mat(0x3a2a1a, 0.5);
+      [[-0.7, -0.28], [0.7, -0.28], [-0.7, 0.28], [0.7, 0.28]].forEach(function (p) {
+        addCyl(g, 0.03, 0.03, 0.14, p[0], 0.02, p[1], legMat);
+      });
+      g.userData.footprint = { w: 1.9, d: 0.9 };
+      return g;
+    },
+    bed: function () {
+      var g = new THREE.Group();
+      var frame = mat(0x5a3d28, 0.6);
+      addBox(g, 1.6, 0.26, 2.0, 0, 0.13, 0, frame);
+      addBox(g, 1.6, 0.5, 0.1, 0, 0.4, -0.95, frame);
+      var mattress = mat(0xF6EEE0, 0.9);
+      addBox(g, 1.5, 0.22, 1.9, 0, 0.37, 0, mattress);
+      var pillow = mat(0xFFFFFF, 0.9);
+      addBox(g, 0.6, 0.14, 0.4, -0.4, 0.53, -0.75, pillow);
+      addBox(g, 0.6, 0.14, 0.4, 0.4, 0.53, -0.75, pillow);
+      var blanket = mat(ACCENT_CORAL, 0.85);
+      addBox(g, 1.5, 0.08, 0.9, 0, 0.46, 0.45, blanket);
+      g.userData.footprint = { w: 1.8, d: 2.2 };
+      return g;
+    },
+    coffee_table: function () {
+      var g = new THREE.Group();
+      var wood = mat(0x6b4a30, 0.55);
+      addBox(g, 0.9, 0.05, 0.55, 0, 0.4, 0, wood);
+      [[-0.4, -0.23], [0.4, -0.23], [-0.4, 0.23], [0.4, 0.23]].forEach(function (p) {
+        addCyl(g, 0.025, 0.025, 0.38, p[0], 0.19, p[1], wood);
+      });
+      g.userData.footprint = { w: 1.0, d: 0.65 };
+      return g;
+    },
+    bookshelf: function () {
+      var g = new THREE.Group();
+      var wood = mat(0x4a3220, 0.6);
+      addBox(g, 0.9, 1.7, 0.32, 0, 0.85, 0, wood);
+      var inner = mat(0x2e2014, 0.7);
+      addBox(g, 0.82, 1.55, 0.02, 0, 0.85, 0.14, inner);
+      var books = [ACCENT_ROSE, ACCENT_CORAL, ACCENT_GOLD, 0x6FBFA0, 0xB8A0D9];
+      for (var shelf = 0; shelf < 3; shelf++) {
+        var y = 0.35 + shelf * 0.5;
+        for (var i = 0; i < 5; i++) {
+          addBox(g, 0.13, 0.32, 0.2, -0.32 + i * 0.16, y, 0.05, mat(books[i % books.length], 0.8));
+        }
+      }
+      g.userData.footprint = { w: 1.0, d: 0.4 };
+      return g;
+    },
+    lamp: function () {
+      var g = new THREE.Group();
+      var metalMat = mat(0x2a2a2a, 0.4, 0.6);
+      addCyl(g, 0.14, 0.16, 0.04, 0, 0.02, 0, metalMat);
+      addCyl(g, 0.02, 0.02, 1.1, 0, 0.58, 0, metalMat);
+      var shadeMat = mat(ACCENT_GOLD, 0.7);
+      shadeMat.emissive = new THREE.Color(0xffcc88);
+      shadeMat.emissiveIntensity = 0.4;
+      addCyl(g, 0.22, 0.16, 0.28, 0, 1.18, 0, shadeMat);
+      var bulb = new THREE.PointLight(0xffcf9e, 0.9, 4.5, 2);
+      bulb.position.set(0, 1.1, 0);
+      g.add(bulb);
+      g.userData.footprint = { w: 0.36, d: 0.36 };
+      return g;
+    },
+    plant: function () {
+      var g = new THREE.Group();
+      var potMat = mat(0xB5681F, 0.8);
+      addCyl(g, 0.18, 0.14, 0.28, 0, 0.14, 0, potMat);
+      var leafMat = mat(0x4A7C59, 0.75);
+      var leafMat2 = mat(0x5C9C6E, 0.75);
+      addCyl(g, 0.02, 0.02, 0.5, 0, 0.5, 0, mat(0x3d5c34, 0.7));
+      [ [0.55, leafMat], [0.42, leafMat2], [0.48, leafMat] ].forEach(function (spec, i) {
+        var leaf = new THREE.Mesh(new THREE.SphereGeometry(spec[0] * 0.4, 8, 8), spec[1]);
+        leaf.position.set((i - 1) * 0.18, 0.75 + i * 0.08, (i % 2) * 0.12 - 0.06);
+        leaf.scale.set(1, 1.3, 1);
+        leaf.castShadow = true;
+        g.add(leaf);
+      });
+      g.userData.footprint = { w: 0.4, d: 0.4 };
+      return g;
+    },
+    rug: function () {
+      var g = new THREE.Group();
+      var rugMat = mat(ACCENT_GOLD, 0.95, 0);
+      var mesh = new THREE.Mesh(new THREE.CircleGeometry(1.0, 32), rugMat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = 0.012;
+      mesh.receiveShadow = true;
+      g.add(mesh);
+      var ringMat = mat(0xffffff, 0.9);
+      ringMat.transparent = true; ringMat.opacity = 0.25;
+      var ring = new THREE.Mesh(new THREE.RingGeometry(0.78, 0.84, 32), ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.013;
+      g.add(ring);
+      g.userData.footprint = { w: 2.0, d: 2.0 };
+      g.userData.flat = true;
+      return g;
+    },
+    chair: function () {
+      var g = new THREE.Group();
+      var fabric = mat(ACCENT_CORAL, 0.8);
+      addBox(g, 0.46, 0.06, 0.46, 0, 0.42, 0, fabric);
+      addBox(g, 0.46, 0.5, 0.06, 0, 0.68, -0.2, fabric);
+      var legMat = mat(0x3a2a1a, 0.5);
+      [[-0.19, -0.19], [0.19, -0.19], [-0.19, 0.19], [0.19, 0.19]].forEach(function (p) {
+        addCyl(g, 0.02, 0.02, 0.4, p[0], 0.2, p[1], legMat);
+      });
+      g.userData.footprint = { w: 0.55, d: 0.55 };
+      return g;
+    }
+  };
+
+  function buildFurnitureMesh(type) {
+    var builder = BUILDERS[type];
+    if (!builder) return null;
+    return builder();
+  }
+
+  // ── Sync from Flutter ───────────────────────────────────────────────
+
+  window.loadRoom = function (jsonStr) {
+    try {
+      var data = JSON.parse(jsonStr);
+      if (data.style) {
+        currentStyle = data.style;
+        buildFloor();
+        buildWalls();
+        applyLighting(currentStyle.lightingId);
+      }
+      while (furnitureGroup.children.length) {
+        furnitureGroup.remove(furnitureGroup.children[0]);
+      }
+      itemsById = {};
+      (data.items || []).forEach(function (it) {
+        var mesh = buildFurnitureMesh(it.type);
+        if (!mesh) return;
+        mesh.position.set(it.x, 0, it.z);
+        mesh.rotation.y = it.rotationY || 0;
+        mesh.userData.itemId = it.id;
+        mesh.userData.itemType = it.type;
+        furnitureGroup.add(mesh);
+        itemsById[it.id] = mesh;
+      });
+    } catch (e) { /* ignore malformed sync */ }
+  };
+
+  window.setStyle = function (floorId, wallId, lightingId) {
+    currentStyle = { floorId: floorId, wallId: wallId, lightingId: lightingId };
+    buildFloor();
+    buildWalls();
+    applyLighting(lightingId);
+  };
+
+  window.enterPlacementMode = function (type) {
+    exitGhost();
+    placingType = type;
+    ghost = buildFurnitureMesh(type);
+    if (!ghost) { placingType = null; return; }
+    ghost.traverse(function (o) {
+      if (o.isMesh) {
+        o.material = o.material.clone();
+        o.material.transparent = true;
+        o.material.opacity = 0.55;
+      }
+    });
+    ghost.visible = false;
+    scene.add(ghost);
+    showHint('Tap the floor to place it');
+  };
+
+  window.exitPlacementMode = function () {
+    exitGhost();
+    showHint(null);
+  };
+
+  function exitGhost() {
+    if (ghost) { scene.remove(ghost); ghost = null; }
+    placingType = null;
+  }
+
+  window.rotateItemMesh = function (id) {
+    var mesh = itemsById[id];
+    if (mesh) mesh.rotation.y += Math.PI / 2;
+  };
+
+  function snap(v) { return Math.round(v / GRID) * GRID; }
+
+  function floorPointFromEvent(ev) {
+    var rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    var hit = raycaster.intersectObject(floorMesh, false);
+    if (!hit.length) return null;
+    var p = hit[0].point;
+    var half = ROOM / 2 - 0.3;
+    return {
+      x: Math.max(-half, Math.min(half, snap(p.x))),
+      z: Math.max(-half, Math.min(half, snap(p.z)))
+    };
+  }
+
+  function onPointerMove(ev) {
+    if (downPos) {
+      var dx = ev.clientX - downPos.x, dy = ev.clientY - downPos.y;
+      if (dx * dx + dy * dy > TAP_SLOP * TAP_SLOP) isDragging = true;
+    }
+    if (!placingType || !ghost) return;
+    var p = floorPointFromEvent(ev);
+    if (!p) { ghost.visible = false; return; }
+    ghost.visible = true;
+    ghost.position.set(p.x, 0, p.z);
+  }
+
+  // A "tap" (place/select) only fires on pointerup if the pointer never
+  // moved past TAP_SLOP since pointerdown — otherwise it was an
+  // OrbitControls drag (rotate/pan) and must not also place/select.
+  var downPos = null;
+  var isDragging = false;
+  var TAP_SLOP = 8;
+
+  function onPointerDown(ev) {
+    downPos = { x: ev.clientX, y: ev.clientY };
+    isDragging = false;
+  }
+
+  function onPointerUp(ev) {
+    var wasDragging = isDragging;
+    downPos = null;
+    isDragging = false;
+    if (wasDragging) return;
+
+    if (placingType) {
+      var p = floorPointFromEvent(ev);
+      if (!p) return;
+      post({ type: 'placed', itemType: placingType, x: p.x, z: p.z, rotationY: 0 });
+      exitGhost();
+      showHint(null);
+      return;
+    }
+    // Selection: raycast against placed furniture.
+    var rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    var hits = raycaster.intersectObjects(furnitureGroup.children, true);
+    if (!hits.length) return;
+    var obj = hits[0].object;
+    while (obj && !obj.userData.itemId) obj = obj.parent;
+    if (obj) post({ type: 'selected', id: obj.userData.itemId });
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

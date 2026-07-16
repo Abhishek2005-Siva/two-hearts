@@ -136,7 +136,7 @@ final roomObjectsProvider = StreamProvider<List<RoomObject>>((ref) {
 
 // ── Home Decor (isometric shared room) ────────────────────────────────────
 
-final homeDecorProvider = StreamProvider<List<HomeDecorItem>>((ref) {
+final homeDecorProvider = StreamProvider<List<Furniture3DItem>>((ref) {
   final coupleId = ref.watch(coupleIdProvider);
   if (coupleId == null) return const Stream.empty();
   return ref.read(firestoreServiceProvider).watchHomeDecor(coupleId);

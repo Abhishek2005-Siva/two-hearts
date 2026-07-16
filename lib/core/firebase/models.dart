@@ -862,46 +862,48 @@ class RoomObject {
       };
 }
 
-// ──────────────── Home Decor (isometric shared room) ────────────────
+// ──────────────── Home Decor (real 3D shared room) ────────────────
 
-/// A single placed piece of furniture/decor in the couple's shared room.
-class HomeDecorItem {
+/// A single placed piece of furniture in the couple's shared 3D room.
+/// Position is continuous room-local meters (floor is the x/z plane, y is
+/// up) rather than a tile grid, since the room is a real Three.js scene.
+class Furniture3DItem {
   final String id;
-  final String catalogId; // key into the static kHomeDecorCatalog list
-  final int col;
-  final int row;
-  final int rotation; // 0/90/180/270 — ignored by items that don't rotate
+  final String type; // key into the JS-side basic furniture catalog
+  final double x;
+  final double z;
+  final double rotationY; // radians around the vertical axis
   final String placedBy;
   final DateTime placedAt;
 
-  const HomeDecorItem({
+  const Furniture3DItem({
     required this.id,
-    required this.catalogId,
-    required this.col,
-    required this.row,
-    this.rotation = 0,
+    required this.type,
+    required this.x,
+    required this.z,
+    this.rotationY = 0,
     required this.placedBy,
     required this.placedAt,
   });
 
-  factory HomeDecorItem.fromDoc(DocumentSnapshot doc) {
+  factory Furniture3DItem.fromDoc(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
-    return HomeDecorItem(
+    return Furniture3DItem(
       id: doc.id,
-      catalogId: d['catalogId'] ?? '',
-      col: (d['col'] ?? 0) as int,
-      row: (d['row'] ?? 0) as int,
-      rotation: (d['rotation'] ?? 0) as int,
+      type: d['type'] ?? '',
+      x: (d['x'] ?? 0).toDouble(),
+      z: (d['z'] ?? 0).toDouble(),
+      rotationY: (d['rotationY'] ?? 0).toDouble(),
       placedBy: d['placedBy'] ?? '',
       placedAt: (d['placedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
   Map<String, dynamic> toMap() => {
-        'catalogId': catalogId,
-        'col': col,
-        'row': row,
-        'rotation': rotation,
+        'type': type,
+        'x': x,
+        'z': z,
+        'rotationY': rotationY,
         'placedBy': placedBy,
         'placedAt': Timestamp.fromDate(placedAt),
       };
@@ -916,7 +918,7 @@ class HomeRoomStyle {
 
   const HomeRoomStyle({
     this.floorId = 'oak',
-    this.wallId = 'cream_paint',
+    this.wallId = 'greige',
     this.lightingId = 'warm',
   });
 
@@ -925,10 +927,16 @@ class HomeRoomStyle {
     final d = doc.data() as Map<String, dynamic>;
     return HomeRoomStyle(
       floorId: d['floorId'] ?? 'oak',
-      wallId: d['wallId'] ?? 'cream_paint',
+      wallId: d['wallId'] ?? 'greige',
       lightingId: d['lightingId'] ?? 'warm',
     );
   }
+
+  Map<String, dynamic> toMap() => {
+        'floorId': floorId,
+        'wallId': wallId,
+        'lightingId': lightingId,
+      };
 }
 
 // ──────────────── Wildcards (special favor/grace cards) ────────────────

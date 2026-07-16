@@ -904,46 +904,46 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(RoomObject.fromDoc).toList());
 
-  // ── Home Decor (isometric shared room) ──────────────────────────────────
+  // ── Home Decor (real 3D shared room) ─────────────────────────────────────
 
-  Future<void> placeHomeDecorItem(String coupleId, HomeDecorItem item) => _db
+  Future<void> placeFurniture3D(String coupleId, Furniture3DItem item) => _db
       .collection('couples')
       .doc(coupleId)
       .collection('homeDecor')
       .doc(item.id)
       .set(item.toMap());
 
-  Future<void> moveHomeDecorItem(
-          String coupleId, String itemId, int col, int row) =>
+  Future<void> moveFurniture3D(
+          String coupleId, String itemId, double x, double z) =>
       _db
           .collection('couples')
           .doc(coupleId)
           .collection('homeDecor')
           .doc(itemId)
-          .update({'col': col, 'row': row});
+          .update({'x': x, 'z': z});
 
-  Future<void> rotateHomeDecorItem(
-          String coupleId, String itemId, int rotation) =>
+  Future<void> rotateFurniture3D(
+          String coupleId, String itemId, double rotationY) =>
       _db
           .collection('couples')
           .doc(coupleId)
           .collection('homeDecor')
           .doc(itemId)
-          .update({'rotation': rotation});
+          .update({'rotationY': rotationY});
 
-  Future<void> removeHomeDecorItem(String coupleId, String itemId) => _db
+  Future<void> removeFurniture3D(String coupleId, String itemId) => _db
       .collection('couples')
       .doc(coupleId)
       .collection('homeDecor')
       .doc(itemId)
       .delete();
 
-  Stream<List<HomeDecorItem>> watchHomeDecor(String coupleId) => _db
+  Stream<List<Furniture3DItem>> watchHomeDecor(String coupleId) => _db
       .collection('couples')
       .doc(coupleId)
       .collection('homeDecor')
       .snapshots()
-      .map((s) => s.docs.map(HomeDecorItem.fromDoc).toList());
+      .map((s) => s.docs.map(Furniture3DItem.fromDoc).toList());
 
   DocumentReference<Map<String, dynamic>> _homeStyleDoc(String coupleId) =>
       _db.collection('couples').doc(coupleId).collection('homeRoom').doc('style');
