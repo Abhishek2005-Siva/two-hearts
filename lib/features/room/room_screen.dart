@@ -609,6 +609,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                           context.push('/notifications');
                         },
                       ),
+                      IconButton(
+                        tooltip: 'Settings',
+                        icon: const Icon(Icons.settings_rounded, color: Colors.white),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          context.push('/you');
+                        },
+                      ),
                     ],
                   ),
                 ),

@@ -47,8 +47,8 @@ class _MainShellState extends ConsumerState<MainShell>
     _Tab(icon: Icons.house_rounded, label: 'Home', path: '/room'),
     _Tab(icon: Icons.chat_bubble_rounded, label: 'Chat', path: '/chat'),
     _Tab(icon: Icons.photo_library_rounded, label: 'Memories', path: '/memory'),
+    _Tab(icon: Icons.calendar_month_rounded, label: 'Calendar', path: '/calendar'),
     _Tab(icon: Icons.favorite_rounded, label: 'Fun', path: '/together'),
-    _Tab(icon: Icons.settings_rounded, label: 'Settings', path: '/you'),
   ];
 
   static int? _sectionIndex(String? section) {

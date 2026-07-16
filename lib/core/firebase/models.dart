@@ -504,6 +504,40 @@ class MemoryModel {
       };
 }
 
+/// One shared photo per calendar day — the Daily Snap Calendar. Doc id is
+/// the date key ('yyyy-MM-dd'); whichever partner uploads first fills the
+/// slot for that day (one snap represents the day, not per-partner dual
+/// slots). Missed days simply have no doc — no fabricated/backfilled entries.
+class DailySnap {
+  final String dateKey;
+  final String imageUrl;
+  final String uploaderUid;
+  final DateTime createdAt;
+
+  const DailySnap({
+    required this.dateKey,
+    required this.imageUrl,
+    required this.uploaderUid,
+    required this.createdAt,
+  });
+
+  factory DailySnap.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return DailySnap(
+      dateKey: doc.id,
+      imageUrl: d['imageUrl'] ?? '',
+      uploaderUid: d['uploaderUid'] ?? '',
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'imageUrl': imageUrl,
+        'uploaderUid': uploaderUid,
+        'createdAt': Timestamp.fromDate(createdAt),
+      };
+}
+
 // ──────────────── Photo Collection ────────────────
 
 class PhotoCollection {

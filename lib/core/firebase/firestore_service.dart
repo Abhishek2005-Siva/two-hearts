@@ -785,6 +785,22 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(MemoryModel.fromDoc).toList());
 
+  // ── Daily Snap Calendar ──────────────────────────────────────────────────
+
+  Future<void> setDailySnap(String coupleId, DailySnap snap) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('dailySnaps')
+      .doc(snap.dateKey)
+      .set(snap.toMap());
+
+  Stream<List<DailySnap>> watchDailySnaps(String coupleId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('dailySnaps')
+      .snapshots()
+      .map((s) => s.docs.map(DailySnap.fromDoc).toList());
+
   Stream<List<MemoryModel>> watchCollectionMemories(String coupleId, String collectionId) => _db
       .collection('couples').doc(coupleId).collection('memories')
       .where('collectionId', isEqualTo: collectionId)

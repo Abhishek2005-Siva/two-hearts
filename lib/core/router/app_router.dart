@@ -10,6 +10,7 @@ import '../../features/chat/chat_screen.dart';
 import '../../features/room/room_screen.dart';
 import '../../features/room/home_decorate_screen.dart';
 import '../../features/room/widget_draw_screen.dart';
+import '../../features/calendar/daily_snap_calendar_screen.dart';
 import '../../features/memory/memory_wall_screen.dart';
 import '../../features/together/together_screen.dart';
 import '../../features/you_and_me/you_and_me_screen.dart';
@@ -173,6 +174,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 MemoryDetailScreen(memoryId: state.pathParameters['id']!),
           ),
           GoRoute(
+            path: '/calendar',
+            pageBuilder: (_, _) => _tabPage(const DailySnapCalendarScreen()),
+          ),
+          GoRoute(
             path: '/together',
             pageBuilder: (_, _) => _tabPage(const TogetherScreen()),
           ),
@@ -190,7 +195,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/you',
-            pageBuilder: (_, _) => _tabPage(const YouAndMeScreen()),
+            builder: (_, _) => const YouAndMeScreen(),
           ),
           GoRoute(path: '/games', builder: (_, _) => const GamesScreen()),
           GoRoute(path: '/dates', builder: (_, _) => const DateIdeasScreen()),

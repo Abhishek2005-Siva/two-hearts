@@ -154,6 +154,12 @@ final homeWidgetDrawingProvider = StreamProvider<HomeWidgetDrawing>((ref) {
   return ref.read(firestoreServiceProvider).watchHomeWidgetDrawing(coupleId);
 });
 
+final dailySnapsProvider = StreamProvider<List<DailySnap>>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchDailySnaps(coupleId);
+});
+
 // ── Wildcards ──────────────────────────────────────────────────────────────
 
 final wildcardsProvider = StreamProvider<List<WildCard>>((ref) {
