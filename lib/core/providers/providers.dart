@@ -160,6 +160,20 @@ final dailySnapsProvider = StreamProvider<List<DailySnap>>((ref) {
   return ref.read(firestoreServiceProvider).watchDailySnaps(coupleId);
 });
 
+final dailySnapReactionsProvider =
+    StreamProvider.family<List<Map<String, dynamic>>, String>((ref, dateKey) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchDailySnapReactions(coupleId, dateKey);
+});
+
+final dailySnapCommentsProvider =
+    StreamProvider.family<List<Map<String, dynamic>>, String>((ref, dateKey) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchDailySnapComments(coupleId, dateKey);
+});
+
 // ── Wildcards ──────────────────────────────────────────────────────────────
 
 final wildcardsProvider = StreamProvider<List<WildCard>>((ref) {

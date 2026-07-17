@@ -752,6 +752,179 @@ void showRoomSettingsSheet(BuildContext context) {
   );
 }
 
+// Wild little things to fire at your partner, one tap each 😈 — shared by
+// the room's Surprises & Settings sheet and the Together hub's Quick Pick.
+const kWildIdeas = [
+  ('😈', 'Dare them', [
+    'I dare you to send me your best selfie in the next 5 minutes 😈',
+    'Dare: voice note of you singing our song. Now. No excuses 🎤',
+    'I dare you to tell me a secret you\'ve never told me 👀',
+    'Dare: describe our first kiss in exactly 5 words 💋',
+  ]),
+  ('🔥', 'Flirt attack', [
+    'Just so you know, I\'d absolutely swipe right on you again 🔥',
+    'Warning: currently thinking about your smile. Productivity: 0%',
+    'You + me + next visit = trouble 😏',
+    'Reminder: you\'re the best-looking person in my phone 🔥',
+  ]),
+  ('💐', 'Compliment bomb', [
+    'You make my whole day better just by existing 💐',
+    'Someone as cute as you should be illegal, honestly',
+    'Your laugh is my favourite sound in the world ♡',
+    'I brag about you to everyone. Everyone. 💐',
+  ]),
+  ('🍕', 'Random question', [
+    'Quick! Pizza or biryani for our first dinner together? 🍕',
+    'If we could teleport anywhere right now — where? ✈️',
+    'Rate my cuteness 1-10. Choose wisely 😌',
+    'What are you wearing… on your feet? Socks check 🧦',
+  ]),
+];
+
+Future<void> sendWildIdea(BuildContext context, WidgetRef ref, List<String> pool) async {
+  final coupleId = ref.read(coupleIdProvider);
+  final partnerUid = ref.read(partnerUserProvider).valueOrNull?.uid;
+  if (coupleId == null || partnerUid == null) return;
+  final msg = pool[math.Random().nextInt(pool.length)];
+  HapticFeedback.mediumImpact();
+  if (context.mounted) {
+    FloatingStickers.burst(context, stickers: const ['🎁', '🎀'], count: 5);
+  }
+  await ref.read(firestoreServiceProvider).sendGift(coupleId, toUid: partnerUid, message: msg);
+}
+
+Future<void> sendCustomWildIdea(BuildContext context, WidgetRef ref) async {
+  final coupleId = ref.read(coupleIdProvider);
+  final partnerUid = ref.read(partnerUserProvider).valueOrNull?.uid;
+  if (coupleId == null || partnerUid == null) return;
+  final ctrl = TextEditingController();
+  final message = await showDialog<String>(
+    context: context,
+    builder: (dialogCtx) => AlertDialog(
+      backgroundColor: AppColors.bgCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: const Text('✍️ Your own surprise',
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+      content: TextField(
+        controller: ctrl,
+        autofocus: true,
+        maxLength: 200,
+        maxLines: 3,
+        minLines: 1,
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Write something only they should read…',
+          hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+          counterStyle: const TextStyle(color: AppColors.textMuted, fontSize: 10),
+          filled: true,
+          fillColor: AppColors.bgMid,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx),
+          child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx, ctrl.text.trim()),
+          child: const Text('Wrap it up 🎁',
+              style: TextStyle(color: AppColors.rose, fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ),
+  );
+  ctrl.dispose();
+  if (message == null || message.isEmpty || !context.mounted) return;
+  HapticFeedback.mediumImpact();
+  FloatingStickers.burst(context, stickers: const ['🎁', '🎀'], count: 5);
+  await ref.read(firestoreServiceProvider).sendGift(coupleId, toUid: partnerUid, message: message);
+}
+
+/// Standalone Wild Ideas picker — same content as the Surprises & Settings
+/// sheet's "Wild ideas" card, reachable directly from Together's Quick Picks.
+void showWildIdeasSheet(BuildContext context, WidgetRef ref) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (sheetCtx) => Container(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        MediaQuery.of(sheetCtx).padding.bottom + 20,
+      ),
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('🎁 Wild ideas',
+              style: TextStyle(
+                  color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          const Text('One tap → a surprise lands on their phone',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ...kWildIdeas.map((idea) => SquishyTap(
+                    onTap: () => sendWildIdea(sheetCtx, ref, idea.$3),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgCardLight,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.divider, width: 0.5),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(idea.$1, style: const TextStyle(fontSize: 14)),
+                          const SizedBox(width: 6),
+                          Text(idea.$2,
+                              style: const TextStyle(
+                                  color: AppColors.textSecondary, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  )),
+              SquishyTap(
+                onTap: () => sendCustomWildIdea(sheetCtx, ref),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.rose.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.rose.withValues(alpha: 0.45), width: 0.8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('✍️', style: TextStyle(fontSize: 14)),
+                      SizedBox(width: 6),
+                      Text('Write your own',
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 // ── Room Scene Painter ────────────────────────────────────────────────────
 
 class _RoomScenePainter extends CustomPainter {
@@ -1381,34 +1554,6 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
   bool _nicknameSaving = false;
   bool _nicknameInited = false;
 
-  // Wild little things to fire at your partner, one tap each 😈
-  static const _wildIdeas = [
-    ('😈', 'Dare them', [
-      'I dare you to send me your best selfie in the next 5 minutes 😈',
-      'Dare: voice note of you singing our song. Now. No excuses 🎤',
-      'I dare you to tell me a secret you\'ve never told me 👀',
-      'Dare: describe our first kiss in exactly 5 words 💋',
-    ]),
-    ('🔥', 'Flirt attack', [
-      'Just so you know, I\'d absolutely swipe right on you again 🔥',
-      'Warning: currently thinking about your smile. Productivity: 0%',
-      'You + me + next visit = trouble 😏',
-      'Reminder: you\'re the best-looking person in my phone 🔥',
-    ]),
-    ('💐', 'Compliment bomb', [
-      'You make my whole day better just by existing 💐',
-      'Someone as cute as you should be illegal, honestly',
-      'Your laugh is my favourite sound in the world ♡',
-      'I brag about you to everyone. Everyone. 💐',
-    ]),
-    ('🍕', 'Random question', [
-      'Quick! Pizza or biryani for our first dinner together? 🍕',
-      'If we could teleport anywhere right now — where? ✈️',
-      'Rate my cuteness 1-10. Choose wisely 😌',
-      'What are you wearing… on your feet? Socks check 🧦',
-    ]),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -1432,81 +1577,9 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
     }
   }
 
-  Future<void> _sendWildIdea(List<String> pool) async {
-    final coupleId = ref.read(coupleIdProvider);
-    final partnerUid = ref.read(partnerUserProvider).valueOrNull?.uid;
-    if (coupleId == null || partnerUid == null) return;
-    final msg = pool[math.Random().nextInt(pool.length)];
-    HapticFeedback.mediumImpact();
-    // Lands as a present box on the partner's screen — nothing pops up on
-    // the sender's side beyond this little send confirmation.
-    if (mounted) {
-      FloatingStickers.burst(context,
-          stickers: const ['🎁', '🎀'], count: 5);
-    }
-    await ref
-        .read(firestoreServiceProvider)
-        .sendGift(coupleId, toUid: partnerUid, message: msg);
-  }
-
-  Future<void> _sendCustomWildIdea() async {
-    final coupleId = ref.read(coupleIdProvider);
-    final partnerUid = ref.read(partnerUserProvider).valueOrNull?.uid;
-    if (coupleId == null || partnerUid == null) return;
-    final ctrl = TextEditingController();
-    final message = await showDialog<String>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('✍️ Your own surprise',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLength: 200,
-          maxLines: 3,
-          minLines: 1,
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-          decoration: InputDecoration(
-            hintText: 'Write something only they should read…',
-            hintStyle:
-                const TextStyle(color: AppColors.textMuted, fontSize: 13),
-            counterStyle:
-                const TextStyle(color: AppColors.textMuted, fontSize: 10),
-            filled: true,
-            fillColor: AppColors.bgMid,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textMuted)),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.pop(dialogCtx, ctrl.text.trim()),
-            child: const Text('Wrap it up 🎁',
-                style: TextStyle(
-                    color: AppColors.rose, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    if (message == null || message.isEmpty || !mounted) return;
-    HapticFeedback.mediumImpact();
-    FloatingStickers.burst(context, stickers: const ['🎁', '🎀'], count: 5);
-    await ref
-        .read(firestoreServiceProvider)
-        .sendGift(coupleId, toUid: partnerUid, message: message);
-  }
+  // NOTE: wild-idea sending logic lives in the top-level sendWildIdea /
+  // sendCustomWildIdea functions below this class (shared with
+  // showWildIdeasSheet, the Together hub's standalone Quick Pick entry).
 
   Future<void> _loadNotificationPref() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1698,9 +1771,9 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    ..._wildIdeas.map((idea) {
+                    ...kWildIdeas.map((idea) {
                       return SquishyTap(
-                        onTap: () => _sendWildIdea(idea.$3),
+                        onTap: () => sendWildIdea(context, ref, idea.$3),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 8),
@@ -1727,7 +1800,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                     }),
                     // Write your own — wrapped and delivered the same way
                     SquishyTap(
-                      onTap: _sendCustomWildIdea,
+                      onTap: () => sendCustomWildIdea(context, ref),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),

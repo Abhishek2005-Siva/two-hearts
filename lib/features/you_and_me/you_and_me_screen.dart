@@ -47,6 +47,10 @@ class YouAndMeScreen extends ConsumerWidget {
               const _ProfilePicSection().animate().fadeIn(delay: 40.ms),
               const SizedBox(height: 20),
 
+              // Nickname — what your partner sees in chat & notifications
+              const _NicknameSection().animate().fadeIn(delay: 60.ms),
+              const SizedBox(height: 20),
+
               // Appearance toggle
               _AppearanceSection(accent: accent)
                   .animate().fadeIn(delay: 80.ms),
@@ -551,6 +555,118 @@ class _MoodBubble extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: mood != null ? AppColors.textPrimary : AppColors.textMuted)),
       ],
+    );
+  }
+}
+
+// ── Nickname ─────────────────────────────────────────────────────────────
+
+class _NicknameSection extends ConsumerStatefulWidget {
+  const _NicknameSection();
+
+  @override
+  ConsumerState<_NicknameSection> createState() => _NicknameSectionState();
+}
+
+class _NicknameSectionState extends ConsumerState<_NicknameSection> {
+  final _ctrl = TextEditingController();
+  bool _saving = false;
+  bool _inited = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final nick = _ctrl.text.trim();
+    setState(() => _saving = true);
+    try {
+      await ref.read(firestoreServiceProvider).updateUser({'nickname': nick});
+      if (mounted) HapticFeedback.lightImpact();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final me = ref.watch(currentUserProvider).valueOrNull;
+    if (!_inited && me != null) {
+      _ctrl.text = me.nickname ?? '';
+      _inited = true;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.bgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Text('💕', style: TextStyle(fontSize: 16)),
+              SizedBox(width: 8),
+              Text('Your nickname',
+                  style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text('What your partner sees in chat & notifications',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _ctrl,
+                  maxLength: 20,
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                  decoration: InputDecoration(
+                    counterText: '',
+                    hintText: 'e.g. Bubu, Cutie, Chikoo…',
+                    hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    filled: true,
+                    fillColor: AppColors.bgMid,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _saving ? null : _save,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.rose.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.rose.withValues(alpha: 0.4)),
+                  ),
+                  child: _saving
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose),
+                        )
+                      : const Text('Save',
+                          style: TextStyle(
+                              color: AppColors.rose, fontSize: 13, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

@@ -11,6 +11,7 @@ import '../../features/room/room_screen.dart';
 import '../../features/room/home_decorate_screen.dart';
 import '../../features/room/widget_draw_screen.dart';
 import '../../features/calendar/daily_snap_calendar_screen.dart';
+import '../../features/calendar/daily_memory_detail_screen.dart';
 import '../../features/memory/memory_wall_screen.dart';
 import '../../features/together/together_screen.dart';
 import '../../features/you_and_me/you_and_me_screen.dart';
@@ -176,6 +177,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/calendar',
             pageBuilder: (_, _) => _tabPage(const DailySnapCalendarScreen()),
+          ),
+          GoRoute(
+            path: '/calendar/day/:dateKey',
+            builder: (_, state) =>
+                DailyMemoryDetailScreen(dateKey: state.pathParameters['dateKey']!),
           ),
           GoRoute(
             path: '/together',

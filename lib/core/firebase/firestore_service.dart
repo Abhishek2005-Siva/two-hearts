@@ -787,12 +787,21 @@ class FirestoreService {
 
   // ── Daily Snap Calendar ──────────────────────────────────────────────────
 
-  Future<void> setDailySnap(String coupleId, DailySnap snap) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('dailySnaps')
-      .doc(snap.dateKey)
-      .set(snap.toMap());
+  DocumentReference<Map<String, dynamic>> _dailySnapDoc(
+    String coupleId,
+    String dateKey,
+  ) =>
+      _db.collection('couples').doc(coupleId).collection('dailySnaps').doc(dateKey);
+
+  /// Merge-write so posting my snap never clobbers my partner's same-day entry.
+  Future<void> setDailySnapEntry(
+    String coupleId,
+    String dateKey,
+    String uid,
+    DailySnapEntry entry,
+  ) =>
+      _dailySnapDoc(coupleId, dateKey)
+          .set({'entries.$uid': entry.toMap()}, SetOptions(merge: true));
 
   Stream<List<DailySnap>> watchDailySnaps(String coupleId) => _db
       .collection('couples')
@@ -800,6 +809,47 @@ class FirestoreService {
       .collection('dailySnaps')
       .snapshots()
       .map((s) => s.docs.map(DailySnap.fromDoc).toList());
+
+  Future<void> setDailySnapReaction(
+    String coupleId,
+    String dateKey,
+    String uid,
+    String? emoji,
+  ) {
+    final ref = _dailySnapDoc(coupleId, dateKey).collection('reactions').doc(uid);
+    if (emoji == null) return ref.delete();
+    return ref.set({'emoji': emoji, 'sentAt': FieldValue.serverTimestamp()});
+  }
+
+  Stream<List<Map<String, dynamic>>> watchDailySnapReactions(
+    String coupleId,
+    String dateKey,
+  ) =>
+      _dailySnapDoc(coupleId, dateKey)
+          .collection('reactions')
+          .snapshots()
+          .map((s) => s.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
+  Future<void> addDailySnapComment(
+    String coupleId,
+    String dateKey,
+    String text,
+  ) =>
+      _dailySnapDoc(coupleId, dateKey).collection('comments').add({
+        'uid': _uid,
+        'text': text,
+        'sentAt': FieldValue.serverTimestamp(),
+      });
+
+  Stream<List<Map<String, dynamic>>> watchDailySnapComments(
+    String coupleId,
+    String dateKey,
+  ) =>
+      _dailySnapDoc(coupleId, dateKey)
+          .collection('comments')
+          .orderBy('sentAt')
+          .snapshots()
+          .map((s) => s.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
   Stream<List<MemoryModel>> watchCollectionMemories(String coupleId, String collectionId) => _db
       .collection('couples').doc(coupleId).collection('memories')

@@ -215,3 +215,43 @@ exports.onNewHomeWidgetDrawing = onDocumentWritten(
     }
   }
 );
+
+// ── 5. Daily Snap Calendar — notify partner when I post today's memory ────
+// Triggers on couples/{coupleId}/dailySnaps/{dateKey}. Only notifies when a
+// NEW uid entry just appeared and the partner doesn't have one yet for that
+// day — avoids re-notifying on every subsequent write to the same doc.
+
+exports.onNewDailySnapEntry = onDocumentWritten(
+  'couples/{coupleId}/dailySnaps/{dateKey}',
+  async (event) => {
+    const after = event.data.after;
+    if (!after.exists) return;
+
+    const beforeEntries = event.data.before.exists
+      ? (event.data.before.data().entries ?? {})
+      : {};
+    const afterEntries = after.data().entries ?? {};
+
+    const newUid = Object.keys(afterEntries).find((uid) => !(uid in beforeEntries));
+    if (!newUid) return;
+
+    const { coupleId } = event.params;
+    const partnerUid = await getPartnerUid(coupleId, newUid);
+    if (!partnerUid || afterEntries[partnerUid]) return; // partner already posted today
+
+    const [token, senderName] = await Promise.all([
+      getToken(partnerUid),
+      getDisplayName(newUid),
+    ]);
+
+    await sendNotification(token, {
+      title: `${senderName} posted today's memory ♡`,
+      body: 'Add yours to complete the day',
+      data: {
+        type: 'dailySnap',
+        coupleId,
+        route: '/calendar',
+      },
+    });
+  }
+);

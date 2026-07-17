@@ -504,38 +504,54 @@ class MemoryModel {
       };
 }
 
-/// One shared photo per calendar day — the Daily Snap Calendar. Doc id is
-/// the date key ('yyyy-MM-dd'); whichever partner uploads first fills the
-/// slot for that day (one snap represents the day, not per-partner dual
-/// slots). Missed days simply have no doc — no fabricated/backfilled entries.
-class DailySnap {
-  final String dateKey;
+/// One partner's photo for a single calendar day.
+class DailySnapEntry {
   final String imageUrl;
-  final String uploaderUid;
+  final String caption;
+  final MoodType? mood;
   final DateTime createdAt;
 
-  const DailySnap({
-    required this.dateKey,
+  const DailySnapEntry({
     required this.imageUrl,
-    required this.uploaderUid,
+    this.caption = '',
+    this.mood,
     required this.createdAt,
   });
 
-  factory DailySnap.fromDoc(DocumentSnapshot doc) {
-    final d = doc.data() as Map<String, dynamic>;
-    return DailySnap(
-      dateKey: doc.id,
-      imageUrl: d['imageUrl'] ?? '',
-      uploaderUid: d['uploaderUid'] ?? '',
-      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-    );
-  }
+  factory DailySnapEntry.fromMap(Map<String, dynamic> d) => DailySnapEntry(
+        imageUrl: d['imageUrl'] ?? '',
+        caption: d['caption'] ?? '',
+        mood: d['mood'] != null ? MoodType.values.byName(d['mood']) : null,
+        createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      );
 
   Map<String, dynamic> toMap() => {
         'imageUrl': imageUrl,
-        'uploaderUid': uploaderUid,
+        'caption': caption,
+        if (mood != null) 'mood': mood!.name,
         'createdAt': Timestamp.fromDate(createdAt),
       };
+}
+
+/// A shared calendar day — the Daily Snap Calendar. Doc id is the date key
+/// ('yyyy-MM-dd'); each partner fills their own slot in [entries] (keyed by
+/// uid), so both can post independently for the same day. Missed
+/// days/slots simply have no entry — no fabricated/backfilled data.
+class DailySnap {
+  final String dateKey;
+  final Map<String, DailySnapEntry> entries;
+
+  const DailySnap({required this.dateKey, this.entries = const {}});
+
+  factory DailySnap.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>? ?? {};
+    final rawEntries = (d['entries'] as Map<String, dynamic>?) ?? {};
+    return DailySnap(
+      dateKey: doc.id,
+      entries: rawEntries.map((uid, v) =>
+          MapEntry(uid, DailySnapEntry.fromMap(v as Map<String, dynamic>))),
+    );
+  }
 }
 
 // ──────────────── Photo Collection ────────────────

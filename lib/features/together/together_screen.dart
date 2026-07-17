@@ -306,6 +306,16 @@ class TogetherScreen extends ConsumerWidget {
                   ),
                 ],
               ).animate().fadeIn(delay: 360.ms),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 40 - 30) / 4,
+                child: _QuickPick(
+                  icon: Icons.local_fire_department_rounded,
+                  label: 'Wild\nIdeas',
+                  accent: accent,
+                  onTap: () => showWildIdeasSheet(context, ref),
+                ),
+              ).animate().fadeIn(delay: 380.ms),
               if (isWildcardGranter()) ...[
                 const SizedBox(height: 10),
                 SizedBox(
