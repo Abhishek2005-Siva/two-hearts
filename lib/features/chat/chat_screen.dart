@@ -71,6 +71,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _isTyping = false;
   bool _whisperMode = false;
   bool _searchMode = false;
+  bool _activitiesOpen = false;
   String _searchQuery = '';
   bool _promptDismissed = false;
   final Map<String, GlobalKey> _dateSepKeys = {};
@@ -522,7 +523,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
               onVideoCall: _startVideoCall,
               onSearchTap: () => setState(() {
                 _searchMode = !_searchMode;
+                if (_searchMode) _activitiesOpen = false;
                 if (!_searchMode) {
+                  _searchCtrl.clear();
+                  _searchQuery = '';
+                }
+              }),
+              activitiesOpen: _activitiesOpen,
+              onActivitiesTap: () => setState(() {
+                _activitiesOpen = !_activitiesOpen;
+                if (_activitiesOpen) {
+                  _searchMode = false;
                   _searchCtrl.clear();
                   _searchQuery = '';
                 }
@@ -578,15 +589,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 },
                 onDismiss: () => setState(() => _promptDismissed = true),
               ),
-            if (!_searchMode)
-              _SharedActivitiesRow(
-                accent: accent,
-                onListenTogether: () => context.push('/listen'),
-                onWatchTogether: () => context.push('/cinema'),
-                onPlayScribble: () => context.push('/games?tab=scribble'),
-                onTodaysSnap: () => captureTodaysSnap(context, ref),
-                onSharedNote: () => context.push('/together/note'),
-              ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: (!_searchMode && _activitiesOpen)
+                  ? _SharedActivitiesRow(
+                      accent: accent,
+                      onListenTogether: () => context.push('/listen'),
+                      onWatchTogether: () => context.push('/cinema'),
+                      onPlayScribble: () => context.push('/games?tab=scribble'),
+                      onTodaysSnap: () => captureTodaysSnap(context, ref),
+                      onSharedNote: () => context.push('/together/note'),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
             Expanded(
               child: messagesAsync.when(
                 loading: () => const Center(
@@ -1039,6 +1056,8 @@ class _ChatAppBar extends StatelessWidget {
   final VoidCallback? onBackgroundTap;
   final VoidCallback? onVideoCall;
   final VoidCallback? onSearchTap;
+  final bool activitiesOpen;
+  final VoidCallback? onActivitiesTap;
 
   const _ChatAppBar({
     required this.partner,
@@ -1050,6 +1069,8 @@ class _ChatAppBar extends StatelessWidget {
     this.onBackgroundTap,
     this.onVideoCall,
     this.onSearchTap,
+    this.activitiesOpen = false,
+    this.onActivitiesTap,
   });
 
   /// Recording/uploading > typing > last-seen > online/offline.
@@ -1169,6 +1190,15 @@ class _ChatAppBar extends StatelessWidget {
                   ],
                 ),
               ),
+            ),
+            IconButton(
+              icon: Icon(
+                activitiesOpen ? Icons.expand_less_rounded : Icons.apps_rounded,
+                color: activitiesOpen ? accent : AppColors.textSecondary,
+                size: 22,
+              ),
+              onPressed: onActivitiesTap,
+              tooltip: 'Shared activities',
             ),
             IconButton(
               icon: const Icon(Icons.search_rounded,

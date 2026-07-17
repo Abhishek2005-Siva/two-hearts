@@ -149,30 +149,6 @@ class TogetherScreen extends ConsumerWidget {
                   ),
                 ],
               ).animate().fadeIn(delay: 170.ms).slideY(begin: 0.04),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _FeatureCard(
-                      emoji: '🎁',
-                      title: 'Send a Gift',
-                      subtitle: 'A little surprise for them',
-                      colors: const [Color(0xFF5E2E45), Color(0xFF2E1723)],
-                      onTap: () => sendHomeGiftDialog(context, ref),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _FeatureCard(
-                      emoji: '💌',
-                      title: 'Surprises & Settings',
-                      subtitle: 'Nickname, wild ideas & alerts',
-                      colors: const [Color(0xFF4A3E2E), Color(0xFF2A2319)],
-                      onTap: () => showRoomSettingsSheet(context),
-                    ),
-                  ),
-                ],
-              ).animate().fadeIn(delay: 190.ms).slideY(begin: 0.04),
               const SizedBox(height: 28),
 
               _SectionHeader(title: 'Play Together'),
