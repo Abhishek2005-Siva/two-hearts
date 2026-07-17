@@ -10,15 +10,28 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/delight/delight.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
+import '../room/room_screen.dart' show sendHomeGiftDialog;
 
 String dailySnapDateKey(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
 
 const _milestones = [7, 30, 100, 365];
+
+/// Light, cream/pastel palette — scoped to this screen only (the rest of
+/// the app uses the dark romantic AppColors palette; Calendar deliberately
+/// breaks from it per an explicit reference-image request).
+class _Cal {
+  static const bgTop = Color(0xFFFCEFEA);
+  static const bgBottom = Color(0xFFFBF5F0);
+  static const card = Color(0xFFFFFFFF);
+  static const emptyTile = Color(0xFFF3E8E2);
+  static const textDark = Color(0xFF3D2B24);
+  static const textMuted = Color(0xFFAE9086);
+  static const heart = Color(0xFFE0687A);
+  static const ctaDark = Color(0xFF241A17);
+}
 
 enum _EvolutionTier { none, flowers, lights, butterflies, tree }
 
@@ -45,25 +58,25 @@ Future<bool> captureTodaysSnap(BuildContext context, WidgetRef ref) async {
   final source = await showDialog<ImageSource>(
     context: context,
     builder: (dialogCtx) => AlertDialog(
-      backgroundColor: AppColors.bgCard,
+      backgroundColor: _Cal.card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       title: const Text('📸 Today\'s snap',
-          style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+          style: TextStyle(color: _Cal.textDark, fontSize: 18)),
       content: const Text('Capture the moment for today',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+          style: TextStyle(color: _Cal.textMuted, fontSize: 13)),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogCtx),
-          child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+          child: const Text('Cancel', style: TextStyle(color: _Cal.textMuted)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(dialogCtx, ImageSource.gallery),
-          child: const Text('Gallery', style: TextStyle(color: AppColors.textSecondary)),
+          child: const Text('Gallery', style: TextStyle(color: _Cal.textDark)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(dialogCtx, ImageSource.camera),
           child: const Text('Camera',
-              style: TextStyle(color: AppColors.rose, fontWeight: FontWeight.w700)),
+              style: TextStyle(color: _Cal.heart, fontWeight: FontWeight.w700)),
         ),
       ],
     ),
@@ -95,7 +108,6 @@ Future<bool> captureTodaysSnap(BuildContext context, WidgetRef ref) async {
     );
     if (context.mounted) {
       HapticFeedback.mediumImpact();
-      FloatingStickers.burst(context, stickers: const ['✨', '❤️'], count: 5);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Today\'s snap saved ♡')),
       );
@@ -126,7 +138,7 @@ Future<(String, MoodType?)?> _showComposeSheet(BuildContext context) {
         child: Container(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
           decoration: const BoxDecoration(
-            color: AppColors.bgMid,
+            color: _Cal.card,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
@@ -134,21 +146,18 @@ Future<(String, MoodType?)?> _showComposeSheet(BuildContext context) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Add a little context',
-                  style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700)),
+                  style: TextStyle(color: _Cal.textDark, fontSize: 16, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
               TextField(
                 controller: ctrl,
                 maxLength: 140,
                 maxLines: 2,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                style: const TextStyle(color: _Cal.textDark, fontSize: 14),
                 decoration: InputDecoration(
                   hintText: 'Caption (optional)',
-                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  hintStyle: const TextStyle(color: _Cal.textMuted, fontSize: 13),
                   filled: true,
-                  fillColor: AppColors.bgCardLight,
+                  fillColor: _Cal.emptyTile,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
@@ -161,33 +170,35 @@ Future<(String, MoodType?)?> _showComposeSheet(BuildContext context) {
                 runSpacing: 8,
                 children: MoodType.values.map((m) {
                   final selected = mood == m;
+                  final moodColor = Color(int.parse(m.color.substring(1), radix: 16) | 0xFF000000);
                   return GestureDetector(
                     onTap: () => setSheetState(() => mood = selected ? null : m),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: selected
-                            ? Color(int.parse(m.color.substring(1), radix: 16) | 0xFF000000)
-                                .withValues(alpha: 0.25)
-                            : AppColors.bgCardLight,
+                        color: selected ? moodColor.withValues(alpha: 0.20) : _Cal.emptyTile,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: selected
-                              ? Color(int.parse(m.color.substring(1), radix: 16) | 0xFF000000)
-                              : Colors.transparent,
-                        ),
+                        border: Border.all(color: selected ? moodColor : Colors.transparent),
                       ),
                       child: Text('${m.emoji} ${m.label}',
-                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                          style: const TextStyle(color: _Cal.textDark, fontSize: 12)),
                     ),
                   );
                 }).toList(),
               ),
               const SizedBox(height: 18),
-              GradientButton(
-                label: 'Save today\'s memory',
-                onTap: () => Navigator.pop(sheetCtx, (ctrl.text.trim(), mood)),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _Cal.ctaDark,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: () => Navigator.pop(sheetCtx, (ctrl.text.trim(), mood)),
+                  child: const Text('Save today\'s memory'),
+                ),
               ),
             ],
           ),
@@ -200,6 +211,8 @@ Future<(String, MoodType?)?> _showComposeSheet(BuildContext context) {
 /// A private shared calendar: one photo slot per partner per day, gradually
 /// building a visual timeline of the relationship. Missed days/slots stay
 /// empty — no fabricated streaks or backfilled entries, real counts only.
+/// Months scroll continuously (one long list, Monday-first weeks) rather
+/// than paging one month at a time — matches the reference design.
 class DailySnapCalendarScreen extends ConsumerStatefulWidget {
   const DailySnapCalendarScreen({super.key});
 
@@ -208,21 +221,44 @@ class DailySnapCalendarScreen extends ConsumerStatefulWidget {
 }
 
 class _DailySnapCalendarScreenState extends ConsumerState<DailySnapCalendarScreen> {
-  late DateTime _focusedMonth;
   bool _uploading = false;
-  double _dragAccum = 0;
   bool _wasBothCompleteToday = false;
+  final _scrollController = ScrollController();
+  final Map<DateTime, GlobalKey> _monthKeys = {};
+  bool _didJumpToCurrentMonth = false;
+
+  late final List<DateTime> _months;
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _focusedMonth = DateTime(now.year, now.month);
+    final current = DateTime(now.year, now.month);
+    // A bounded 12-months-back window, ascending (oldest at top) — real
+    // continuous scroll without needing true infinite pagination.
+    _months = List.generate(12, (i) => DateTime(current.year, current.month - 11 + i));
   }
 
-  void _shiftMonth(int delta) {
-    HapticFeedback.selectionClick();
-    setState(() => _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + delta));
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  GlobalKey _keyFor(DateTime month) => _monthKeys.putIfAbsent(month, () => GlobalKey());
+
+  void _jumpToCurrentMonthOnce() {
+    if (_didJumpToCurrentMonth) return;
+    final now = DateTime.now();
+    final key = _monthKeys[DateTime(now.year, now.month)];
+    if (key?.currentContext == null) return;
+    _didJumpToCurrentMonth = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = key!.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx, alignment: 0, duration: const Duration(milliseconds: 1));
+      }
+    });
   }
 
   int _streak(Map<String, DailySnap> byDate) {
@@ -272,145 +308,153 @@ class _DailySnapCalendarScreenState extends ConsumerState<DailySnapCalendarScree
 
     if (bothPostedToday && !_wasBothCompleteToday) {
       _wasBothCompleteToday = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          FloatingStickers.burst(context, stickers: const ['✨', '❤️', '🎉'], count: 6);
-        }
-      });
     } else if (!bothPostedToday) {
       _wasBothCompleteToday = false;
     }
 
     final totalMemories = snaps.fold<int>(0, (sum, s) => sum + s.entries.length);
-    final daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
-    final daysCompletedThisMonth = List.generate(daysInMonth, (i) {
-      final d = DateTime(_focusedMonth.year, _focusedMonth.month, i + 1);
+    final now = DateTime.now();
+    final daysInCurrentMonth = DateTime(now.year, now.month + 1, 0).day;
+    final daysCompletedThisMonth = List.generate(daysInCurrentMonth, (i) {
+      final d = DateTime(now.year, now.month, i + 1);
       final snap = byDate[dailySnapDateKey(d)];
       return snap != null && snap.entries.length >= 2;
     }).where((v) => v).length;
 
     return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: AppColors.bgGradient,
-              ),
-            ),
-          ),
-          const _CalendarAmbience(),
-          SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                  child: _EmotionalHeader(month: _focusedMonth, totalMemories: totalMemories),
-                ),
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _StreakBanner(streak: streak, nextMilestone: nextMilestone),
-                ),
-                const SizedBox(height: 14),
-                Expanded(
-                  child: GestureDetector(
-                    onVerticalDragUpdate: (d) => _dragAccum += d.delta.dy,
-                    onVerticalDragEnd: (d) {
-                      if (_dragAccum.abs() > 40) {
-                        _shiftMonth(_dragAccum < 0 ? 1 : -1);
-                      }
-                      _dragAccum = 0;
-                    },
-                    child: ClipRect(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 320),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) {
-                          final isIncoming = child.key == ValueKey(_focusedMonth);
-                          final offsetAnim = Tween<Offset>(
-                            begin: isIncoming ? const Offset(0, 0.15) : Offset.zero,
-                            end: isIncoming ? Offset.zero : const Offset(0, -0.15),
-                          ).animate(animation);
-                          return FadeTransition(
-                            opacity: animation,
-                            child: SlideTransition(position: offsetAnim, child: child),
-                          );
-                        },
-                        layoutBuilder: (currentChild, previousChildren) => Stack(
-                          alignment: Alignment.topCenter,
-                          children: [...previousChildren, ?currentChild],
-                        ),
-                        child: _MonthGrid(
-                          key: ValueKey(_focusedMonth),
-                          focusedMonth: _focusedMonth,
-                          byDate: byDate,
-                          todayKey: todayKey,
-                          myUid: myUid,
-                          uploading: _uploading,
-                          evolutionTier: tier,
-                          onTapToday: _captureToday,
-                          onTapDay: (dateKey) => context.push('/calendar/day/$dateKey'),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _ProgressReadout(
-                    completed: daysCompletedThisMonth,
-                    total: daysInMonth,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                  child: _BottomCta(
-                    uploading: _uploading,
-                    iPostedToday: iPostedToday,
-                    bothPostedToday: bothPostedToday,
-                    onTap: _captureToday,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmotionalHeader extends StatelessWidget {
-  final DateTime month;
-  final int totalMemories;
-  const _EmotionalHeader({required this.month, required this.totalMemories});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${DateFormat('MMMM yyyy').format(month)} ❤️',
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
-              ),
-              Text(
-                '$totalMemories Memor${totalMemories == 1 ? 'y' : 'ies'} Together',
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-              ),
-            ],
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [_Cal.bgTop, _Cal.bgBottom],
           ),
         ),
-      ],
+        child: Stack(
+          children: [
+            const _CalendarAmbience(),
+            SafeArea(
+              child: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text('Our Calendar 💕',
+                              style: TextStyle(
+                                  color: _Cal.textDark,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Text('$totalMemories Memor${totalMemories == 1 ? 'y' : 'ies'} Together',
+                        style: const TextStyle(color: _Cal.textMuted, fontSize: 12)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+                          .map((d) => Expanded(
+                                child: Center(
+                                  child: Text(d,
+                                      style: const TextStyle(
+                                          color: _Cal.textMuted,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _months.length,
+                      itemBuilder: (context, i) {
+                        final month = _months[i];
+                        if (month.year == now.year && month.month == now.month) {
+                          _jumpToCurrentMonthOnce();
+                        }
+                        return KeyedSubtree(
+                          key: _keyFor(month),
+                          child: _MonthBlock(
+                            month: month,
+                            byDate: byDate,
+                            todayKey: todayKey,
+                            myUid: myUid,
+                            uploading: _uploading,
+                            evolutionTier:
+                                (month.year == now.year && month.month == now.month) ? tier : _EvolutionTier.none,
+                            onTapToday: _captureToday,
+                            onTapDay: (dateKey) => context.push('/calendar/day/$dateKey'),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                    child: _StreakBanner(
+                        streak: streak, nextMilestone: nextMilestone, bothPostedToday: bothPostedToday),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _ProgressReadout(
+                      completed: daysCompletedThisMonth,
+                      total: daysInCurrentMonth,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _BottomCta(
+                            uploading: _uploading,
+                            iPostedToday: iPostedToday,
+                            bothPostedToday: bothPostedToday,
+                            onTap: _captureToday,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        GestureDetector(
+                          onTap: () => sendHomeGiftDialog(context, ref),
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: _Cal.card,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: _Cal.emptyTile),
+                            ),
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.card_giftcard_rounded, color: _Cal.heart, size: 18),
+                                SizedBox(height: 2),
+                                Text('Surprise',
+                                    style: TextStyle(color: _Cal.textMuted, fontSize: 9)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -418,29 +462,41 @@ class _EmotionalHeader extends StatelessWidget {
 class _StreakBanner extends StatelessWidget {
   final int streak;
   final int? nextMilestone;
-  const _StreakBanner({required this.streak, required this.nextMilestone});
+  final bool bothPostedToday;
+  const _StreakBanner(
+      {required this.streak, required this.nextMilestone, required this.bothPostedToday});
 
   @override
   Widget build(BuildContext context) {
+    if (streak == 0) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [
-          AppColors.coral.withValues(alpha: 0.18),
-          AppColors.gold.withValues(alpha: 0.10)
-        ]),
+        color: _Cal.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.coral.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
-          Text('🔥 $streak Day${streak == 1 ? '' : 's'} Streak',
-              style: const TextStyle(
-                  color: AppColors.gold, fontSize: 14, fontWeight: FontWeight.w800)),
-          const Spacer(),
-          if (nextMilestone != null)
-            Text('Next milestone: $nextMilestone days',
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+          const Icon(Icons.favorite_rounded, color: _Cal.heart, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  bothPostedToday ? 'You both posted today! ✨' : 'Keep it going ✨',
+                  style: const TextStyle(
+                      color: _Cal.textDark, fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  nextMilestone != null ? 'Next milestone: $nextMilestone days' : 'Keep the streak going',
+                  style: const TextStyle(color: _Cal.textMuted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          Text('$streak days',
+              style: const TextStyle(color: _Cal.heart, fontSize: 14, fontWeight: FontWeight.w800)),
         ],
       ),
     );
@@ -459,15 +515,15 @@ class _ProgressReadout extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('$completed / $total Days Completed',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            style: const TextStyle(color: _Cal.textMuted, fontSize: 12)),
         const SizedBox(height: 6),
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: LinearProgressIndicator(
             value: ratio,
             minHeight: 8,
-            backgroundColor: AppColors.bgCardLight,
-            valueColor: const AlwaysStoppedAnimation(AppColors.rose),
+            backgroundColor: _Cal.emptyTile,
+            valueColor: const AlwaysStoppedAnimation(_Cal.heart),
           ),
         ),
       ],
@@ -492,42 +548,70 @@ class _BottomCta extends StatelessWidget {
   Widget build(BuildContext context) {
     if (bothPostedToday) {
       return Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: AppColors.rose.withValues(alpha: 0.15),
+          color: _Cal.card,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.rose.withValues(alpha: 0.3)),
         ),
         child: const Center(
           child: Text('Today\'s Memory Complete ❤️',
-              style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+              style: TextStyle(color: _Cal.textDark, fontWeight: FontWeight.w700)),
         ),
       );
     }
     if (iPostedToday) {
       return Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: AppColors.bgCardLight,
+          color: _Cal.emptyTile,
           borderRadius: BorderRadius.circular(18),
         ),
         child: const Center(
           child: Text('Waiting for both of you…',
-              style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+              style: TextStyle(color: _Cal.textMuted, fontWeight: FontWeight.w600)),
         ),
       );
     }
-    return GradientButton(
-      label: uploading ? 'Saving…' : '📸 Post Today\'s Snap',
-      loading: uploading,
-      cuteStickers: const ['📸', '❤️'],
-      onTap: onTap,
+    return GestureDetector(
+      onTap: uploading ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: _Cal.ctaDark,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Center(
+          child: uploading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 18),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text('Post Today\'s Snap',
+                            style: TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+                        Text('Just for each other',
+                            style: TextStyle(color: Colors.white70, fontSize: 10)),
+                      ],
+                    ),
+                  ],
+                ),
+        ),
+      ),
     );
   }
 }
 
-class _MonthGrid extends StatelessWidget {
-  final DateTime focusedMonth;
+class _MonthBlock extends StatelessWidget {
+  final DateTime month;
   final Map<String, DailySnap> byDate;
   final String todayKey;
   final String? myUid;
@@ -536,9 +620,8 @@ class _MonthGrid extends StatelessWidget {
   final VoidCallback onTapToday;
   final void Function(String dateKey) onTapDay;
 
-  const _MonthGrid({
-    super.key,
-    required this.focusedMonth,
+  const _MonthBlock({
+    required this.month,
     required this.byDate,
     required this.todayKey,
     required this.myUid,
@@ -550,70 +633,55 @@ class _MonthGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final firstOfMonth = DateTime(focusedMonth.year, focusedMonth.month, 1);
-    final daysInMonth = DateTime(focusedMonth.year, focusedMonth.month + 1, 0).day;
-    final leadingBlanks = firstOfMonth.weekday % 7; // week starts Sunday
+    final firstOfMonth = DateTime(month.year, month.month, 1);
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    final leadingBlanks = (firstOfMonth.weekday - 1) % 7; // Monday-first
     final today = DateTime.now();
 
     return Column(
-      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _EvolutionRing(tier: evolutionTier),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-                .map((d) => Expanded(
-                      child: Center(
-                        child: Text(d,
-                            style: const TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600)),
-                      ),
-                    ))
-                .toList(),
-          ),
+          padding: const EdgeInsets.fromLTRB(2, 14, 2, 8),
+          child: Text(DateFormat('MMMM yyyy').format(month),
+              style: const TextStyle(
+                  color: _Cal.textDark, fontSize: 15, fontWeight: FontWeight.w700)),
         ),
-        const SizedBox(height: 6),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 8),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-            ),
-            itemCount: leadingBlanks + daysInMonth,
-            itemBuilder: (context, index) {
-              if (index < leadingBlanks) return const SizedBox.shrink();
-              final day = index - leadingBlanks + 1;
-              final date = DateTime(focusedMonth.year, focusedMonth.month, day);
-              final key = dailySnapDateKey(date);
-              final snap = byDate[key];
-              final isToday = key == todayKey;
-              final isFuture = date.isAfter(DateTime(today.year, today.month, today.day));
-
-              final tile = _DayTile(
-                day: day,
-                snap: snap,
-                myUid: myUid,
-                isToday: isToday,
-                isFuture: isFuture,
-                uploading: uploading && isToday,
-              );
-
-              return GestureDetector(
-                onTap: isFuture
-                    ? null
-                    : (snap != null ? () => onTapDay(key) : (isToday ? onTapToday : null)),
-                child: isToday ? _PulsingGlow(child: tile) : tile,
-              );
-            },
+        _EvolutionRing(tier: evolutionTier),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
           ),
+          itemCount: leadingBlanks + daysInMonth,
+          itemBuilder: (context, index) {
+            if (index < leadingBlanks) return const SizedBox.shrink();
+            final day = index - leadingBlanks + 1;
+            final date = DateTime(month.year, month.month, day);
+            final key = dailySnapDateKey(date);
+            final snap = byDate[key];
+            final isToday = key == todayKey;
+            final isFuture = date.isAfter(DateTime(today.year, today.month, today.day));
+
+            final tile = _DayTile(
+              day: day,
+              snap: snap,
+              myUid: myUid,
+              isToday: isToday,
+              isFuture: isFuture,
+              uploading: uploading && isToday,
+            );
+
+            return GestureDetector(
+              onTap: isFuture
+                  ? null
+                  : (snap != null ? () => onTapDay(key) : (isToday ? onTapToday : null)),
+              child: isToday ? _PulsingGlow(child: tile) : tile,
+            );
+          },
         ),
       ],
     );
@@ -642,6 +710,7 @@ class _DayTile extends StatelessWidget {
     final myEntry = myUid != null ? snap?.entries[myUid] : null;
     final partnerEntry =
         snap?.entries.entries.where((e) => e.key != myUid).map((e) => e.value).firstOrNull;
+    final hasAnyEntry = myEntry != null || partnerEntry != null;
 
     Widget half(DailySnapEntry? entry) {
       if (entry != null) {
@@ -664,60 +733,71 @@ class _DayTile extends StatelessWidget {
           ],
         );
       }
-      return Container(
-        color: AppColors.bgCardLight,
-        child: isFuture
-            ? null
-            : Icon(Icons.person_outline_rounded,
-                color: AppColors.textMuted.withValues(alpha: 0.4), size: 12),
-      );
+      return Container(color: _Cal.emptyTile);
     }
 
     return Opacity(
-      opacity: isFuture ? 0.35 : 1,
+      opacity: isFuture ? 0.45 : 1,
       child: Container(
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: _Cal.emptyTile,
+        ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Row(
-              children: [
-                Expanded(child: half(myEntry)),
-                Container(width: 1, color: Colors.black26),
-                Expanded(child: half(partnerEntry)),
-              ],
-            ),
+            if (hasAnyEntry)
+              Row(
+                children: [
+                  Expanded(child: half(myEntry)),
+                  Container(width: 1, color: Colors.white54),
+                  Expanded(child: half(partnerEntry)),
+                ],
+              ),
             if (uploading)
               const Center(
                 child: SizedBox(
                   width: 14,
                   height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _Cal.heart),
                 ),
               )
             else ...[
               Positioned(
-                bottom: 2,
-                right: 3,
+                top: 4,
+                left: 5,
                 child: Text('$day',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
+                    style: TextStyle(
+                        color: hasAnyEntry ? Colors.white : _Cal.textMuted,
+                        fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        shadows: [Shadow(color: Colors.black87, blurRadius: 4)])),
+                        shadows: hasAnyEntry
+                            ? const [Shadow(color: Colors.black87, blurRadius: 4)]
+                            : null)),
               ),
+              if (hasAnyEntry)
+                Positioned(
+                  bottom: 3,
+                  right: 3,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                    child: const Icon(Icons.favorite_rounded, color: _Cal.heart, size: 10),
+                  ),
+                ),
               if (isFuture)
                 const Positioned(
-                  top: 2,
-                  right: 2,
-                  child: Icon(Icons.lock_outline_rounded, color: Colors.white54, size: 10),
+                  top: 4,
+                  right: 4,
+                  child: Icon(Icons.lock_outline_rounded, color: _Cal.textMuted, size: 11),
                 ),
               if (isToday && myEntry == null && !isFuture)
                 const Positioned(
-                  top: 2,
-                  right: 2,
-                  child: Icon(Icons.add_a_photo_rounded, color: AppColors.rose, size: 12),
+                  bottom: 3,
+                  right: 3,
+                  child: Icon(Icons.add_a_photo_rounded, color: _Cal.heart, size: 13),
                 ),
             ],
           ],
@@ -762,10 +842,10 @@ class _PulsingGlowState extends State<_PulsingGlow> with SingleTickerProviderSta
         final t = _ctrl.value;
         return Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: AppColors.rose.withValues(alpha: 0.35 + t * 0.25),
+                color: _Cal.heart.withValues(alpha: 0.35 + t * 0.25),
                 blurRadius: 6 + t * 8,
                 spreadRadius: 1 + t * 1.5,
               ),
@@ -779,8 +859,8 @@ class _PulsingGlowState extends State<_PulsingGlow> with SingleTickerProviderSta
   }
 }
 
-/// Themed decorative ring above the grid — grows richer as the streak
-/// grows. Emoji/gradient decoration, not illustrated artwork (no
+/// Themed decorative ring above the current month's grid — grows richer as
+/// the streak grows. Emoji decoration, not illustrated artwork (no
 /// image-gen tool available here).
 class _EvolutionRing extends StatelessWidget {
   final _EvolutionTier tier;
@@ -797,7 +877,7 @@ class _EvolutionRing extends StatelessWidget {
       _EvolutionTier.none => '',
     };
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: List.generate(7, (i) => Text(emoji, style: const TextStyle(fontSize: 14)))
@@ -808,10 +888,9 @@ class _EvolutionRing extends StatelessWidget {
   }
 }
 
-/// Extremely subtle drifting stars/hearts — same drift-flake technique as
-/// SeasonalDrift (core/delight/delight.dart) but with its own emoji set
-/// and much lower opacity, since SeasonalDrift is real-world-season-themed
-/// and already used louder elsewhere.
+/// Extremely subtle drifting stars/clouds — same drift-flake technique as
+/// SeasonalDrift (core/delight/delight.dart) but with its own emoji set,
+/// tuned for this screen's light background.
 class _CalendarAmbience extends StatefulWidget {
   const _CalendarAmbience();
 
@@ -839,7 +918,7 @@ class _AmbienceFlake {
 class _CalendarAmbienceState extends State<_CalendarAmbience> with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final List<_AmbienceFlake> _flakes;
-  static const _emojis = ['✨', '♡', '💫'];
+  static const _emojis = ['✨', '☁️', '💫'];
 
   @override
   void initState() {
@@ -852,7 +931,7 @@ class _CalendarAmbienceState extends State<_CalendarAmbience> with SingleTickerP
         phase: rng.nextDouble(),
         speed: 0.4 + rng.nextDouble() * 0.4,
         sway: 10 + rng.nextDouble() * 14,
-        size: 10.0 + rng.nextDouble() * 6,
+        size: 12.0 + rng.nextDouble() * 8,
       );
     });
     _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 28))..repeat();
@@ -880,8 +959,8 @@ class _CalendarAmbienceState extends State<_CalendarAmbience> with SingleTickerP
                 left: x,
                 top: y,
                 child: Opacity(
-                  opacity: 0.12,
-                  child: Text(f.emoji, style: TextStyle(fontSize: f.size, color: Colors.white)),
+                  opacity: 0.18,
+                  child: Text(f.emoji, style: TextStyle(fontSize: f.size)),
                 ),
               );
             }).toList(),
