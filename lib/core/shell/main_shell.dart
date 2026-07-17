@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -260,10 +261,31 @@ class _MainShellState extends ConsumerState<MainShell>
           const _GiftOverlay(),
         ],
       ),
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.bgMid,
-          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.bgMid.withValues(alpha: 0.78),
+              AppColors.bgCard.withValues(alpha: 0.68),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 0.8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 20,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
         child: SafeArea(
           top: false,
@@ -287,6 +309,15 @@ class _MainShellState extends ConsumerState<MainShell>
                               ? accent.withValues(alpha: 0.12)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(16),
+                          boxShadow: selected
+                              ? [
+                                  BoxShadow(
+                                    color: accent.withValues(alpha: 0.35),
+                                    blurRadius: 14,
+                                    spreadRadius: 1,
+                                  ),
+                                ]
+                              : null,
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -395,6 +426,9 @@ class _MainShellState extends ConsumerState<MainShell>
                   ),
                 ),
             ],
+          ),
+        ),
+            ),
           ),
         ),
       ),

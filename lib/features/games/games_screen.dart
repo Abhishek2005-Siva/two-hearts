@@ -178,7 +178,8 @@ const _guessMeQuestions = [
 // ─────────────────────────────────────────────────────────────────────────
 
 class GamesScreen extends ConsumerStatefulWidget {
-  const GamesScreen({super.key});
+  final int initialTabIndex;
+  const GamesScreen({super.key, this.initialTabIndex = 0});
 
   @override
   ConsumerState<GamesScreen> createState() => _GamesScreenState();
@@ -194,7 +195,8 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 6, vsync: this);
+    _tabCtrl = TabController(
+        length: 6, vsync: this, initialIndex: widget.initialTabIndex);
     _confettiCtrl = ConfettiController(duration: const Duration(seconds: 3));
   }
 

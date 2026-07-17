@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/firebase/models.dart';
@@ -72,6 +73,13 @@ class _DailyMemoryDetailScreenState extends ConsumerState<DailyMemoryDetailScree
       appBar: AppBar(
         backgroundColor: AppColors.bg,
         title: Text(DateFormat('EEEE, MMM d, yyyy').format(date)),
+        actions: [
+          IconButton(
+            tooltip: 'View chat from this day',
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
+            onPressed: () => context.push('/chat?date=${widget.dateKey}'),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(

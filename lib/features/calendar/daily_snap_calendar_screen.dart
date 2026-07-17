@@ -30,6 +30,173 @@ _EvolutionTier _evolutionTier(int streak) {
   return _EvolutionTier.none;
 }
 
+/// Shared "post today's snap" flow — used by the Daily Snap Calendar's own
+/// CTA and by Chat's "Today's Snap" shared-activity card (see
+/// chat_screen.dart). Shows a source picker, a caption/mood compose sheet,
+/// uploads, and saves the entry. Surfaces upload state via the same
+/// activity-status mechanism chat's presence header reads
+/// ('uploading_snap'), so partner UI updates regardless of which screen
+/// triggered the capture.
+Future<bool> captureTodaysSnap(BuildContext context, WidgetRef ref) async {
+  final coupleId = ref.read(coupleIdProvider);
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (coupleId == null || uid == null) return false;
+
+  final source = await showDialog<ImageSource>(
+    context: context,
+    builder: (dialogCtx) => AlertDialog(
+      backgroundColor: AppColors.bgCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: const Text('📸 Today\'s snap',
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
+      content: const Text('Capture the moment for today',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx),
+          child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx, ImageSource.gallery),
+          child: const Text('Gallery', style: TextStyle(color: AppColors.textSecondary)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx, ImageSource.camera),
+          child: const Text('Camera',
+              style: TextStyle(color: AppColors.rose, fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ),
+  );
+  if (source == null || !context.mounted) return false;
+
+  final picked = await ImagePicker().pickImage(
+    source: source,
+    maxWidth: 1920,
+    maxHeight: 1920,
+    imageQuality: 85,
+  );
+  if (picked == null || !context.mounted) return false;
+
+  final compose = await _showComposeSheet(context);
+  if (compose == null || !context.mounted) return false;
+
+  final firestoreService = ref.read(firestoreServiceProvider);
+  firestoreService.setActivityStatus(coupleId, 'uploading_snap').ignore();
+  try {
+    final bytes = await File(picked.path).readAsBytes();
+    final imageUrl = await CloudinaryService.uploadImage(bytes, folder: 'daily_snaps');
+    final today = DateTime.now();
+    await firestoreService.setDailySnapEntry(
+      coupleId,
+      dailySnapDateKey(today),
+      uid,
+      DailySnapEntry(imageUrl: imageUrl, caption: compose.$1, mood: compose.$2, createdAt: today),
+    );
+    if (context.mounted) {
+      HapticFeedback.mediumImpact();
+      FloatingStickers.burst(context, stickers: const ['✨', '❤️'], count: 5);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Today\'s snap saved ♡')),
+      );
+    }
+    return true;
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Couldn\'t save: $e')),
+      );
+    }
+    return false;
+  } finally {
+    firestoreService.setActivityStatus(coupleId, null).ignore();
+  }
+}
+
+Future<(String, MoodType?)?> _showComposeSheet(BuildContext context) {
+  final ctrl = TextEditingController();
+  MoodType? mood;
+  return showModalBottomSheet<(String, MoodType?)>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (sheetCtx) => StatefulBuilder(
+      builder: (sheetCtx, setSheetState) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          decoration: const BoxDecoration(
+            color: AppColors.bgMid,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Add a little context',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                maxLength: 140,
+                maxLines: 2,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Caption (optional)',
+                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  filled: true,
+                  fillColor: AppColors.bgCardLight,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: MoodType.values.map((m) {
+                  final selected = mood == m;
+                  return GestureDetector(
+                    onTap: () => setSheetState(() => mood = selected ? null : m),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Color(int.parse(m.color.substring(1), radix: 16) | 0xFF000000)
+                                .withValues(alpha: 0.25)
+                            : AppColors.bgCardLight,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: selected
+                              ? Color(int.parse(m.color.substring(1), radix: 16) | 0xFF000000)
+                              : Colors.transparent,
+                        ),
+                      ),
+                      child: Text('${m.emoji} ${m.label}',
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 18),
+              GradientButton(
+                label: 'Save today\'s memory',
+                onTap: () => Navigator.pop(sheetCtx, (ctrl.text.trim(), mood)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 /// A private shared calendar: one photo slot per partner per day, gradually
 /// building a visual timeline of the relationship. Missed days/slots stay
 /// empty — no fabricated streaks or backfilled entries, real counts only.
@@ -84,165 +251,10 @@ class _DailySnapCalendarScreenState extends ConsumerState<DailySnapCalendarScree
   }
 
   Future<void> _captureToday() async {
-    final coupleId = ref.read(coupleIdProvider);
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (coupleId == null || uid == null || _uploading) return;
-
-    final source = await showDialog<ImageSource>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('📸 Today\'s snap',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
-        content: const Text('Capture the moment for today',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, ImageSource.gallery),
-            child: const Text('Gallery', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, ImageSource.camera),
-            child: const Text('Camera',
-                style: TextStyle(color: AppColors.rose, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-    if (source == null || !mounted) return;
-
-    final picked = await ImagePicker().pickImage(
-      source: source,
-      maxWidth: 1920,
-      maxHeight: 1920,
-      imageQuality: 85,
-    );
-    if (picked == null || !mounted) return;
-
-    final compose = await _showComposeSheet();
-    if (compose == null || !mounted) return;
-
+    if (_uploading) return;
     setState(() => _uploading = true);
-    try {
-      final bytes = await File(picked.path).readAsBytes();
-      final imageUrl = await CloudinaryService.uploadImage(bytes, folder: 'daily_snaps');
-      final today = DateTime.now();
-      await ref.read(firestoreServiceProvider).setDailySnapEntry(
-            coupleId,
-            dailySnapDateKey(today),
-            uid,
-            DailySnapEntry(
-              imageUrl: imageUrl,
-              caption: compose.$1,
-              mood: compose.$2,
-              createdAt: today,
-            ),
-          );
-      if (mounted) {
-        HapticFeedback.mediumImpact();
-        FloatingStickers.burst(context, stickers: const ['✨', '❤️'], count: 5);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Today\'s snap saved ♡')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Couldn\'t save: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _uploading = false);
-    }
-  }
-
-  Future<(String, MoodType?)?> _showComposeSheet() {
-    final ctrl = TextEditingController();
-    MoodType? mood;
-    return showModalBottomSheet<(String, MoodType?)>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetCtx) => StatefulBuilder(
-        builder: (sheetCtx, setSheetState) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-            decoration: const BoxDecoration(
-              color: AppColors.bgMid,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Add a little context',
-                    style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700)),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: ctrl,
-                  maxLength: 140,
-                  maxLines: 2,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: 'Caption (optional)',
-                    hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-                    filled: true,
-                    fillColor: AppColors.bgCardLight,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: MoodType.values.map((m) {
-                    final selected = mood == m;
-                    return GestureDetector(
-                      onTap: () => setSheetState(() => mood = selected ? null : m),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? Color(int.parse(m.color.substring(1), radix: 16) | 0xFF000000)
-                                  .withValues(alpha: 0.25)
-                              : AppColors.bgCardLight,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: selected
-                                ? Color(int.parse(m.color.substring(1), radix: 16) | 0xFF000000)
-                                : Colors.transparent,
-                          ),
-                        ),
-                        child: Text('${m.emoji} ${m.label}',
-                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 18),
-                GradientButton(
-                  label: 'Save today\'s memory',
-                  onTap: () => Navigator.pop(sheetCtx, (ctrl.text.trim(), mood)),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+    await captureTodaysSnap(context, ref);
+    if (mounted) setState(() => _uploading = false);
   }
 
   @override

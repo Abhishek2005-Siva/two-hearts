@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
@@ -14,6 +15,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:timeago/timeago.dart' as timeago;
 import 'package:uuid/uuid.dart';
 import 'snap_camera_screen.dart';
 import 'package:video_player/video_player.dart';
@@ -23,6 +25,8 @@ import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
 import '../../shared/widgets/fullscreen_image_viewer.dart';
+import '../calendar/daily_snap_calendar_screen.dart';
+import '../together/together_screen.dart' show kDailyPromptQuestions;
 
 // ── Background enum ───────────────────────────────────────────────────────
 
@@ -68,6 +72,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _whisperMode = false;
   bool _searchMode = false;
   String _searchQuery = '';
+  bool _promptDismissed = false;
+  final Map<String, GlobalKey> _dateSepKeys = {};
+  bool _didJumpToDate = false;
+
+  GlobalKey _dateKeyFor(DateTime d) =>
+      _dateSepKeys.putIfAbsent(dailySnapDateKey(d), () => GlobalKey());
+
+  /// Memory Jump: best-effort scroll to the first message on [targetDate]
+  /// (from a calendar day's "View chat from this day" button) — not a hard
+  /// paginated index, just Scrollable.ensureVisible on that day's divider.
+  void _maybeJumpToDate() {
+    if (_didJumpToDate) return;
+    final dateParam = GoRouterState.of(context).uri.queryParameters['date'];
+    if (dateParam == null) return;
+    final key = _dateSepKeys[dateParam];
+    if (key?.currentContext == null) return;
+    _didJumpToDate = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = key!.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx, duration: 300.ms, alignment: 0.1);
+      }
+    });
+  }
   final _scheduledDeletes = <String>{};
   MessageModel? _replyingTo;
   MessageModel? _editingMessage;
@@ -249,6 +277,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     setState(() => _sending = true);
     DelightHaptics.thud(); // snap landed — soft thud signature
     FlyAway.play(context, '👻');
+    ref.read(firestoreServiceProvider).setActivityStatus(coupleId, 'uploading').ignore();
     try {
       if (result.type == SnapCameraResult.photo) {
         final bytes = await File(result.path).readAsBytes();
@@ -280,6 +309,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       }
     } finally {
       if (mounted) setState(() => _sending = false);
+      ref.read(firestoreServiceProvider).setActivityStatus(coupleId, null).ignore();
     }
   }
 
@@ -322,6 +352,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (coupleId == null || authUser == null) return;
     setState(() => _sending = true);
     HapticFeedback.lightImpact();
+    ref.read(firestoreServiceProvider).setActivityStatus(coupleId, 'uploading').ignore();
     try {
       final url = await CloudinaryService.uploadAudio(File(path));
       await ref.read(firestoreServiceProvider).sendMessage(
@@ -337,6 +368,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       );
     } finally {
       if (mounted) setState(() => _sending = false);
+      ref.read(firestoreServiceProvider).setActivityStatus(coupleId, null).ignore();
     }
   }
 
@@ -439,6 +471,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final partner = ref.watch(partnerUserProvider).valueOrNull;
     final isTyping = ref.watch(partnerTypingProvider).valueOrNull ?? false;
     final partnerOnline = ref.watch(partnerOnlineProvider).valueOrNull ?? false;
+    final partnerActivity = ref.watch(partnerActivityStatusProvider).valueOrNull;
+    final partnerLastSeen = ref.watch(partnerLastSeenProvider).valueOrNull;
     final uid = authUser.uid;
     final coupleId = ref.watch(coupleIdProvider);
     final couple = ref.watch(coupleProvider).valueOrNull;
@@ -482,6 +516,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
               accent: accent,
               isTyping: isTyping,
               partnerOnline: partnerOnline,
+              activityStatus: partnerActivity,
+              lastSeen: partnerLastSeen,
               onBackgroundTap: () => _showBackgroundPicker(context, background, customBgUrl),
               onVideoCall: _startVideoCall,
               onSearchTap: () => setState(() {
@@ -530,6 +566,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                     ),
                   ],
                 ),
+              ),
+            if (!_searchMode && !_promptDismissed)
+              _DailyPromptCard(
+                accent: accent,
+                onTap: () {
+                  _controller.text = kDailyPromptQuestions[
+                      DateTime.now().day % kDailyPromptQuestions.length];
+                  _controller.selection = TextSelection.collapsed(
+                      offset: _controller.text.length);
+                },
+                onDismiss: () => setState(() => _promptDismissed = true),
+              ),
+            if (!_searchMode)
+              _SharedActivitiesRow(
+                accent: accent,
+                onListenTogether: () => context.push('/listen'),
+                onWatchTogether: () => context.push('/cinema'),
+                onPlayScribble: () => context.push('/games?tab=scribble'),
+                onTodaysSnap: () => captureTodaysSnap(context, ref),
+                onSharedNote: () => context.push('/together/note'),
               ),
             Expanded(
               child: messagesAsync.when(
@@ -622,9 +678,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                           i < reversed.length - 1 ? reversed[i + 1] : null;
                       final showDate = prevMsg == null ||
                           !_sameDay(msg.sentAt, prevMsg.sentAt);
+                      if (showDate) _maybeJumpToDate();
                       return Column(
                         children: [
-                          if (showDate) _DateSep(date: msg.sentAt),
+                          if (showDate)
+                            KeyedSubtree(
+                              key: _dateKeyFor(msg.sentAt),
+                              child: _DateSep(date: msg.sentAt),
+                            ),
                           _MessageBubble(
                             msg: msg,
                             isMe: msg.senderId == uid,
@@ -672,6 +733,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                   .reactToMessage(coupleId, msg.id, isLiked ? '' : '❤️')
                                   .ignore();
                             },
+                            onSuggestSnap: () => captureTodaysSnap(context, ref),
+                            onSaveMemory: (coupleId == null ||
+                                    (msg.type != MessageType.image &&
+                                        msg.type != MessageType.video))
+                                ? null
+                                : () async {
+                                    await ref.read(firestoreServiceProvider).addMemory(
+                                          coupleId,
+                                          MemoryModel(
+                                            id: const Uuid().v4(),
+                                            uploaderUid: msg.senderId,
+                                            imageUrl: msg.content,
+                                            takenAt: msg.sentAt,
+                                            createdAt: DateTime.now(),
+                                            isVideo: msg.type == MessageType.video,
+                                          ),
+                                        );
+                                    if (context.mounted) {
+                                      HapticFeedback.mediumImpact();
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Saved to Memories ⭐')),
+                                      );
+                                    }
+                                  },
                           ),
                         ],
                       );
@@ -771,6 +856,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   setState(() => _whisperMode = !_whisperMode),
               onInsertContent: _sendInsertedContent,
               onSendVoice: _sendVoice,
+              onRecordingChanged: (recording) {
+                final coupleId = ref.read(coupleIdProvider);
+                if (coupleId == null) return;
+                ref
+                    .read(firestoreServiceProvider)
+                    .setActivityStatus(coupleId, recording ? 'recording' : null)
+                    .ignore();
+              },
             ),
           ],
         ),
@@ -806,6 +899,134 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
+// ── Daily Prompt Card ───────────────────────────────────────────────────
+
+/// Today's conversation starter — stable all day (date-seeded pick from
+/// the same curated list Together's Random Question uses), changes
+/// tomorrow. Tapping quotes it into the composer.
+class _DailyPromptCard extends StatelessWidget {
+  final Color accent;
+  final VoidCallback onTap;
+  final VoidCallback onDismiss;
+
+  const _DailyPromptCard({required this.accent, required this.onTap, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final seed = today.year * 10000 + today.month * 100 + today.day;
+    final question = kDailyPromptQuestions[seed % kDailyPromptQuestions.length];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+                colors: [accent.withValues(alpha: 0.18), AppColors.coral.withValues(alpha: 0.10)]),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accent.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              const Text('💭', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Today\'s Question',
+                        style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700)),
+                    Text(question,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 13)),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: onDismiss,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close_rounded, color: AppColors.textMuted, size: 16),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Shared Activity Cards ─────────────────────────────────────────────────
+
+class _SharedActivitiesRow extends StatelessWidget {
+  final Color accent;
+  final VoidCallback onListenTogether;
+  final VoidCallback onWatchTogether;
+  final VoidCallback onPlayScribble;
+  final VoidCallback onTodaysSnap;
+  final VoidCallback onSharedNote;
+
+  const _SharedActivitiesRow({
+    required this.accent,
+    required this.onListenTogether,
+    required this.onWatchTogether,
+    required this.onPlayScribble,
+    required this.onTodaysSnap,
+    required this.onSharedNote,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      ('🎵', 'Listen Together', onListenTogether),
+      ('🎬', 'Watch Together', onWatchTogether),
+      ('🎨', 'Play Scribble', onPlayScribble),
+      ('📸', 'Today\'s Snap', onTodaysSnap),
+      ('📝', 'Shared Note', onSharedNote),
+    ];
+    return SizedBox(
+      height: 60,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final (emoji, label, onTap) = items[i];
+          return GestureDetector(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.bgCardLight,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.divider, width: 0.5),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(emoji, style: const TextStyle(fontSize: 16)),
+                  const SizedBox(width: 6),
+                  Text(label,
+                      style:
+                          const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 // ── App Bar ───────────────────────────────────────────────────────────────
 
 class _ChatAppBar extends StatelessWidget {
@@ -813,6 +1034,8 @@ class _ChatAppBar extends StatelessWidget {
   final Color accent;
   final bool isTyping;
   final bool partnerOnline;
+  final String? activityStatus;
+  final DateTime? lastSeen;
   final VoidCallback? onBackgroundTap;
   final VoidCallback? onVideoCall;
   final VoidCallback? onSearchTap;
@@ -822,10 +1045,35 @@ class _ChatAppBar extends StatelessWidget {
     required this.accent,
     required this.isTyping,
     required this.partnerOnline,
+    this.activityStatus,
+    this.lastSeen,
     this.onBackgroundTap,
     this.onVideoCall,
     this.onSearchTap,
   });
+
+  /// Recording/uploading > typing > last-seen > online/offline.
+  (String, Color) _statusLine() {
+    if (activityStatus == 'recording') {
+      return ('Recording…', accent);
+    }
+    if (activityStatus == 'uploading_snap') {
+      return ("Uploading today's snap…", accent);
+    }
+    if (activityStatus == 'uploading') {
+      return ('Uploading…', accent);
+    }
+    if (isTyping) {
+      return ('Typing…', accent);
+    }
+    if (partnerOnline) {
+      return ('online', const Color(0xFF4CAF50));
+    }
+    if (lastSeen != null) {
+      return ('Last seen ${timeago.format(lastSeen!)}', AppColors.textMuted);
+    }
+    return ('offline', AppColors.textMuted);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -903,19 +1151,21 @@ class _ChatAppBar extends StatelessWidget {
                         ),
                       ],
                     ),
-                    if (isTyping)
-                      Text('typing…',
+                    Builder(builder: (context) {
+                      final (label, color) = _statusLine();
+                      final isActive = activityStatus != null || isTyping;
+                      return AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: Text(
+                          label,
+                          key: ValueKey(label),
                           style: TextStyle(
-                              color: accent,
+                              color: color,
                               fontSize: 11,
-                              fontStyle: FontStyle.italic))
-                    else
-                      Text(partnerOnline ? 'online' : 'offline',
-                          style: TextStyle(
-                              color: partnerOnline
-                                  ? const Color(0xFF4CAF50)
-                                  : AppColors.textMuted,
-                              fontSize: 11)),
+                              fontStyle: isActive ? FontStyle.italic : FontStyle.normal),
+                        ),
+                      );
+                    }),
                   ],
                 ),
               ),
@@ -1147,6 +1397,7 @@ class _ChatInput extends StatefulWidget {
   final VoidCallback onToggleWhisper;
   final Future<void> Function(KeyboardInsertedContent content) onInsertContent;
   final Future<void> Function(String path, int durationSeconds) onSendVoice;
+  final void Function(bool recording)? onRecordingChanged;
 
   const _ChatInput({
     required this.controller,
@@ -1158,6 +1409,7 @@ class _ChatInput extends StatefulWidget {
     required this.onToggleWhisper,
     required this.onInsertContent,
     required this.onSendVoice,
+    this.onRecordingChanged,
   });
 
   @override
@@ -1211,6 +1463,7 @@ class _ChatInputState extends State<_ChatInput> {
       _dragOffsetX = 0;
     });
     }
+    widget.onRecordingChanged?.call(true);
     _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _recordDuration += const Duration(seconds: 1));
     });
@@ -1228,6 +1481,7 @@ class _ChatInputState extends State<_ChatInput> {
       _dragOffsetX = 0;
     });
     }
+    widget.onRecordingChanged?.call(false);
     if (path == null || durationSecs < 1) return;
     if (!mounted) return;
     // Show preview sheet — user can listen before deciding to send
@@ -1262,6 +1516,7 @@ class _ChatInputState extends State<_ChatInput> {
       _dragOffsetX = 0;
     });
     }
+    widget.onRecordingChanged?.call(false);
   }
 
   String _formatDuration(Duration d) {
@@ -1871,6 +2126,34 @@ const _kAllEmojis = {
   'Activities': ['🎮','🎵','🎬','📸','✈️','🏖️','🎉','🎁','🏃','💃','🕺'],
 };
 
+/// Frosted-glass backing for received bubbles — same BackdropFilter blur
+/// technique as the letters compose screen's glass subject field
+/// (letter_compose_screen.dart). Sent ("my") bubbles skip the blur since
+/// their opaque gradient fill doesn't need it.
+class _GlassBubbleShell extends StatelessWidget {
+  final bool isMe;
+  final BorderRadius borderRadius;
+  final Widget child;
+
+  const _GlassBubbleShell({
+    required this.isMe,
+    required this.borderRadius,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isMe) return child;
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: child,
+      ),
+    );
+  }
+}
+
 class _MessageBubble extends StatefulWidget {
   final MessageModel msg;
   final bool isMe;
@@ -1882,6 +2165,8 @@ class _MessageBubble extends StatefulWidget {
   final VoidCallback onReply;
   final VoidCallback? onDoubleTap;
   final VoidCallback? onEdit;
+  final VoidCallback? onSuggestSnap;
+  final VoidCallback? onSaveMemory;
 
   const _MessageBubble({
     required this.msg,
@@ -1894,6 +2179,8 @@ class _MessageBubble extends StatefulWidget {
     this.onDelete,
     this.onDoubleTap,
     this.onEdit,
+    this.onSuggestSnap,
+    this.onSaveMemory,
   });
 
   @override
@@ -2044,7 +2331,15 @@ class _MessageBubbleState extends State<_MessageBubble> {
             crossAxisAlignment:
                 isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              Container(
+              _GlassBubbleShell(
+                isMe: isMe,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(20),
+                  topRight: const Radius.circular(20),
+                  bottomLeft: Radius.circular(isMe ? 20 : 8),
+                  bottomRight: Radius.circular(isMe ? 8 : 20),
+                ),
+                child: Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
@@ -2053,19 +2348,28 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       : null,
                   color: isMe
                       ? null
-                      : hasWallpaper
-                          ? Colors.black.withValues(alpha: 0.58)
-                          : AppColors.bgCardLight,
+                      : (hasWallpaper
+                          ? Colors.black.withValues(alpha: 0.32)
+                          : Colors.black.withValues(alpha: 0.22)),
                   borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(18),
-                    topRight: const Radius.circular(18),
-                    bottomLeft: Radius.circular(isMe ? 18 : 4),
-                    bottomRight: Radius.circular(isMe ? 4 : 18),
+                    topLeft: const Radius.circular(20),
+                    topRight: const Radius.circular(20),
+                    bottomLeft: Radius.circular(isMe ? 20 : 8),
+                    bottomRight: Radius.circular(isMe ? 8 : 20),
                   ),
-                  border: (!isMe && hasWallpaper)
+                  border: !isMe
                       ? Border.all(
-                          color: Colors.white.withValues(alpha: 0.12),
-                          width: 0.5)
+                          color: Colors.white.withValues(alpha: 0.14),
+                          width: 0.6)
+                      : null,
+                  boxShadow: isMe
+                      ? [
+                          BoxShadow(
+                            color: accent.withValues(alpha: 0.25),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ]
                       : null,
                 ),
                 child: Column(
@@ -2117,6 +2421,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       ),
                   ],
                 ),
+                ),
               ),
               if (msg.reactionEmoji != null)
                 Padding(
@@ -2140,6 +2445,23 @@ class _MessageBubbleState extends State<_MessageBubble> {
                     ],
                   ),
                 ),
+              if (_matchesSnapKeywords(msg.content) && widget.onSuggestSnap != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: GestureDetector(
+                    onTap: widget.onSuggestSnap,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppColors.rose.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.rose.withValues(alpha: 0.35)),
+                      ),
+                      child: const Text('📸 Add Today\'s Snap',
+                          style: TextStyle(color: AppColors.rose, fontSize: 11)),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -2147,6 +2469,14 @@ class _MessageBubbleState extends State<_MessageBubble> {
     ).animate().fadeIn(duration: 200.ms);
 
     return _swipeWrapper(context, bubbleContent);
+  }
+
+  /// Honest keyword match, not smart/AI detection — same framing already
+  /// used for Journal's Trips/Dates filters (journal_screen.dart).
+  static bool _matchesSnapKeywords(String text) {
+    const keywords = ['sunset', 'photo', 'picture', 'pic', 'moment', 'sunrise', 'view'];
+    final lower = text.toLowerCase();
+    return keywords.any(lower.contains);
   }
 
   Widget _whisper(BuildContext context) {
@@ -2404,6 +2734,12 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 Navigator.pop(context);
                 widget.onEdit!();
               },
+        onSaveMemory: widget.onSaveMemory == null
+            ? null
+            : () {
+                Navigator.pop(context);
+                widget.onSaveMemory!();
+              },
       ),
     );
   }
@@ -2480,19 +2816,35 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
         : 0.0;
     final totalLabel = _total > Duration.zero ? _fmt(_total) : '--:--';
 
-    return Container(
+    final voiceRadius = BorderRadius.only(
+      topLeft: const Radius.circular(20),
+      topRight: const Radius.circular(20),
+      bottomLeft: Radius.circular(widget.isMe ? 20 : 8),
+      bottomRight: Radius.circular(widget.isMe ? 8 : 20),
+    );
+    return _GlassBubbleShell(
+      isMe: widget.isMe,
+      borderRadius: voiceRadius,
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         gradient: widget.isMe
             ? LinearGradient(colors: [widget.accent, AppColors.coral])
             : null,
-        color: widget.isMe ? null : AppColors.bgCardLight,
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(18),
-          topRight: const Radius.circular(18),
-          bottomLeft: Radius.circular(widget.isMe ? 18 : 4),
-          bottomRight: Radius.circular(widget.isMe ? 4 : 18),
-        ),
+        color: widget.isMe ? null : Colors.black.withValues(alpha: 0.22),
+        borderRadius: voiceRadius,
+        border: !widget.isMe
+            ? Border.all(color: Colors.white.withValues(alpha: 0.14), width: 0.6)
+            : null,
+        boxShadow: widget.isMe
+            ? [
+                BoxShadow(
+                  color: widget.accent.withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2552,6 +2904,7 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
           ),
         ],
       ),
+      ),
     );
   }
 }
@@ -2561,7 +2914,8 @@ class _VoiceBubbleState extends State<_VoiceBubble> {
 class _EmojiPickerSheet extends StatelessWidget {
   final void Function(String) onPick;
   final VoidCallback? onEdit;
-  const _EmojiPickerSheet({required this.onPick, this.onEdit});
+  final VoidCallback? onSaveMemory;
+  const _EmojiPickerSheet({required this.onPick, this.onEdit, this.onSaveMemory});
 
   @override
   Widget build(BuildContext context) {
@@ -2595,6 +2949,17 @@ class _EmojiPickerSheet extends StatelessWidget {
               title: const Text('Edit message',
                   style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
               onTap: onEdit,
+            ),
+            const Divider(color: AppColors.divider, height: 1),
+            const SizedBox(height: 10),
+          ],
+          if (onSaveMemory != null) ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.star_rounded, color: AppColors.gold),
+              title: const Text('Save Memory',
+                  style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+              onTap: onSaveMemory,
             ),
             const Divider(color: AppColors.divider, height: 1),
             const SizedBox(height: 10),

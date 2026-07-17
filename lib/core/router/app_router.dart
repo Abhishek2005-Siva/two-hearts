@@ -25,6 +25,7 @@ import '../../features/chat/snaps_screen.dart';
 import '../../features/memory/photo_booth_screen.dart';
 import '../../features/together/bucket_list_screen.dart';
 import '../../features/together/wildcards_screen.dart';
+import '../../features/together/shared_note_screen.dart';
 import '../../features/avatar/avatar_creator_screen.dart';
 import '../../features/places/places_screen.dart';
 import '../../features/books/book_wishlist_screen.dart';
@@ -203,12 +204,21 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/you',
             builder: (_, _) => const YouAndMeScreen(),
           ),
-          GoRoute(path: '/games', builder: (_, _) => const GamesScreen()),
+          GoRoute(
+            path: '/games',
+            builder: (_, state) {
+              // Tab order in GamesScreen's TabController: WYR, Truth, Scribble, RPS, Kiss, Quiz.
+              const tabIndex = {'wyr': 0, 'truth': 1, 'scribble': 2, 'rps': 3, 'kiss': 4, 'quiz': 5};
+              final tab = state.uri.queryParameters['tab'];
+              return GamesScreen(initialTabIndex: tabIndex[tab] ?? 0);
+            },
+          ),
           GoRoute(path: '/dates', builder: (_, _) => const DateIdeasScreen()),
           GoRoute(path: '/snaps', builder: (_, _) => const SnapsScreen()),
           GoRoute(path: '/photo_booth', builder: (_, _) => const PhotoBoothScreen()),
           GoRoute(path: '/together/bucket', builder: (_, _) => const BucketListScreen()),
           GoRoute(path: '/together/wildcards', builder: (_, _) => const WildcardsScreen()),
+          GoRoute(path: '/together/note', builder: (_, _) => const SharedNoteScreen()),
           GoRoute(path: '/avatar-creator', builder: (_, _) => const AvatarCreatorScreen()),
           GoRoute(path: '/places', builder: (_, _) => const PlacesScreen()),
           GoRoute(path: '/books', builder: (_, _) => const BookWishlistScreen()),

@@ -292,6 +292,36 @@ final partnerTypingProvider = StreamProvider<bool>((ref) {
   return ref.read(firestoreServiceProvider).watchPartnerTyping(coupleId, partnerUid);
 });
 
+// ── Partner activity status (recording / uploading) & last seen ──────────
+
+final partnerActivityStatusProvider = StreamProvider<String?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final couple = ref.watch(coupleProvider).valueOrNull;
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  if (coupleId == null || couple == null || me == null) return Stream.value(null);
+  final partnerUid = couple.partnerUid(me.uid);
+  if (partnerUid.isEmpty) return Stream.value(null);
+  return ref.read(firestoreServiceProvider).watchPartnerActivityStatus(coupleId, partnerUid);
+});
+
+final partnerLastSeenProvider = StreamProvider<DateTime?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final couple = ref.watch(coupleProvider).valueOrNull;
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  if (coupleId == null || couple == null || me == null) return Stream.value(null);
+  final partnerUid = couple.partnerUid(me.uid);
+  if (partnerUid.isEmpty) return Stream.value(null);
+  return ref.read(firestoreServiceProvider).watchPartnerLastSeen(coupleId, partnerUid);
+});
+
+// ── Shared Note ────────────────────────────────────────────────────────────
+
+final sharedNoteProvider = StreamProvider<Map<String, dynamic>?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return Stream.value(null);
+  return ref.read(firestoreServiceProvider).watchSharedNote(coupleId);
+});
+
 // ── Today's Truths (Truth Jar) ────────────────────────────────────────────
 
 final todayTruthsProvider = StreamProvider<Map<String, String>>((ref) {

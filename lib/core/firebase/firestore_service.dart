@@ -142,10 +142,15 @@ class FirestoreService {
 
   /// Heartbeat — called every ~30 s while the app is in the foreground, and
   /// on every section (tab) change so the partner sees where we are.
+  /// `lastSeen` is a *separate* field from `presence` — presence gets
+  /// deleted on background (below) so the online dot flips off instantly,
+  /// but lastSeen is never deleted, so it survives to power a "Last seen
+  /// X ago" label once offline.
   Future<void> setPresence(String coupleId, {String? section}) => _db
       .collection('couples').doc(coupleId)
       .update({
         'presence.$_uid': FieldValue.serverTimestamp(),
+        'lastSeen.$_uid': FieldValue.serverTimestamp(),
         'sections.$_uid': ?section,
       });
 
@@ -155,8 +160,13 @@ class FirestoreService {
       .collection('couples').doc(coupleId)
       .update({
         'presence.$_uid': FieldValue.delete(),
+        'lastSeen.$_uid': FieldValue.serverTimestamp(),
         'sections.$_uid': FieldValue.delete(),
       });
+
+  Stream<DateTime?> watchPartnerLastSeen(String coupleId, String partnerUid) =>
+      _db.collection('couples').doc(coupleId).snapshots().map(
+          (d) => (d.data()?['lastSeen']?[partnerUid] as Timestamp?)?.toDate());
 
   /// Online = heartbeat within the last 90 s. Re-evaluates on a local timer
   /// too, so the dot turns off even when no further doc updates arrive.
@@ -1133,6 +1143,32 @@ class FirestoreService {
         final t = (ts as Timestamp).toDate();
         return DateTime.now().difference(t).inSeconds < 8;
       });
+
+  // ── Activity status (recording / uploading — richer than typing) ──────────
+
+  /// [status] is 'recording', 'uploading_snap', 'uploading', or null to clear.
+  Future<void> setActivityStatus(String coupleId, String? status) => _db
+      .collection('couples').doc(coupleId)
+      .update({'activity.$_uid': status ?? FieldValue.delete()});
+
+  Stream<String?> watchPartnerActivityStatus(String coupleId, String partnerUid) =>
+      _db.collection('couples').doc(coupleId).snapshots().map(
+          (d) => d.data()?['activity']?[partnerUid] as String?);
+
+  // ── Shared Note (one persistent note per couple) ───────────────────────────
+
+  DocumentReference<Map<String, dynamic>> _sharedNoteDoc(String coupleId) =>
+      _db.collection('couples').doc(coupleId).collection('sharedNote').doc('note');
+
+  Future<void> setSharedNote(String coupleId, String text) =>
+      _sharedNoteDoc(coupleId).set({
+        'text': text,
+        'updatedBy': _uid,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+  Stream<Map<String, dynamic>?> watchSharedNote(String coupleId) =>
+      _sharedNoteDoc(coupleId).snapshots().map((d) => d.data());
 
   // ── Game start notifications ──────────────────────────────────────────────
   // Whenever one side makes the first move in a game, the partner gets a

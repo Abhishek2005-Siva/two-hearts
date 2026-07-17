@@ -16,6 +16,21 @@ import '../../shared/widgets/rich_content_viewer.dart';
 import '../room/room_screen.dart';
 import 'wildcards_screen.dart';
 
+// Shared with chat_screen.dart's Daily Prompt Card — curated conversation
+// starters, not AI-generated.
+const kDailyPromptQuestions = [
+  'What\'s a small thing I did recently that made you smile?',
+  'If we could teleport anywhere for one evening, where would we go?',
+  'What\'s one thing you want us to try together this year?',
+  'What\'s your favourite memory of us so far?',
+  'What made you fall for me a little more this week?',
+  'If our love story was a movie, what would the title be?',
+  'What\'s something you\'ve never told me but want to?',
+  'What\'s a tiny habit of mine you secretly love?',
+  'What song reminds you of us?',
+  'What\'s one dream you want us to chase together?',
+];
+
 class TogetherScreen extends ConsumerWidget {
   const TogetherScreen({super.key});
 
@@ -423,22 +438,9 @@ class TogetherScreen extends ConsumerWidget {
     );
   }
 
-  static const _questions = [
-    'What\'s a small thing I did recently that made you smile?',
-    'If we could teleport anywhere for one evening, where would we go?',
-    'What\'s one thing you want us to try together this year?',
-    'What\'s your favourite memory of us so far?',
-    'What made you fall for me a little more this week?',
-    'If our love story was a movie, what would the title be?',
-    'What\'s something you\'ve never told me but want to?',
-    'What\'s a tiny habit of mine you secretly love?',
-    'What song reminds you of us?',
-    'What\'s one dream you want us to chase together?',
-  ];
-
   void _showRandomQuestion(BuildContext context, WidgetRef ref, Color accent) {
     HapticFeedback.selectionClick();
-    final q = _questions[math.Random().nextInt(_questions.length)];
+    final q = kDailyPromptQuestions[math.Random().nextInt(kDailyPromptQuestions.length)];
     final container = ProviderScope.containerOf(context);
     showDialog(
       context: context,
