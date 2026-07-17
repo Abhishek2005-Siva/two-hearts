@@ -166,6 +166,67 @@ final _kHouseTemplates = [
   ),
 ];
 
+// ─── Plot expansion ─────────────────────────────────────────────────────────
+//
+// Grows the grid by one row/column at an edge. Growing at the "far" edge
+// (South/East) needs no re-indexing — existing wall lines and floor cells
+// keep the same coordinates, only the upper bound increases. Growing at the
+// "near" edge (North/West) shifts every existing wall line/cell by +1 so
+// coordinate (0,0) stays anchored at the new edge instead of the old one.
+
+HouseLayout _expandLayout(HouseLayout layout, String direction) {
+  Map<String, String> shiftFloors({int dx = 0, int dz = 0}) {
+    final out = <String, String>{};
+    layout.floors.forEach((key, matId) {
+      final parts = key.split(',');
+      final x = int.parse(parts[0]) + dx;
+      final z = int.parse(parts[1]) + dz;
+      out['$x,$z'] = matId;
+    });
+    return out;
+  }
+
+  switch (direction) {
+    case 'N':
+      return HouseLayout(
+        gridW: layout.gridW,
+        gridD: layout.gridD + 1,
+        walls: layout.walls
+            .map((w) => w.orientation == 'H'
+                ? WallSegment(orientation: 'H', line: w.line + 1, cell: w.cell)
+                : WallSegment(orientation: 'V', line: w.line, cell: w.cell + 1))
+            .toList(),
+        floors: shiftFloors(dz: 1),
+      );
+    case 'W':
+      return HouseLayout(
+        gridW: layout.gridW + 1,
+        gridD: layout.gridD,
+        walls: layout.walls
+            .map((w) => w.orientation == 'V'
+                ? WallSegment(orientation: 'V', line: w.line + 1, cell: w.cell)
+                : WallSegment(orientation: 'H', line: w.line, cell: w.cell + 1))
+            .toList(),
+        floors: shiftFloors(dx: 1),
+      );
+    case 'S':
+      return HouseLayout(
+        gridW: layout.gridW,
+        gridD: layout.gridD + 1,
+        walls: layout.walls,
+        floors: layout.floors,
+      );
+    case 'E':
+    default:
+      return HouseLayout(
+        gridW: layout.gridW + 1,
+        gridD: layout.gridD,
+        walls: layout.walls,
+        floors: layout.floors,
+      );
+  }
+}
+
 // ─── Main screen ─────────────────────────────────────────────────────────
 
 enum _DecorateMode { furnish, walls, floors }
@@ -358,6 +419,49 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
     if (_mode == _DecorateMode.floors) {
       _webCtrl.runJavaScript("window.setEditMode('floors','$id')");
     }
+  }
+
+  Future<void> _expandPlot(String direction) async {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
+    final next = _expandLayout(_lastLayout, direction);
+    setState(() => _lastLayout = next);
+    _syncScene();
+    await ref.read(firestoreServiceProvider).setHouseLayout(coupleId, next);
+  }
+
+  void _showExpandSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(sheetCtx).padding.bottom + 20),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Expand Your Plot',
+                style: TextStyle(
+                    color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            const Text('Adds space at an edge — switch to Walls or Floors after to open it up.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            const SizedBox(height: 18),
+            _ExpandGrid(onExpand: _expandPlot),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(sheetCtx),
+              child: const Text('Done', style: TextStyle(color: AppColors.rose)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showItemActions(Furniture3DItem item) {
@@ -693,6 +797,7 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
               mode: _mode,
               onModeChanged: _setMode,
               onTemplates: () => _showTemplatePicker(),
+              onExpand: _showExpandSheet,
             ),
             Expanded(
               child: Stack(
@@ -798,8 +903,14 @@ class _ModeBar extends StatelessWidget {
   final _DecorateMode mode;
   final ValueChanged<_DecorateMode> onModeChanged;
   final VoidCallback onTemplates;
+  final VoidCallback onExpand;
 
-  const _ModeBar({required this.mode, required this.onModeChanged, required this.onTemplates});
+  const _ModeBar({
+    required this.mode,
+    required this.onModeChanged,
+    required this.onTemplates,
+    required this.onExpand,
+  });
 
   Widget _seg(_DecorateMode m, String label, IconData icon) {
     final selected = mode == m;
@@ -841,10 +952,52 @@ class _ModeBar extends StatelessWidget {
           _seg(_DecorateMode.walls, 'Walls', Icons.border_all_rounded),
           _seg(_DecorateMode.floors, 'Floors', Icons.grid_view_rounded),
           IconButton(
+            tooltip: 'Expand Plot',
+            icon: const Icon(Icons.crop_free_rounded, color: AppColors.textPrimary, size: 22),
+            onPressed: onExpand,
+          ),
+          IconButton(
             tooltip: 'Templates',
             icon: const Icon(Icons.dashboard_customize_outlined, color: AppColors.textPrimary, size: 22),
             onPressed: onTemplates,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpandGrid extends StatelessWidget {
+  final ValueChanged<String> onExpand;
+  const _ExpandGrid({required this.onExpand});
+
+  Widget _btn(IconData icon, String dir) => SquishyTap(
+        onTap: () => onExpand(dir),
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: AppColors.bgCard,
+            shape: BoxShape.circle,
+            border: Border.all(color: AppColors.divider, width: 0.5),
+          ),
+          child: Icon(icon, color: AppColors.rose, size: 22),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 168,
+      height: 168,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const Icon(Icons.home_rounded, color: AppColors.textMuted, size: 30),
+          Positioned(top: 0, child: _btn(Icons.arrow_upward_rounded, 'N')),
+          Positioned(bottom: 0, child: _btn(Icons.arrow_downward_rounded, 'S')),
+          Positioned(left: 0, child: _btn(Icons.arrow_back_rounded, 'W')),
+          Positioned(right: 0, child: _btn(Icons.arrow_forward_rounded, 'E')),
         ],
       ),
     );
