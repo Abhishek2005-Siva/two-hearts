@@ -45,18 +45,24 @@
   };
   var ACCENT_ROSE = 0xE8899B, ACCENT_CORAL = 0xFF8C5A, ACCENT_GOLD = 0xE8C170;
 
-  var ROOM = 6.4;      // room is ROOM x ROOM meters
+  var CELL = 1.0;       // house grid cell size, meters
   var WALL_H = 2.7;
-  var GRID = 0.5;       // placement snap, meters
+  var WALL_THICK = 0.08;
+  var FURN_SNAP = 0.5;  // furniture placement snap, meters
 
   var scene, camera, renderer, controls;
-  var floorMesh, wallGroup, hemiLight, sunLight, accentLight;
+  var groundMesh, hitPlane, wallGroup, floorGroup, hemiLight, sunLight, accentLight, wallMat;
   var furnitureGroup;
   var raycaster, pointer;
   var placingType = null;
   var ghost = null;
   var itemsById = {};   // id -> THREE.Group
   var currentStyle = { floorId: 'oak', wallId: 'greige', lightingId: 'warm' };
+  var layout = { gridW: 10, gridD: 8, walls: [], floors: {} };
+  var floorSet = {};     // "x,z" -> true, derived from layout.floors
+  var editMode = 'furnish'; // 'furnish' | 'walls' | 'floors'
+  var paintMaterial = 'oak';
+  var lastPaintedCell = null;
 
   function post(obj) {
     if (window.FlutterBridge && window.FlutterBridge.postMessage) {
@@ -74,10 +80,9 @@
   function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1220);
-    scene.fog = new THREE.Fog(0x1a1220, 9, 18);
+    scene.fog = new THREE.Fog(0x1a1220, 10, 26);
 
-    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(4.2, 4.0, 5.6);
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 140);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -88,32 +93,22 @@
     document.body.appendChild(renderer.domElement);
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 1.0, 0);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.minDistance = 2.5;
-    controls.maxDistance = 11;
     controls.maxPolarAngle = Math.PI * 0.49;
     controls.minPolarAngle = Math.PI * 0.12;
-    controls.update();
 
     hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
     scene.add(hemiLight);
 
     sunLight = new THREE.DirectionalLight(0xffffff, 1);
-    sunLight.position.set(-4, 6, -3);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(1024, 1024);
-    sunLight.shadow.camera.left = -6;
-    sunLight.shadow.camera.right = 6;
-    sunLight.shadow.camera.top = 6;
-    sunLight.shadow.camera.bottom = -6;
-    sunLight.shadow.camera.far = 20;
+    sunLight.shadow.camera.far = 40;
     sunLight.shadow.bias = -0.0015;
     scene.add(sunLight);
 
-    accentLight = new THREE.PointLight(0xffb877, 1, 6, 2);
-    accentLight.position.set(1.6, 1.5, 1.6);
+    accentLight = new THREE.PointLight(0xffb877, 1, 8, 2);
     accentLight.castShadow = false;
     scene.add(accentLight);
 
@@ -121,10 +116,15 @@
     scene.add(furnitureGroup);
     wallGroup = new THREE.Group();
     scene.add(wallGroup);
+    floorGroup = new THREE.Group();
+    scene.add(floorGroup);
 
-    buildFloor();
-    buildWalls();
+    buildGround();
+    buildHitPlane();
+    rebuildFloors();
+    rebuildWalls();
     applyLighting('warm');
+    fitCameraToGrid();
 
     raycaster = new THREE.Raycaster();
     pointer = new THREE.Vector2();
@@ -144,64 +144,106 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  // ── Room shell ───────────────────────────────────────────────────────
+  // ── Grid math ────────────────────────────────────────────────────────
+  // Cell (x,z) is centered at (cellCenterX(x), cellCenterZ(z)); the boundary
+  // "line" index z sits exactly at world z = (z - gridD/2) * CELL, and
+  // likewise for x — walls (stored by line) and floor cells (stored by
+  // index) share one coordinate system by construction.
 
-  function buildFloor() {
-    if (floorMesh) { scene.remove(floorMesh); floorMesh.geometry.dispose(); floorMesh.material.dispose(); }
-    var f = FLOORS[currentStyle.floorId] || FLOORS.oak;
-    var geo = new THREE.PlaneGeometry(ROOM, ROOM, 12, 12);
-    var mat = new THREE.MeshStandardMaterial({ color: f.color, roughness: f.rough, metalness: 0.05 });
-    floorMesh = new THREE.Mesh(geo, mat);
-    floorMesh.rotation.x = -Math.PI / 2;
-    floorMesh.receiveShadow = true;
-    scene.add(floorMesh);
+  function cellCenterX(x) { return (x - layout.gridW / 2 + 0.5) * CELL; }
+  function cellCenterZ(z) { return (z - layout.gridD / 2 + 0.5) * CELL; }
 
-    // Subtle plank seams
-    var seamMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.06 });
-    var seamGeo = new THREE.BufferGeometry();
-    var pts = [];
-    for (var i = -ROOM / 2; i <= ROOM / 2; i += 0.5) {
-      pts.push(-ROOM / 2, 0.001, i, ROOM / 2, 0.001, i);
-    }
-    seamGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    var seams = new THREE.LineSegments(seamGeo, seamMat);
-    floorMesh.add(seams);
-    seams.rotation.x = Math.PI / 2; // counter the floor's own rotation (child space)
+  function cellFromWorld(x, z) {
+    var fx = x / CELL + layout.gridW / 2, fz = z / CELL + layout.gridD / 2;
+    var cellX = Math.floor(fx), cellZ = Math.floor(fz);
+    if (cellX < 0 || cellX >= layout.gridW || cellZ < 0 || cellZ >= layout.gridD) return null;
+    return { x: cellX, z: cellZ, fracX: fx - cellX, fracZ: fz - cellZ };
   }
 
-  function buildWalls() {
+  function wallEdgeFromWorld(x, z) {
+    var c = cellFromWorld(x, z);
+    if (!c) return null;
+    var dW = c.fracX, dE = 1 - c.fracX, dN = c.fracZ, dS = 1 - c.fracZ;
+    var m = Math.min(dW, dE, dN, dS);
+    if (m === dW) return { orientation: 'V', line: c.x, cell: c.z };
+    if (m === dE) return { orientation: 'V', line: c.x + 1, cell: c.z };
+    if (m === dN) return { orientation: 'H', line: c.z, cell: c.x };
+    return { orientation: 'H', line: c.z + 1, cell: c.x };
+  }
+
+  // ── Ground / hit-plane / floors / walls ─────────────────────────────
+
+  function buildGround() {
+    if (groundMesh) { scene.remove(groundMesh); groundMesh.geometry.dispose(); groundMesh.material.dispose(); }
+    var w = layout.gridW * CELL + 14, d = layout.gridD * CELL + 14;
+    var geo = new THREE.PlaneGeometry(w, d);
+    var m = new THREE.MeshStandardMaterial({ color: 0x33402f, roughness: 1.0 });
+    groundMesh = new THREE.Mesh(geo, m);
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.position.y = -0.02;
+    groundMesh.receiveShadow = true;
+    scene.add(groundMesh);
+  }
+
+  function buildHitPlane() {
+    if (hitPlane) { scene.remove(hitPlane); hitPlane.geometry.dispose(); hitPlane.material.dispose(); }
+    var w = layout.gridW * CELL + 14, d = layout.gridD * CELL + 14;
+    var geo = new THREE.PlaneGeometry(w, d);
+    var m = new THREE.MeshBasicMaterial({ visible: false });
+    hitPlane = new THREE.Mesh(geo, m);
+    hitPlane.rotation.x = -Math.PI / 2;
+    scene.add(hitPlane);
+  }
+
+  function floorCellMesh(x, z, matId) {
+    var f = FLOORS[matId] || FLOORS.oak;
+    var geo = new THREE.PlaneGeometry(CELL, CELL);
+    var m = new THREE.MeshStandardMaterial({ color: f.color, roughness: f.rough, metalness: 0.05 });
+    var mesh = new THREE.Mesh(geo, m);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(cellCenterX(x), 0.005, cellCenterZ(z));
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  function rebuildFloors() {
+    while (floorGroup.children.length) {
+      var c = floorGroup.children.pop();
+      c.geometry.dispose(); c.material.dispose();
+    }
+    floorSet = {};
+    Object.keys(layout.floors).forEach(function (key) {
+      var parts = key.split(',');
+      var x = parseInt(parts[0], 10), z = parseInt(parts[1], 10);
+      floorGroup.add(floorCellMesh(x, z, layout.floors[key]));
+      floorSet[key] = true;
+    });
+  }
+
+  function wallMeshFor(seg) {
+    var geo, mesh;
+    if (seg.orientation === 'H') {
+      geo = new THREE.BoxGeometry(CELL, WALL_H, WALL_THICK);
+      mesh = new THREE.Mesh(geo, wallMat);
+      mesh.position.set(cellCenterX(seg.cell), WALL_H / 2, (seg.line - layout.gridD / 2) * CELL);
+    } else {
+      geo = new THREE.BoxGeometry(WALL_THICK, WALL_H, CELL);
+      mesh = new THREE.Mesh(geo, wallMat);
+      mesh.position.set((seg.line - layout.gridW / 2) * CELL, WALL_H / 2, cellCenterZ(seg.cell));
+    }
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  function rebuildWalls() {
     while (wallGroup.children.length) {
       var c = wallGroup.children.pop();
       c.geometry.dispose(); c.material.dispose();
     }
     var color = WALLS[currentStyle.wallId] || WALLS.greige;
-    var mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.92, metalness: 0.0 });
-
-    var back = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, WALL_H), mat);
-    back.position.set(0, WALL_H / 2, -ROOM / 2);
-    back.receiveShadow = true;
-    wallGroup.add(back);
-
-    var left = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, WALL_H), mat.clone());
-    left.material.color.multiplyScalar(0.9);
-    left.position.set(-ROOM / 2, WALL_H / 2, 0);
-    left.rotation.y = Math.PI / 2;
-    left.receiveShadow = true;
-    wallGroup.add(left);
-
-    // A simple lit "window" cutout on the back wall — natural-light cue.
-    var winMat = new THREE.MeshBasicMaterial({ color: 0xFFF4DE });
-    var win = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.6), winMat);
-    win.position.set(1.6, 1.55, -ROOM / 2 + 0.01);
-    wallGroup.add(win);
-    var frameMat = new THREE.LineBasicMaterial({ color: 0x2a2018 });
-    var frame = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.3, 1.6)),
-      frameMat
-    );
-    frame.position.copy(win.position);
-    frame.position.z += 0.005;
-    wallGroup.add(frame);
+    wallMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.92, metalness: 0.0 });
+    layout.walls.forEach(function (seg) { wallGroup.add(wallMeshFor(seg)); });
   }
 
   function applyLighting(moodId) {
@@ -211,11 +253,44 @@
     hemiLight.intensity = m.hemiI;
     sunLight.color.setHex(m.sunColor);
     sunLight.intensity = m.sunI;
+    var gw = layout.gridW * CELL, gd = layout.gridD * CELL;
+    sunLight.position.set(-gw * 0.5, Math.max(gw, gd) * 0.9, -gd * 0.4);
+    sunLight.shadow.camera.left = -Math.max(gw, gd);
+    sunLight.shadow.camera.right = Math.max(gw, gd);
+    sunLight.shadow.camera.top = Math.max(gw, gd);
+    sunLight.shadow.camera.bottom = -Math.max(gw, gd);
+    sunLight.shadow.camera.updateProjectionMatrix();
     accentLight.color.setHex(m.accent);
     accentLight.intensity = m.accentI;
+    accentLight.position.set(cellCenterX(0), 1.6, cellCenterZ(0));
     var bg = moodId === 'evening' ? 0x0c0810 : 0x1a1220;
     scene.background.setHex(bg);
     scene.fog.color.setHex(bg);
+  }
+
+  // ── Camera framing ───────────────────────────────────────────────────
+
+  function fitCameraToGrid() {
+    var w = layout.gridW * CELL, d = layout.gridD * CELL;
+    var diag = Math.sqrt(w * w + d * d);
+    var dist = Math.max(6, diag * 0.78);
+    controls.target.set(0, Math.min(1.4, WALL_H * 0.4), 0);
+    camera.position.set(dist * 0.55, dist * 0.6, dist * 0.75);
+    controls.minDistance = Math.max(2.2, diag * 0.18);
+    controls.maxDistance = diag * 1.8 + 6;
+    controls.update();
+  }
+
+  function setOverheadView(on) {
+    var w = layout.gridW * CELL, d = layout.gridD * CELL;
+    var diag = Math.sqrt(w * w + d * d);
+    if (on) {
+      camera.position.set(0.01, diag * 1.05, 0.01);
+      controls.target.set(0, 0, 0);
+    } else {
+      fitCameraToGrid();
+    }
+    controls.update();
   }
 
   // ── Basic furniture builders — simple primitives, not photoreal ────────
@@ -359,6 +434,118 @@
       });
       g.userData.footprint = { w: 0.55, d: 0.55 };
       return g;
+    },
+    dining_table: function () {
+      var g = new THREE.Group();
+      var wood = mat(0x8a6339, 0.5);
+      addBox(g, 1.4, 0.05, 0.85, 0, 0.72, 0, wood);
+      var legMat = mat(0x3a2a1a, 0.5);
+      [[-0.62, -0.35], [0.62, -0.35], [-0.62, 0.35], [0.62, 0.35]].forEach(function (p) {
+        addBox(g, 0.07, 0.7, 0.07, p[0], 0.35, p[1], legMat);
+      });
+      g.userData.footprint = { w: 1.5, d: 0.95 };
+      return g;
+    },
+    tv_stand: function () {
+      var g = new THREE.Group();
+      var wood = mat(0x3a3230, 0.5);
+      addBox(g, 1.2, 0.42, 0.36, 0, 0.21, 0, wood);
+      var screenMat = mat(0x111111, 0.3, 0.4);
+      addBox(g, 1.0, 0.56, 0.04, 0, 0.7, -0.14, screenMat);
+      var standMat = mat(0x222222, 0.4);
+      addBox(g, 0.06, 0.18, 0.06, -0.3, 0.51, -0.14, standMat);
+      addBox(g, 0.06, 0.18, 0.06, 0.3, 0.51, -0.14, standMat);
+      g.userData.footprint = { w: 1.3, d: 0.4 };
+      return g;
+    },
+    wardrobe: function () {
+      var g = new THREE.Group();
+      var wood = mat(0x5a4530, 0.55);
+      addBox(g, 1.0, 1.9, 0.6, 0, 0.95, 0, wood);
+      var seamMat = mat(0x3a2c1c, 0.6);
+      addBox(g, 0.02, 1.8, 0.02, 0, 0.95, 0.31, seamMat);
+      var handleMat = mat(0xC9A874, 0.4, 0.6);
+      addCyl(g, 0.015, 0.015, 0.12, -0.08, 1.0, 0.31, handleMat);
+      addCyl(g, 0.015, 0.015, 0.12, 0.08, 1.0, 0.31, handleMat);
+      g.userData.footprint = { w: 1.05, d: 0.65 };
+      return g;
+    },
+    kitchen_counter: function () {
+      var g = new THREE.Group();
+      var cab = mat(0xEDE6DA, 0.7);
+      addBox(g, 1.6, 0.85, 0.6, 0, 0.425, 0, cab);
+      var top = mat(0x4a4a4a, 0.35, 0.2);
+      addBox(g, 1.65, 0.05, 0.65, 0, 0.875, 0, top);
+      var sinkMat = mat(0xBFC4C8, 0.3, 0.6);
+      addBox(g, 0.4, 0.06, 0.32, 0.4, 0.86, 0, sinkMat);
+      g.userData.footprint = { w: 1.7, d: 0.7 };
+      return g;
+    },
+    stove: function () {
+      var g = new THREE.Group();
+      var body = mat(0x2c2c2c, 0.4, 0.5);
+      addBox(g, 0.6, 0.85, 0.6, 0, 0.425, 0, body);
+      var top = mat(0x1a1a1a, 0.3, 0.5);
+      addBox(g, 0.62, 0.03, 0.62, 0, 0.865, 0, top);
+      var burnerMat = mat(0x111111, 0.5);
+      [[-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15], [0.15, 0.15]].forEach(function (p) {
+        addCyl(g, 0.07, 0.07, 0.015, p[0], 0.885, p[1], burnerMat);
+      });
+      g.userData.footprint = { w: 0.65, d: 0.65 };
+      return g;
+    },
+    fridge: function () {
+      var g = new THREE.Group();
+      var body = mat(0xD8DCDE, 0.35, 0.5);
+      addBox(g, 0.7, 1.8, 0.7, 0, 0.9, 0, body);
+      var seamMat = mat(0x9AA0A4, 0.4, 0.4);
+      addBox(g, 0.72, 0.02, 0.72, 0, 1.28, 0, seamMat);
+      var handleMat = mat(0x555555, 0.3, 0.6);
+      addBox(g, 0.03, 0.35, 0.03, 0.36, 1.5, 0.2, handleMat);
+      addBox(g, 0.03, 0.35, 0.03, 0.36, 0.9, 0.2, handleMat);
+      g.userData.footprint = { w: 0.75, d: 0.75 };
+      return g;
+    },
+    toilet: function () {
+      var g = new THREE.Group();
+      var porcelain = mat(0xF5F5F0, 0.4);
+      addBox(g, 0.38, 0.4, 0.18, 0, 0.6, -0.18, porcelain);
+      addCyl(g, 0.22, 0.2, 0.4, 0, 0.2, 0.05, porcelain);
+      var seatMat = mat(0xFFFFFF, 0.5);
+      addCyl(g, 0.2, 0.2, 0.03, 0, 0.41, 0.05, seatMat);
+      g.userData.footprint = { w: 0.42, d: 0.62 };
+      return g;
+    },
+    bathroom_sink: function () {
+      var g = new THREE.Group();
+      var cab = mat(0xEDE6DA, 0.7);
+      addBox(g, 0.55, 0.75, 0.42, 0, 0.375, 0, cab);
+      var basinMat = mat(0xFFFFFF, 0.4);
+      addCyl(g, 0.2, 0.18, 0.1, 0, 0.78, 0, basinMat);
+      var faucetMat = mat(0x888888, 0.3, 0.6);
+      addCyl(g, 0.012, 0.012, 0.22, 0, 0.94, -0.12, faucetMat);
+      g.userData.footprint = { w: 0.58, d: 0.45 };
+      return g;
+    },
+    nightstand: function () {
+      var g = new THREE.Group();
+      var wood = mat(0x5a3d28, 0.6);
+      addBox(g, 0.4, 0.5, 0.4, 0, 0.25, 0, wood);
+      var handleMat = mat(0xC9A874, 0.4, 0.6);
+      addCyl(g, 0.012, 0.012, 0.1, 0, 0.25, 0.21, handleMat);
+      g.userData.footprint = { w: 0.42, d: 0.42 };
+      return g;
+    },
+    desk: function () {
+      var g = new THREE.Group();
+      var wood = mat(0x6b4a30, 0.55);
+      addBox(g, 1.1, 0.05, 0.55, 0, 0.72, 0, wood);
+      var legMat = mat(0x3a2a1a, 0.5);
+      addBox(g, 0.5, 0.68, 0.5, -0.28, 0.34, 0, legMat);
+      addCyl(g, 0.025, 0.025, 0.68, 0.42, 0.34, -0.2, legMat);
+      addCyl(g, 0.025, 0.025, 0.68, 0.42, 0.34, 0.2, legMat);
+      g.userData.footprint = { w: 1.15, d: 0.6 };
+      return g;
     }
   };
 
@@ -370,15 +557,27 @@
 
   // ── Sync from Flutter ───────────────────────────────────────────────
 
-  window.loadRoom = function (jsonStr) {
+  window.loadHouse = function (jsonStr) {
     try {
       var data = JSON.parse(jsonStr);
       if (data.style) {
         currentStyle = data.style;
-        buildFloor();
-        buildWalls();
         applyLighting(currentStyle.lightingId);
       }
+      var gridChanged = data.gridW !== layout.gridW || data.gridD !== layout.gridD;
+      layout = {
+        gridW: data.gridW || 10,
+        gridD: data.gridD || 8,
+        walls: data.walls || [],
+        floors: data.floors || {}
+      };
+
+      buildGround();
+      buildHitPlane();
+      rebuildFloors();
+      rebuildWalls();
+      applyLighting(currentStyle.lightingId);
+
       while (furnitureGroup.children.length) {
         furnitureGroup.remove(furnitureGroup.children[0]);
       }
@@ -393,14 +592,34 @@
         furnitureGroup.add(mesh);
         itemsById[it.id] = mesh;
       });
+
+      if (gridChanged) {
+        if (editMode === 'furnish') fitCameraToGrid();
+        else setOverheadView(true);
+      }
     } catch (e) { /* ignore malformed sync */ }
   };
 
   window.setStyle = function (floorId, wallId, lightingId) {
     currentStyle = { floorId: floorId, wallId: wallId, lightingId: lightingId };
-    buildFloor();
-    buildWalls();
+    rebuildWalls();
     applyLighting(lightingId);
+  };
+
+  window.setEditMode = function (mode, payload) {
+    editMode = mode;
+    if (mode === 'floors' && payload) paintMaterial = payload;
+    exitGhost();
+    lastPaintedCell = null;
+    if (mode === 'furnish') {
+      controls.enabled = true;
+      setOverheadView(false);
+      showHint(null);
+    } else {
+      controls.enabled = false;
+      setOverheadView(true);
+      showHint(mode === 'walls' ? 'Tap a wall line to add or remove it' : 'Drag over the floor to paint');
+    }
   };
 
   window.enterPlacementMode = function (type) {
@@ -417,7 +636,7 @@
     });
     ghost.visible = false;
     scene.add(ghost);
-    showHint('Tap the floor to place it');
+    showHint('Tap a floored room to place it');
   };
 
   window.exitPlacementMode = function () {
@@ -435,21 +654,36 @@
     if (mesh) mesh.rotation.y += Math.PI / 2;
   };
 
-  function snap(v) { return Math.round(v / GRID) * GRID; }
+  function snapFurniture(v) { return Math.round(v / FURN_SNAP) * FURN_SNAP; }
 
-  function floorPointFromEvent(ev) {
+  function worldPointFromEvent(ev) {
     var rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
-    var hit = raycaster.intersectObject(floorMesh, false);
+    var hit = raycaster.intersectObject(hitPlane, false);
     if (!hit.length) return null;
-    var p = hit[0].point;
-    var half = ROOM / 2 - 0.3;
-    return {
-      x: Math.max(-half, Math.min(half, snap(p.x))),
-      z: Math.max(-half, Math.min(half, snap(p.z)))
-    };
+    return { x: hit[0].point.x, z: hit[0].point.z };
+  }
+
+  function floorPointFromEvent(ev) {
+    var w = worldPointFromEvent(ev);
+    if (!w) return null;
+    var sx = snapFurniture(w.x), sz = snapFurniture(w.z);
+    var cell = cellFromWorld(sx, sz);
+    if (!cell || !floorSet[cell.x + ',' + cell.z]) return null;
+    return { x: sx, z: sz };
+  }
+
+  function paintAtEvent(ev) {
+    var w = worldPointFromEvent(ev);
+    if (!w) return;
+    var cell = cellFromWorld(w.x, w.z);
+    if (!cell) return;
+    var key = cell.x + ',' + cell.z;
+    if (lastPaintedCell === key) return;
+    lastPaintedCell = key;
+    post({ type: 'floorPainted', x: cell.x, z: cell.z, materialId: paintMaterial });
   }
 
   function onPointerMove(ev) {
@@ -457,16 +691,24 @@
       var dx = ev.clientX - downPos.x, dy = ev.clientY - downPos.y;
       if (dx * dx + dy * dy > TAP_SLOP * TAP_SLOP) isDragging = true;
     }
-    if (!placingType || !ghost) return;
-    var p = floorPointFromEvent(ev);
-    if (!p) { ghost.visible = false; return; }
-    ghost.visible = true;
-    ghost.position.set(p.x, 0, p.z);
+    if (editMode === 'furnish') {
+      if (!placingType || !ghost) return;
+      var p = floorPointFromEvent(ev);
+      if (!p) { ghost.visible = false; return; }
+      ghost.visible = true;
+      ghost.position.set(p.x, 0, p.z);
+      return;
+    }
+    if (editMode === 'floors' && isDragging) {
+      paintAtEvent(ev);
+    }
   }
 
-  // A "tap" (place/select) only fires on pointerup if the pointer never
-  // moved past TAP_SLOP since pointerdown — otherwise it was an
-  // OrbitControls drag (rotate/pan) and must not also place/select.
+  // A "tap" (place/select/toggle) only fires on pointerup if the pointer
+  // never moved past TAP_SLOP since pointerdown — otherwise (in furnish
+  // mode) it was an OrbitControls drag and must not also place/select.
+  // Build modes (walls/floors) disable OrbitControls entirely so their
+  // own drag gestures (paint) never fight the camera.
   var downPos = null;
   var isDragging = false;
   var TAP_SLOP = 8;
@@ -480,6 +722,22 @@
     var wasDragging = isDragging;
     downPos = null;
     isDragging = false;
+
+    if (editMode === 'floors') {
+      if (!wasDragging) paintAtEvent(ev);
+      lastPaintedCell = null;
+      return;
+    }
+
+    if (editMode === 'walls') {
+      var w = worldPointFromEvent(ev);
+      if (!w) return;
+      var edge = wallEdgeFromWorld(w.x, w.z);
+      if (!edge) return;
+      post({ type: 'wallToggled', orientation: edge.orientation, line: edge.line, cell: edge.cell });
+      return;
+    }
+
     if (wasDragging) return;
 
     if (placingType) {
@@ -490,7 +748,6 @@
       showHint(null);
       return;
     }
-    // Selection: raycast against placed furniture.
     var rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;

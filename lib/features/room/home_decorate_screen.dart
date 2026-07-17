@@ -19,13 +19,23 @@ class _FurnitureType {
 
 const _kFurnitureTypes = [
   _FurnitureType('sofa', 'Sofa', '🛋️'),
-  _FurnitureType('bed', 'Bed', '🛏️'),
+  _FurnitureType('chair', 'Chair', '🪑'),
   _FurnitureType('coffee_table', 'Coffee Table', '🪵'),
+  _FurnitureType('tv_stand', 'TV Stand', '📺'),
   _FurnitureType('bookshelf', 'Bookshelf', '📚'),
   _FurnitureType('lamp', 'Lamp', '💡'),
   _FurnitureType('plant', 'Plant', '🪴'),
   _FurnitureType('rug', 'Rug', '🟤'),
-  _FurnitureType('chair', 'Chair', '🪑'),
+  _FurnitureType('bed', 'Bed', '🛏️'),
+  _FurnitureType('nightstand', 'Nightstand', '🕯️'),
+  _FurnitureType('wardrobe', 'Wardrobe', '🚪'),
+  _FurnitureType('desk', 'Desk', '🖥️'),
+  _FurnitureType('dining_table', 'Dining Table', '🍽️'),
+  _FurnitureType('kitchen_counter', 'Kitchen Counter', '🍳'),
+  _FurnitureType('stove', 'Stove', '🔥'),
+  _FurnitureType('fridge', 'Fridge', '🧊'),
+  _FurnitureType('toilet', 'Toilet', '🚽'),
+  _FurnitureType('bathroom_sink', 'Bathroom Sink', '🚰'),
 ];
 
 String _furnitureEmoji(String type) =>
@@ -60,7 +70,105 @@ const _kLightingOptions = [
   _StyleOption('evening', 'Evening', Color(0xFFFF9F5A)),
 ];
 
+// ─── House templates ────────────────────────────────────────────────────────
+//
+// Walls are grid-snapped and axis-aligned only (never freeform/angled) —
+// each wall is stored canonically as a horizontal or vertical grid line so
+// "moving" a wall is remove-then-add rather than a drag-to-any-position
+// gesture. Rooms are not a sealed graph: walls are independent dividers and
+// floor cells independently mark what's "inside" the house — there's no
+// flood-fill/room-detection, by design, to keep this robust without any way
+// to visually test it in this environment.
+
+class _HouseTemplate {
+  final String id;
+  final String label;
+  final String emoji;
+  final HouseLayout Function() build;
+  const _HouseTemplate(this.id, this.label, this.emoji, this.build);
+}
+
+Map<String, String> _fillFloor(int x0, int x1, int z0, int z1, String matId) {
+  final m = <String, String>{};
+  for (var x = x0; x <= x1; x++) {
+    for (var z = z0; z <= z1; z++) {
+      m['$x,$z'] = matId;
+    }
+  }
+  return m;
+}
+
+HouseLayout _perimeterLayout({
+  required int gridW,
+  required int gridD,
+  required Map<String, String> floors,
+  List<int> verticalDividers = const [],
+}) {
+  final walls = <WallSegment>[];
+  for (var x = 0; x < gridW; x++) {
+    walls.add(WallSegment(orientation: 'H', line: 0, cell: x));
+  }
+  final frontDoorX = gridW ~/ 2;
+  for (var x = 0; x < gridW; x++) {
+    if (x == frontDoorX) continue; // front door gap
+    walls.add(WallSegment(orientation: 'H', line: gridD, cell: x));
+  }
+  for (var z = 0; z < gridD; z++) {
+    walls.add(WallSegment(orientation: 'V', line: 0, cell: z));
+    walls.add(WallSegment(orientation: 'V', line: gridW, cell: z));
+  }
+  final interiorDoorZ = gridD ~/ 2;
+  for (final vx in verticalDividers) {
+    for (var z = 0; z < gridD; z++) {
+      if (z == interiorDoorZ) continue; // interior doorway gap
+      walls.add(WallSegment(orientation: 'V', line: vx, cell: z));
+    }
+  }
+  return HouseLayout(gridW: gridW, gridD: gridD, walls: walls, floors: floors);
+}
+
+final _kHouseTemplates = [
+  _HouseTemplate('blank', 'Blank Plot', '🌳', () => const HouseLayout(gridW: 12, gridD: 10)),
+  _HouseTemplate(
+    'studio',
+    'Studio',
+    '🏠',
+    () => _perimeterLayout(gridW: 8, gridD: 6, floors: _fillFloor(0, 7, 0, 5, 'oak')),
+  ),
+  _HouseTemplate(
+    'one_bed',
+    '1-Bedroom',
+    '🛏️',
+    () => _perimeterLayout(
+      gridW: 10,
+      gridD: 8,
+      floors: {
+        ..._fillFloor(0, 4, 0, 7, 'walnut'),
+        ..._fillFloor(5, 9, 0, 7, 'oak'),
+      },
+      verticalDividers: [5],
+    ),
+  ),
+  _HouseTemplate(
+    'two_bed',
+    '2-Bedroom',
+    '🏡',
+    () => _perimeterLayout(
+      gridW: 13,
+      gridD: 9,
+      floors: {
+        ..._fillFloor(0, 3, 0, 8, 'walnut'),
+        ..._fillFloor(4, 8, 0, 8, 'oak'),
+        ..._fillFloor(9, 12, 0, 8, 'white_oak'),
+      },
+      verticalDividers: [4, 9],
+    ),
+  ),
+];
+
 // ─── Main screen ─────────────────────────────────────────────────────────
+
+enum _DecorateMode { furnish, walls, floors }
 
 class HomeDecorateScreen extends ConsumerStatefulWidget {
   const HomeDecorateScreen({super.key});
@@ -74,8 +182,12 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
   bool _sceneReady = false;
   String? _placingType;
   String? _movingItemId;
+  _DecorateMode _mode = _DecorateMode.furnish;
+  String _paintFloorId = 'oak';
+  bool _promptedTemplate = false;
   List<Furniture3DItem> _lastItems = const [];
   HomeRoomStyle _lastStyle = const HomeRoomStyle();
+  HouseLayout _lastLayout = const HouseLayout();
 
   bool get _isPlacing => _placingType != null;
 
@@ -104,12 +216,20 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
         _handlePlaced(data);
       case 'selected':
         _handleSelected(data['id'] as String);
+      case 'wallToggled':
+        _handleWallToggled(data);
+      case 'floorPainted':
+        _handleFloorPainted(data);
     }
   }
 
   void _syncScene() {
     if (!_sceneReady) return;
     final payload = {
+      'gridW': _lastLayout.gridW,
+      'gridD': _lastLayout.gridD,
+      'walls': _lastLayout.walls.map((w) => w.toMap()).toList(),
+      'floors': _lastLayout.floors,
       'items': _lastItems
           .map((it) => {
                 'id': it.id,
@@ -126,7 +246,7 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
       },
     };
     final jsArg = jsonEncode(jsonEncode(payload));
-    _webCtrl.runJavaScript('window.loadRoom($jsArg)');
+    _webCtrl.runJavaScript('window.loadHouse($jsArg)');
   }
 
   Future<void> _handlePlaced(Map<String, dynamic> data) async {
@@ -161,6 +281,49 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
     _showItemActions(item);
   }
 
+  Future<void> _handleWallToggled(Map<String, dynamic> data) async {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
+    final seg = WallSegment(
+      orientation: data['orientation'] as String,
+      line: (data['line'] as num).toInt(),
+      cell: (data['cell'] as num).toInt(),
+    );
+    final walls = List<WallSegment>.from(_lastLayout.walls);
+    final idx = walls.indexWhere((w) => w.key == seg.key);
+    if (idx >= 0) {
+      walls.removeAt(idx);
+    } else {
+      walls.add(seg);
+    }
+    _lastLayout = HouseLayout(
+      gridW: _lastLayout.gridW,
+      gridD: _lastLayout.gridD,
+      walls: walls,
+      floors: _lastLayout.floors,
+    );
+    _syncScene();
+    await ref.read(firestoreServiceProvider).setHouseLayout(coupleId, _lastLayout);
+  }
+
+  Future<void> _handleFloorPainted(Map<String, dynamic> data) async {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
+    final x = (data['x'] as num).toInt();
+    final z = (data['z'] as num).toInt();
+    final materialId = data['materialId'] as String;
+    final floors = Map<String, String>.from(_lastLayout.floors);
+    floors['$x,$z'] = materialId;
+    _lastLayout = HouseLayout(
+      gridW: _lastLayout.gridW,
+      gridD: _lastLayout.gridD,
+      walls: _lastLayout.walls,
+      floors: floors,
+    );
+    _syncScene();
+    await ref.read(firestoreServiceProvider).setHouseLayout(coupleId, _lastLayout);
+  }
+
   void _enterPlacement(String type, {String? movingId}) {
     setState(() {
       _placingType = type;
@@ -175,6 +338,26 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
       _movingItemId = null;
     });
     _webCtrl.runJavaScript('window.exitPlacementMode()');
+  }
+
+  void _setMode(_DecorateMode m) {
+    if (_mode == m) return;
+    _cancelPlacing();
+    setState(() => _mode = m);
+    final jsMode = switch (m) {
+      _DecorateMode.furnish => 'furnish',
+      _DecorateMode.walls => 'walls',
+      _DecorateMode.floors => 'floors',
+    };
+    final arg = m == _DecorateMode.floors ? ",'$_paintFloorId'" : '';
+    _webCtrl.runJavaScript("window.setEditMode('$jsMode'$arg)");
+  }
+
+  void _setPaintFloor(String id) {
+    setState(() => _paintFloorId = id);
+    if (_mode == _DecorateMode.floors) {
+      _webCtrl.runJavaScript("window.setEditMode('floors','$id')");
+    }
   }
 
   void _showItemActions(Furniture3DItem item) {
@@ -345,6 +528,69 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
         .setHomeRoomStyle(coupleId, floorId: floorId, wallId: wallId, lightingId: lightingId);
   }
 
+  void _showTemplatePicker({bool initial = false}) {
+    final coupleId = ref.read(coupleIdProvider);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: !initial,
+      enableDrag: !initial,
+      builder: (sheetCtx) => Container(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(sheetCtx).padding.bottom + 20),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              initial ? 'Choose your starting layout' : 'House Templates',
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            if (initial) ...[
+              const SizedBox(height: 6),
+              const Text('You can move walls and repaint floors together anytime after ♡',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            ] else ...[
+              const SizedBox(height: 6),
+              const Text('Applying a template replaces the current walls & floors.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            ],
+            const SizedBox(height: 16),
+            ..._kHouseTemplates.map((t) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Material(
+                    color: AppColors.bgCard,
+                    borderRadius: BorderRadius.circular(14),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      leading: Text(t.emoji, style: const TextStyle(fontSize: 24)),
+                      title: Text(t.label,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+                      onTap: () async {
+                        Navigator.pop(sheetCtx);
+                        if (coupleId == null) return;
+                        await ref
+                            .read(firestoreServiceProvider)
+                            .setHouseLayout(coupleId, t.build());
+                      },
+                    ),
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showMyItems() {
     final coupleId = ref.read(coupleIdProvider);
     showModalBottomSheet(
@@ -414,9 +660,22 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
       _lastStyle = next.valueOrNull ?? _lastStyle;
       _syncScene();
     });
+    ref.listen(houseLayoutProvider, (_, next) {
+      final layout = next.valueOrNull;
+      if (layout == null) return;
+      _lastLayout = layout;
+      _syncScene();
+      if (!_promptedTemplate && layout.floors.isEmpty && layout.walls.isEmpty) {
+        _promptedTemplate = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showTemplatePicker(initial: true);
+        });
+      }
+    });
     // Keep the initial snapshot even before ref.listen fires for the first time.
     _lastItems = ref.read(homeDecorProvider).valueOrNull ?? _lastItems;
     _lastStyle = ref.read(homeRoomStyleProvider).valueOrNull ?? _lastStyle;
+    _lastLayout = ref.read(houseLayoutProvider).valueOrNull ?? _lastLayout;
 
     return Scaffold(
       backgroundColor: const Color(0xFF1A1220),
@@ -430,6 +689,11 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
               onStyleTap: _showStylePicker,
               onMyItemsTap: _showMyItems,
             ),
+            _ModeBar(
+              mode: _mode,
+              onModeChanged: _setMode,
+              onTemplates: () => _showTemplatePicker(),
+            ),
             Expanded(
               child: Stack(
                 children: [
@@ -439,16 +703,21 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
                 ],
               ),
             ),
-            _InventoryDrawer(
-              placingType: _placingType,
-              onSelect: (type) {
-                if (_placingType == type) {
-                  _cancelPlacing();
-                } else {
-                  _enterPlacement(type);
-                }
-              },
-            ),
+            if (_mode == _DecorateMode.furnish)
+              _InventoryDrawer(
+                placingType: _placingType,
+                onSelect: (type) {
+                  if (_placingType == type) {
+                    _cancelPlacing();
+                  } else {
+                    _enterPlacement(type);
+                  }
+                },
+              )
+            else if (_mode == _DecorateMode.walls)
+              const _BuildHintBar(text: 'Tap a wall line to add or remove it')
+            else
+              _FloorPaintDrawer(selected: _paintFloorId, onSelect: _setPaintFloor),
           ],
         ),
       ),
@@ -485,7 +754,7 @@ class _Header extends StatelessWidget {
           ),
           Expanded(
             child: isPlacing
-                ? Text('Tap the floor to place it',
+                ? Text('Tap a floored room to place it',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.textPrimary.withValues(alpha: 0.9), fontSize: 14))
                 : Column(
@@ -517,6 +786,147 @@ class _Header extends StatelessWidget {
               onPressed: onStyleTap,
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Mode bar (Furnish / Walls / Floors + Templates) ────────────────────────
+
+class _ModeBar extends StatelessWidget {
+  final _DecorateMode mode;
+  final ValueChanged<_DecorateMode> onModeChanged;
+  final VoidCallback onTemplates;
+
+  const _ModeBar({required this.mode, required this.onModeChanged, required this.onTemplates});
+
+  Widget _seg(_DecorateMode m, String label, IconData icon) {
+    final selected = mode == m;
+    return Expanded(
+      child: SquishyTap(
+        onTap: () => onModeChanged(m),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.rose.withValues(alpha: 0.25) : AppColors.bgCard,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: selected ? AppColors.rose : AppColors.divider, width: selected ? 1.3 : 0.5),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: selected ? AppColors.rose : AppColors.textSecondary),
+              const SizedBox(height: 2),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: selected ? AppColors.textPrimary : AppColors.textMuted)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 8, 8),
+      child: Row(
+        children: [
+          _seg(_DecorateMode.furnish, 'Furnish', Icons.chair_rounded),
+          _seg(_DecorateMode.walls, 'Walls', Icons.border_all_rounded),
+          _seg(_DecorateMode.floors, 'Floors', Icons.grid_view_rounded),
+          IconButton(
+            tooltip: 'Templates',
+            icon: const Icon(Icons.dashboard_customize_outlined, color: AppColors.textPrimary, size: 22),
+            onPressed: onTemplates,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BuildHintBar extends StatelessWidget {
+  final String text;
+  const _BuildHintBar({required this.text});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+        ),
+        child: Text(text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+      );
+}
+
+class _FloorPaintDrawer extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onSelect;
+
+  const _FloorPaintDrawer({required this.selected, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 108,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+      ),
+      child: Column(
+        children: [
+          const Text('Drag over the floor to paint',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: _kFloorOptions
+                  .map((o) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: SquishyTap(
+                          onTap: () => onSelect(o.id),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: o.swatch,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: o.id == selected
+                                          ? AppColors.textPrimary
+                                          : Colors.white24,
+                                      width: o.id == selected ? 2.5 : 1),
+                                ),
+                                child: o.id == selected
+                                    ? const Icon(Icons.check_rounded, color: Colors.white, size: 18)
+                                    : null,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(o.label,
+                                  style: const TextStyle(color: AppColors.textMuted, fontSize: 9)),
+                            ],
+                          ),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
         ],
       ),
     );

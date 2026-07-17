@@ -989,6 +989,68 @@ class HomeRoomStyle {
       };
 }
 
+/// One wall segment in the house grid, stored canonically as either a
+/// horizontal line (runs along X at a given z-boundary) or a vertical line
+/// (runs along Z at a given x-boundary) — every physical wall position has
+/// exactly one representation, so add/remove is a simple set toggle.
+class WallSegment {
+  final String orientation; // 'H' or 'V'
+  final int line; // z-line index for H, x-line index for V
+  final int cell; // x cell index for H, z cell index for V
+
+  const WallSegment({required this.orientation, required this.line, required this.cell});
+
+  String get key => '$orientation:$line:$cell';
+
+  Map<String, dynamic> toMap() => {'o': orientation, 'l': line, 'c': cell};
+
+  factory WallSegment.fromMap(Map<String, dynamic> m) => WallSegment(
+        orientation: m['o'] as String? ?? 'H',
+        line: (m['l'] as num?)?.toInt() ?? 0,
+        cell: (m['c'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// The couple's shared house floor plan: a grid footprint of floored cells
+/// (which cells are "inside" the house, and which floor material each uses)
+/// plus the wall segments dividing them. One singleton per couple, same doc
+/// shape as [HomeRoomStyle] — full-rebuild-on-change like the rest of the
+/// 3D room/decor sync. Walls are independent dividers, not a sealed-room
+/// graph — no flood-fill/room-detection is attempted, by design.
+class HouseLayout {
+  final int gridW;
+  final int gridD;
+  final List<WallSegment> walls;
+  final Map<String, String> floors; // "x,z" cell key -> floor material id
+
+  const HouseLayout({
+    this.gridW = 10,
+    this.gridD = 8,
+    this.walls = const [],
+    this.floors = const {},
+  });
+
+  factory HouseLayout.fromDoc(DocumentSnapshot doc) {
+    if (!doc.exists) return const HouseLayout();
+    final d = doc.data() as Map<String, dynamic>;
+    return HouseLayout(
+      gridW: (d['gridW'] as num?)?.toInt() ?? 10,
+      gridD: (d['gridD'] as num?)?.toInt() ?? 8,
+      walls: ((d['walls'] as List?) ?? const [])
+          .map((w) => WallSegment.fromMap(Map<String, dynamic>.from(w as Map)))
+          .toList(),
+      floors: Map<String, String>.from(d['floors'] as Map? ?? const {}),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'gridW': gridW,
+        'gridD': gridD,
+        'walls': walls.map((w) => w.toMap()).toList(),
+        'floors': floors,
+      };
+}
+
 /// The couple's current shared drawing — pushed to the partner's Android
 /// home-screen widget. One singleton per couple, replaced on every send
 /// (no history/gallery), same doc shape as [HomeRoomStyle].

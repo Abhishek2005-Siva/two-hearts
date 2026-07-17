@@ -148,6 +148,12 @@ final homeRoomStyleProvider = StreamProvider<HomeRoomStyle>((ref) {
   return ref.read(firestoreServiceProvider).watchHomeRoomStyle(coupleId);
 });
 
+final houseLayoutProvider = StreamProvider<HouseLayout>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return Stream.value(const HouseLayout());
+  return ref.read(firestoreServiceProvider).watchHouseLayout(coupleId);
+});
+
 final homeWidgetDrawingProvider = StreamProvider<HomeWidgetDrawing>((ref) {
   final coupleId = ref.watch(coupleIdProvider);
   if (coupleId == null) return Stream.value(const HomeWidgetDrawing());

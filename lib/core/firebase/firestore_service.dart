@@ -1039,6 +1039,15 @@ class FirestoreService {
   Stream<HomeRoomStyle> watchHomeRoomStyle(String coupleId) =>
       _homeStyleDoc(coupleId).snapshots().map(HomeRoomStyle.fromDoc);
 
+  DocumentReference<Map<String, dynamic>> _houseLayoutDoc(String coupleId) =>
+      _db.collection('couples').doc(coupleId).collection('homeRoom').doc('layout');
+
+  Future<void> setHouseLayout(String coupleId, HouseLayout layout) =>
+      _houseLayoutDoc(coupleId).set(layout.toMap());
+
+  Stream<HouseLayout> watchHouseLayout(String coupleId) =>
+      _houseLayoutDoc(coupleId).snapshots().map(HouseLayout.fromDoc);
+
   // ── Shared drawing → partner's home-screen widget ───────────────────────
 
   DocumentReference<Map<String, dynamic>> _homeWidgetDrawingDoc(
