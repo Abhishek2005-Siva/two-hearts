@@ -803,15 +803,21 @@ class FirestoreService {
   ) =>
       _db.collection('couples').doc(coupleId).collection('dailySnaps').doc(dateKey);
 
-  /// Merge-write so posting my snap never clobbers my partner's same-day entry.
+  /// Merge-write so posting my snap never clobbers my partner's same-day
+  /// entry. Nests `uid` inside the `entries` map value itself rather than
+  /// using a dotted `'entries.$uid'` key — dotted keys are only treated as
+  /// nested-field paths by update(), never by set() (even with
+  /// merge: true), where they're stored as one literal field name
+  /// containing a dot. A nested map value merges correctly instead.
   Future<void> setDailySnapEntry(
     String coupleId,
     String dateKey,
     String uid,
     DailySnapEntry entry,
   ) =>
-      _dailySnapDoc(coupleId, dateKey)
-          .set({'entries.$uid': entry.toMap()}, SetOptions(merge: true));
+      _dailySnapDoc(coupleId, dateKey).set({
+        'entries': {uid: entry.toMap()},
+      }, SetOptions(merge: true));
 
   Stream<List<DailySnap>> watchDailySnaps(String coupleId) => _db
       .collection('couples')
@@ -1802,20 +1808,23 @@ class FirestoreService {
   Stream<Map<String, dynamic>?> watchListenSession(String coupleId) =>
       _listenDoc(coupleId).snapshots().map((s) => s.data());
 
-  /// Marks this user as present in the listening room (heartbeat).
+  /// Marks this user as present in the listening room (heartbeat). Nests
+  /// `_uid` inside the `present` map value (not a dotted key — see
+  /// setDailySnapEntry's comment for why set()+merge needs that).
   Future<void> joinListen(String coupleId) async {
     await _listenDoc(coupleId).set({
-      'present.$_uid': Timestamp.now(),
+      'present': {_uid: Timestamp.now()},
     }, SetOptions(merge: true));
   }
 
   Future<void> listenHeartbeat(String coupleId) =>
       _listenDoc(coupleId).set({
-        'present.$_uid': Timestamp.now(),
+        'present': {_uid: Timestamp.now()},
       }, SetOptions(merge: true));
 
-  Future<void> leaveListen(String coupleId) => _listenDoc(coupleId)
-      .set({'present.$_uid': FieldValue.delete()}, SetOptions(merge: true));
+  Future<void> leaveListen(String coupleId) => _listenDoc(coupleId).set({
+        'present': {_uid: FieldValue.delete()},
+      }, SetOptions(merge: true));
 
   /// Sets the shared track and notifies the partner it's time to tune in.
   Future<void> setListenTrack(
@@ -1837,7 +1846,7 @@ class FirestoreService {
       'positionMs': 0,
       'updatedBy': _uid,
       'updatedAt': FieldValue.serverTimestamp(),
-      'present.$_uid': Timestamp.now(),
+      'present': {_uid: Timestamp.now()},
     }, SetOptions(merge: true));
     if (notify) {
       final token = await _partnerToken(coupleId);
@@ -1878,7 +1887,7 @@ class FirestoreService {
     List<Map<String, dynamic>> playlists,
   ) =>
       _listenDoc(coupleId).set({
-        'playlists.$_uid': playlists,
+        'playlists': {_uid: playlists},
       }, SetOptions(merge: true));
 
   /// Publishes this account's Spotify user ID so both phones can tell
@@ -1887,7 +1896,7 @@ class FirestoreService {
   /// only one partner actually hears audio no matter what this app does.
   Future<void> syncSpotifyAccountId(String coupleId, String spotifyUserId) =>
       _listenDoc(coupleId).set({
-        'accountIds.$_uid': spotifyUserId,
+        'accountIds': {_uid: spotifyUserId},
       }, SetOptions(merge: true));
 
   // ── Avatar ────────────────────────────────────────────────────────────────
