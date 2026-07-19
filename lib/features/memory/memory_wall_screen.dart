@@ -593,6 +593,7 @@ class _HeroSnapshotCardState extends ConsumerState<_HeroSnapshotCard> {
                   const SizedBox(height: 16),
                   SquishyTap(
                     onTap: _shuffle,
+                    style: TapAnimationStyle.spin,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 10),
@@ -658,6 +659,7 @@ class _HeroSnapshotCardState extends ConsumerState<_HeroSnapshotCard> {
                       bottom: -8,
                       child: SquishyTap(
                         onTap: _shuffle,
+                        style: TapAnimationStyle.spin,
                         child: Container(
                           padding: const EdgeInsets.all(7),
                           decoration: BoxDecoration(
@@ -953,6 +955,7 @@ class _CollectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.pulse,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutBack,
@@ -1075,6 +1078,7 @@ class _TypeFilterRow extends StatelessWidget {
         padding: const EdgeInsets.only(right: 8),
         child: SquishyTap(
           onTap: () => onChanged(f),
+          style: TapAnimationStyle.pulse,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             decoration: BoxDecoration(
@@ -1640,6 +1644,7 @@ class _MemoryTile extends StatelessWidget {
                   child: SquishyTap(
                     onTap: onFavorite,
                     cuteStickers: memory.favorite ? null : const ['💖'],
+                    style: TapAnimationStyle.heartBeat,
                     child: Container(
                       padding: const EdgeInsets.all(5),
                       decoration: const BoxDecoration(

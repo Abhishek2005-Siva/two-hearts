@@ -530,6 +530,7 @@ class _FilterChipsRow extends StatelessWidget {
         padding: const EdgeInsets.only(right: 8),
         child: SquishyTap(
           onTap: () => onChanged(f),
+          style: TapAnimationStyle.pulse,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1185,6 +1186,7 @@ class _WritingStation extends StatelessWidget {
             child: SquishyTap(
               onTap: onTap,
               cuteStickers: const ['✍️', '📖'],
+              style: TapAnimationStyle.bounce,
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 decoration: BoxDecoration(

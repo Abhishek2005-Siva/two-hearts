@@ -272,6 +272,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
               children: MoodType.values.map((mood) {
                 final selected = currentMood == mood;
                 return SquishyTap(
+                  style: TapAnimationStyle.jelly,
                   onTap: () async {
                     Navigator.pop(sheetCtx);
                     await ref
@@ -421,6 +422,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
           top: myTop,
           child: SquishyTap(
             onTap: _showMoodPicker,
+            style: TapAnimationStyle.jelly,
             child: _CharNameLabel(name: myName, color: accent),
           ),
         ),
@@ -432,6 +434,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
           top: partnerTop,
           child: SquishyTap(
             onTap: _showMoodPicker,
+            style: TapAnimationStyle.jelly,
             child: _CharNameLabel(name: partnerName, color: AppColors.lavender),
           ),
         ),
@@ -573,6 +576,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                       ),
                       // Listen Together — tap to open the shared Spotify room
                       SquishyTap(
+                        style: TapAnimationStyle.pulse,
                         onTap: () {
                           HapticFeedback.lightImpact();
                           context.push('/listen');
@@ -902,6 +906,7 @@ void showWildIdeasSheet(BuildContext context, WidgetRef ref) {
                   )),
               SquishyTap(
                 onTap: () => sendCustomWildIdea(sheetCtx, ref),
+                style: TapAnimationStyle.jelly,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
@@ -1272,6 +1277,7 @@ class _NotificationBell extends StatelessWidget {
     final hasUnread = unreadCount > 0;
     final bell = SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.wobble,
       child: Container(
         width: 38,
         height: 38,
@@ -1389,6 +1395,7 @@ class _PolaroidStrip extends StatelessWidget {
             padding: const EdgeInsets.only(right: 16, top: 6),
             child: SquishyTap(
               onTap: () => ctx.push('/memory'),
+              style: TapAnimationStyle.pulse,
               child: _StickyNote(nightness: nightness),
             ),
           );
@@ -1430,6 +1437,7 @@ class _PolaroidCard extends StatelessWidget {
 
     return SquishyTap(
       onTap: () => context.push('/memory/${memory.id}'),
+      style: TapAnimationStyle.pulse,
       child: SizedBox(
         width: 112,
         height: 157,
@@ -1797,6 +1805,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                     const SizedBox(width: 8),
                     SquishyTap(
                       onTap: _nicknameSaving ? null : _saveNickname,
+                      style: TapAnimationStyle.bounce,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 10),
@@ -1870,6 +1879,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                     ...kWildIdeas.map((idea) {
                       return SquishyTap(
                         onTap: () => sendWildIdea(context, ref, idea.$3),
+                        style: TapAnimationStyle.jelly,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 8),
@@ -1897,6 +1907,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                     // Write your own — wrapped and delivered the same way
                     SquishyTap(
                       onTap: () => sendCustomWildIdea(context, ref),
+                      style: TapAnimationStyle.jelly,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
@@ -1983,6 +1994,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
                   }
                   if (context.mounted) Navigator.pop(context);
                 },
+                style: TapAnimationStyle.jelly,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   width: 48,
@@ -2011,6 +2023,7 @@ class _SettingsSheetState extends ConsumerState<_SettingsSheet> {
           ),
           const SizedBox(height: 24),
           SquishyTap(
+            style: TapAnimationStyle.shake,
             onTap: () async {
               await FirebaseAuth.instance.signOut();
               if (context.mounted) {

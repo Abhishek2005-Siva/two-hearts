@@ -365,6 +365,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen>
                           : SquishyTap(
                               onTap: _send,
                               cuteStickers: const ['💌', '✨', '💕'],
+                              style: TapAnimationStyle.heartBeat,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                                 decoration: BoxDecoration(
@@ -1111,6 +1112,7 @@ class _UnlockChip extends StatelessWidget {
     final color = tint ?? accent;
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.pulse,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Stack(

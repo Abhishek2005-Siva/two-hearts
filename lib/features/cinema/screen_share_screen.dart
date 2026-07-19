@@ -583,6 +583,7 @@ class _CtrlBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.pulse,
       child: Container(
         width: 58,
         height: 58,

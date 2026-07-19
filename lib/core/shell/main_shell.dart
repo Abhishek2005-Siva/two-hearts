@@ -582,6 +582,7 @@ class _GiftOverlayState extends ConsumerState<_GiftOverlay> {
         child: Center(
           child: SquishyTap(
             onTap: () => _openGift(gift),
+            style: TapAnimationStyle.jelly,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -838,6 +839,7 @@ class _CallBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.pulse,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

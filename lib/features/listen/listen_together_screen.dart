@@ -705,6 +705,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen>
             const SizedBox(height: 28),
             SquishyTap(
               onTap: connecting ? null : _connect,
+              style: TapAnimationStyle.bounce,
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 28, vertical: 15),
@@ -798,6 +799,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen>
           _tab = t;
           _openPlaylist = null;
         }),
+        style: TapAnimationStyle.pulse,
         child: Container(
           margin: const EdgeInsets.only(right: 8),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1151,6 +1153,7 @@ class _MiniBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.pulse,
       child: Container(
         padding: EdgeInsets.symmetric(
             horizontal: label == null ? 8 : 12, vertical: 7),

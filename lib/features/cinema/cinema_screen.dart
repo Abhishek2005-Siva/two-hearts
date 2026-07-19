@@ -351,6 +351,7 @@ class _SourceButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.bounce,
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
@@ -1002,6 +1003,7 @@ class _CinemaPlayerState extends ConsumerState<_CinemaPlayer> {
                             children: _reactionEmojis
                                 .map((e) => SquishyTap(
                                       onTap: () => _sendReaction(e),
+                                      style: TapAnimationStyle.jelly,
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 8, vertical: 4),
@@ -1077,6 +1079,7 @@ class _CinemaPlayerState extends ConsumerState<_CinemaPlayer> {
                               ),
                               SquishyTap(
                                 onTap: _togglePlay,
+                                style: TapAnimationStyle.bounce,
                                 child: Container(
                                   width: 62,
                                   height: 62,

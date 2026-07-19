@@ -813,6 +813,7 @@ class _OptionButton extends StatelessWidget {
 
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.pulse,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
@@ -1130,6 +1131,7 @@ class _ScribbleTabState extends ConsumerState<_ScribbleTab> {
               Row(children: [
                 ..._colors.map((c) => SquishyTap(
                   onTap: () => setState(() => _penColor = c),
+                  style: TapAnimationStyle.jelly,
                   child: Container(
                     width: 28, height: 28,
                     margin: const EdgeInsets.only(right: 6),
@@ -1252,6 +1254,7 @@ class _ScribbleTabState extends ConsumerState<_ScribbleTab> {
                 const SizedBox(width: 10),
                 SquishyTap(
                   onTap: _submittingGuess ? null : _submitGuess,
+                  style: TapAnimationStyle.bounce,
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -1546,6 +1549,7 @@ class _RpsTabState extends ConsumerState<_RpsTab> {
                   children: _rpsEmoji.entries.map((e) {
                     final selected = myPick == e.key;
                     return SquishyTap(
+                      style: TapAnimationStyle.bounce,
                       onTap: myPick == null
                           ? () {
                               HapticFeedback.mediumImpact();

@@ -447,6 +447,7 @@ class _CircleIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.pulse,
       child: Container(
         width: 40,
         height: 40,
@@ -584,6 +585,7 @@ class _WoodTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.pulse,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
@@ -877,6 +879,7 @@ class _BookCard extends StatelessWidget {
             SquishyTap(
               onTap: onToggleRead,
               cuteStickers: const ['📖', '💞'],
+              style: TapAnimationStyle.heartBeat,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 13),

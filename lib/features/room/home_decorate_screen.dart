@@ -586,6 +586,7 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen>
                       padding: const EdgeInsets.only(right: 10),
                       child: SquishyTap(
                         onTap: () => onPick(o.id),
+                        style: TapAnimationStyle.pulse,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -920,6 +921,7 @@ class _ModeBar extends StatelessWidget {
     return Expanded(
       child: SquishyTap(
         onTap: () => onModeChanged(m),
+        style: TapAnimationStyle.pulse,
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 3),
           padding: const EdgeInsets.symmetric(vertical: 9),
@@ -976,6 +978,7 @@ class _ExpandGrid extends StatelessWidget {
 
   Widget _btn(IconData icon, String dir) => SquishyTap(
         onTap: () => onExpand(dir),
+        style: TapAnimationStyle.bounce,
         child: Container(
           width: 48,
           height: 48,
@@ -1054,6 +1057,7 @@ class _FloorPaintDrawer extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 6),
                         child: SquishyTap(
                           onTap: () => onSelect(o.id),
+                          style: TapAnimationStyle.pulse,
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -1136,6 +1140,7 @@ class _CatalogChip extends StatelessWidget {
     return SquishyTap(
       onTap: onTap,
       cuteStickers: selected ? null : const ['✨'],
+      style: TapAnimationStyle.jelly,
       child: Container(
         width: 68,
         padding: const EdgeInsets.symmetric(vertical: 8),

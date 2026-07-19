@@ -586,6 +586,7 @@ class _HeroPickCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: pick.onTap,
+      style: TapAnimationStyle.bounce,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(24),
@@ -707,6 +708,7 @@ class _FeatureCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.pulse,
       child: Container(
         height: 152,
         padding: const EdgeInsets.all(16),
@@ -813,6 +815,7 @@ class _QuickPick extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.jelly,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
         decoration: BoxDecoration(

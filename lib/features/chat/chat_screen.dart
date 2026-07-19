@@ -803,6 +803,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                     SquishyTap(
                       onTap: () =>
                           setState(() => _whisperMode = false),
+                      style: TapAnimationStyle.shake,
                       child: const Icon(Icons.close_rounded,
                           color: AppColors.textMuted, size: 16),
                     ),
@@ -827,6 +828,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         _editingMessage = null;
                         _controller.clear();
                       }),
+                      style: TapAnimationStyle.shake,
                       child: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 16),
                     ),
                   ],
@@ -850,6 +852,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                     ),
                     SquishyTap(
                       onTap: () => setState(() => _replyingTo = null),
+                      style: TapAnimationStyle.shake,
                       child: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 16),
                     ),
                   ],
@@ -1110,6 +1113,7 @@ class _ChatAppBar extends StatelessWidget {
               SquishyTap(
                 onTap: () =>
                     FullscreenImageViewer.open(context, partner!.avatarUrl!),
+                style: TapAnimationStyle.pulse,
                 child: CircleAvatar(
                     radius: 18,
                     backgroundImage: NetworkImage(partner!.avatarUrl!)),
@@ -1132,6 +1136,7 @@ class _ChatAppBar extends StatelessWidget {
             Expanded(
               child: SquishyTap(
                 onTap: () => context.push('/snaps'),
+                style: TapAnimationStyle.pulse,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1298,6 +1303,7 @@ class _BackgroundPickerSheet extends StatelessWidget {
                   final isSelected = customBgUrl != null;
                   return SquishyTap(
                     onTap: onGalleryPick,
+                    style: TapAnimationStyle.pulse,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -1355,6 +1361,7 @@ class _BackgroundPickerSheet extends StatelessWidget {
                 final asset = _chatBgAssets[bg];
                 return SquishyTap(
                   onTap: () => onSelect(bg),
+                  style: TapAnimationStyle.pulse,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -1630,6 +1637,7 @@ class _ChatInputState extends State<_ChatInput> {
           // Release to send button
           SquishyTap(
             onTap: _stopAndPreview,
+            style: TapAnimationStyle.bounce,
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -1649,6 +1657,7 @@ class _ChatInputState extends State<_ChatInput> {
       children: [
         SquishyTap(
           onTap: widget.onSnap,
+          style: TapAnimationStyle.pulse,
           child: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -1705,6 +1714,7 @@ class _ChatInputState extends State<_ChatInput> {
         const SizedBox(width: 8),
         SquishyTap(
           onTap: widget.onToggleWhisper,
+          style: TapAnimationStyle.pulse,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.all(8),

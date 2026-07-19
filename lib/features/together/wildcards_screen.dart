@@ -627,6 +627,7 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
                       else
                         SquishyTap(
                           onTap: _showRequestSheet,
+                          style: TapAnimationStyle.pulse,
                           child: Container(
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -787,6 +788,7 @@ class _PlayingCardTile extends StatelessWidget {
 
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.wobble,
       child: Container(
         constraints: const BoxConstraints(minHeight: 150),
         decoration: BoxDecoration(
