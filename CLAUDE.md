@@ -190,6 +190,32 @@ The user then explicitly asked to throw all of that away for **genuine
   `scripts/` payload) — the search-script workflow described in it isn't
   actually runnable in this repo; treat it as reference guidance only
   unless someone adds the supporting files.
+- `.claude/skills/apple-design/` — cross-platform UI/UX design reviewer
+  grounded in Apple HIG principles, bundles real reference docs
+  (`references/hig/`). Use for design-review/audit requests, not just
+  visual/interior work (that's `interior-design-expert`'s job).
+- `.claude/skills/flutter-patterns/` — reference docs
+  (`patterns/flutter-{widget,testing,performance,security,animation}-patterns.md`)
+  for Flutter-specific implementation patterns and checklists.
+- `.claude/skills/flutter-tester/` — Riverpod/Mockito-aware Flutter
+  testing patterns (Given-When-Then, layer isolation, GetIt/
+  SharedPreferences/FakeDatabase setup). Note: this project currently has
+  **no test suite** (see "Environment reality check" above — verification
+  is `flutter analyze` + CI build only), so this is reference-only until
+  someone actually adds tests.
+- `.claude/skills/owasp-mobile-security-checker/` — OWASP Mobile Top 10
+  audit skill with real Python scanner scripts (`scripts/`), covers
+  hardcoded secrets, insecure storage, weak crypto, network issues, etc.
+  Bear in mind this app has a couple of *intentional* client-side-only
+  gates already accepted for its threat model (Wildcards' `_kGranterEmail`,
+  `dev_builds` FCM topic) — don't treat those as findings without
+  re-reading why they're documented as deliberate above.
+- All four added from small, single-purpose upstream repos after
+  checking each actually ships real content (not just a description) —
+  skipped a fifth candidate (`vp-k/flutter-craft`) because it was a heavy
+  15-skill opinionated multi-agent SDLC methodology (worktrees, parallel
+  agents, its own planning process) that would impose a workflow at odds
+  with how this repo is actually worked on, not just reference material.
 
 ## Things that look like bugs but are intentional
 
