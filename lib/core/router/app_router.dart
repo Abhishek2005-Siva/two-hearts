@@ -147,83 +147,96 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
       // Fullscreen — outside the shell so the bottom nav never overlaps the movie.
       GoRoute(path: '/cinema', builder: (_, _) => const CinemaScreen()),
-      ShellRoute(
-        builder: (context, state, child) => MainShell(child: child),
-        routes: [
-          GoRoute(
-            path: '/room',
-            pageBuilder: (_, _) => _tabPage(const RoomScreen()),
-          ),
-          GoRoute(
-            path: '/room/decorate',
-            builder: (_, _) => const HomeDecorateScreen(),
-          ),
-          GoRoute(
-            path: '/room/draw',
-            builder: (_, _) => const WidgetDrawScreen(),
-          ),
-          GoRoute(
-            path: '/chat',
-            pageBuilder: (_, _) => _tabPage(const ChatScreen()),
-          ),
-          GoRoute(
-            path: '/memory',
-            pageBuilder: (_, _) => _tabPage(const MemoryWallScreen()),
-          ),
-          GoRoute(
-            path: '/memory/:id',
-            builder: (_, state) =>
-                MemoryDetailScreen(memoryId: state.pathParameters['id']!),
-          ),
-          GoRoute(
-            path: '/calendar',
-            pageBuilder: (_, _) => _tabPage(const DailySnapCalendarScreen()),
-          ),
-          GoRoute(
-            path: '/calendar/day/:dateKey',
-            builder: (_, state) =>
-                DailyMemoryDetailScreen(dateKey: state.pathParameters['dateKey']!),
-          ),
-          GoRoute(
-            path: '/together',
-            pageBuilder: (_, _) => _tabPage(const TogetherScreen()),
-          ),
-          GoRoute(
-            path: '/together/letter/new',
-            builder: (_, _) => const LetterComposeScreen(),
-          ),
-          GoRoute(
-            path: '/together/journal',
-            builder: (_, _) => const JournalScreen(),
-          ),
-          GoRoute(
-            path: '/together/recipes',
-            builder: (_, _) => const RecipesScreen(),
-          ),
-          GoRoute(
-            path: '/you',
-            builder: (_, _) => const YouAndMeScreen(),
-          ),
-          GoRoute(
-            path: '/games',
-            builder: (_, state) {
-              // Tab order in GamesScreen's TabController: WYR, Truth, Scribble, RPS, Kiss, Quiz.
-              const tabIndex = {'wyr': 0, 'truth': 1, 'scribble': 2, 'rps': 3, 'kiss': 4, 'quiz': 5};
-              final tab = state.uri.queryParameters['tab'];
-              return GamesScreen(initialTabIndex: tabIndex[tab] ?? 0);
-            },
-          ),
-          GoRoute(path: '/dates', builder: (_, _) => const DateIdeasScreen()),
-          GoRoute(path: '/snaps', builder: (_, _) => const SnapsScreen()),
-          GoRoute(path: '/photo_booth', builder: (_, _) => const PhotoBoothScreen()),
-          GoRoute(path: '/together/bucket', builder: (_, _) => const BucketListScreen()),
-          GoRoute(path: '/together/wildcards', builder: (_, _) => const WildcardsScreen()),
-          GoRoute(path: '/together/note', builder: (_, _) => const SharedNoteScreen()),
-          GoRoute(path: '/avatar-creator', builder: (_, _) => const AvatarCreatorScreen()),
-          GoRoute(path: '/places', builder: (_, _) => const PlacesScreen()),
-          GoRoute(path: '/books', builder: (_, _) => const BookWishlistScreen()),
-          GoRoute(path: '/listen', builder: (_, _) => const ListenTogetherScreen()),
-          GoRoute(path: '/notifications', builder: (_, _) => const NotificationsScreen()),
+      // StatefulShellRoute (not a plain ShellRoute) — each branch below gets
+      // its own independent Navigator, so pushed screens (a book reader
+      // under Fun, a memory detail under Memories, etc.) stay exactly where
+      // you left them when you switch tabs and come back, instead of being
+      // discarded because everything shared one Navigator stack.
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            MainShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/room',
+              pageBuilder: (_, _) => _tabPage(const RoomScreen()),
+            ),
+            GoRoute(
+              path: '/room/decorate',
+              builder: (_, _) => const HomeDecorateScreen(),
+            ),
+            GoRoute(
+              path: '/room/draw',
+              builder: (_, _) => const WidgetDrawScreen(),
+            ),
+            GoRoute(path: '/notifications', builder: (_, _) => const NotificationsScreen()),
+            GoRoute(path: '/you', builder: (_, _) => const YouAndMeScreen()),
+            GoRoute(path: '/avatar-creator', builder: (_, _) => const AvatarCreatorScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/chat',
+              pageBuilder: (_, _) => _tabPage(const ChatScreen()),
+            ),
+            GoRoute(path: '/snaps', builder: (_, _) => const SnapsScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/memory',
+              pageBuilder: (_, _) => _tabPage(const MemoryWallScreen()),
+            ),
+            GoRoute(
+              path: '/memory/:id',
+              builder: (_, state) =>
+                  MemoryDetailScreen(memoryId: state.pathParameters['id']!),
+            ),
+            GoRoute(path: '/photo_booth', builder: (_, _) => const PhotoBoothScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/calendar',
+              pageBuilder: (_, _) => _tabPage(const DailySnapCalendarScreen()),
+            ),
+            GoRoute(
+              path: '/calendar/day/:dateKey',
+              builder: (_, state) =>
+                  DailyMemoryDetailScreen(dateKey: state.pathParameters['dateKey']!),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/together',
+              pageBuilder: (_, _) => _tabPage(const TogetherScreen()),
+            ),
+            GoRoute(
+              path: '/together/letter/new',
+              builder: (_, _) => const LetterComposeScreen(),
+            ),
+            GoRoute(
+              path: '/together/journal',
+              builder: (_, _) => const JournalScreen(),
+            ),
+            GoRoute(
+              path: '/together/recipes',
+              builder: (_, _) => const RecipesScreen(),
+            ),
+            GoRoute(
+              path: '/games',
+              builder: (_, state) {
+                // Tab order in GamesScreen's TabController: WYR, Truth, Scribble, RPS, Kiss, Quiz.
+                const tabIndex = {'wyr': 0, 'truth': 1, 'scribble': 2, 'rps': 3, 'kiss': 4, 'quiz': 5};
+                final tab = state.uri.queryParameters['tab'];
+                return GamesScreen(initialTabIndex: tabIndex[tab] ?? 0);
+              },
+            ),
+            GoRoute(path: '/dates', builder: (_, _) => const DateIdeasScreen()),
+            GoRoute(path: '/together/bucket', builder: (_, _) => const BucketListScreen()),
+            GoRoute(path: '/together/wildcards', builder: (_, _) => const WildcardsScreen()),
+            GoRoute(path: '/together/note', builder: (_, _) => const SharedNoteScreen()),
+            GoRoute(path: '/places', builder: (_, _) => const PlacesScreen()),
+            GoRoute(path: '/books', builder: (_, _) => const BookWishlistScreen()),
+            GoRoute(path: '/listen', builder: (_, _) => const ListenTogetherScreen()),
+          ]),
         ],
       ),
     ],

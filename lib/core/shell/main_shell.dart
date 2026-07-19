@@ -17,8 +17,8 @@ import '../../features/chat/video_call_screen.dart';
 import '../../features/cinema/screen_share_screen.dart';
 
 class MainShell extends ConsumerStatefulWidget {
-  final Widget child;
-  const MainShell({super.key, required this.child});
+  final StatefulNavigationShell navigationShell;
+  const MainShell({super.key, required this.navigationShell});
 
   @override
   ConsumerState<MainShell> createState() => _MainShellState();
@@ -58,13 +58,7 @@ class _MainShellState extends ConsumerState<MainShell>
     return i == -1 ? null : i;
   }
 
-  int _currentIndex(BuildContext context) {
-    final loc = GoRouterState.of(context).matchedLocation;
-    for (int i = 0; i < _tabs.length; i++) {
-      if (loc.startsWith(_tabs[i].path)) return i;
-    }
-    return 0;
-  }
+  int _currentIndex(BuildContext context) => widget.navigationShell.currentIndex;
 
   @override
   void initState() {
@@ -134,7 +128,7 @@ class _MainShellState extends ConsumerState<MainShell>
   /// second press within 2 seconds actually exits the app.
   void _handleBackPress(BuildContext context, String currentLocation) {
     if (currentLocation != '/room') {
-      context.go('/room');
+      widget.navigationShell.goBranch(0);
       return;
     }
     final now = DateTime.now();
@@ -256,7 +250,7 @@ class _MainShellState extends ConsumerState<MainShell>
       child: Scaffold(
       body: Stack(
         children: [
-          widget.child,
+          widget.navigationShell,
           const PresenceLayer(),
           const _GiftOverlay(),
         ],
@@ -299,7 +293,7 @@ class _MainShellState extends ConsumerState<MainShell>
                   children: List.generate(_tabs.length, (i) {
                     final selected = idx == i;
                     return SquishyTap(
-                      onTap: () => context.go(_tabs[i].path),
+                      onTap: () => widget.navigationShell.goBranch(i),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(
