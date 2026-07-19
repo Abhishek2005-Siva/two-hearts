@@ -10,6 +10,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/delight/delight.dart';
+import '../../core/delight/mascot_creature.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -544,6 +545,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                 _spawnHeart(0.5);
               },
             ),
+          ),
+
+          // 2d. The couple's little companion creature — original design,
+          // pure CustomPainter (no external art), perched near the window.
+          Positioned(
+            right: size.width * 0.06,
+            top: size.height * 0.16,
+            child: const MascotCreature(),
           ),
 
           // 2. Main UI layout

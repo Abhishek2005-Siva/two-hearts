@@ -91,6 +91,17 @@ Android emulator and no physical device attached**. In that situation:
   reused by `SquishyTap`/`GradientButton`), `FlyAway`, `HeartBombardment`,
   `TopBanner`, `SeasonalDrift`. Governing rule stated in the file itself:
   "one delightful thing at a time" — don't stack effects.
+- **`MascotCreature`** (`lib/core/delight/mascot_creature.dart`) — a small
+  persistent companion perched on the Room screen, entirely
+  `CustomPainter`-drawn (no image/font assets) in the app's own rose/
+  gold palette: idle breathing bob, occasional blink, tap → excited
+  bounce + sparkle burst. Built after the user asked for "cute animated
+  cartoons like How to Train Your Dragon / Ghibli" — actual
+  characters/art from those (or any other copyrighted franchise) can't
+  be used even if the user supplies the image files themselves, since
+  the infringement is in using the protected character design, not in
+  how the asset was sourced. This is a deliberately original design
+  instead, not a copy of anyone's specific character.
 - **Honesty principle, enforced throughout**: never fabricate stats,
   detection, or feature state. Real counts only. When something can't be
   verified (e.g. a partner's exact online status), don't fake it.
@@ -121,17 +132,20 @@ Android emulator and no physical device attached**. In that situation:
   Night (`/cinema`), Bucket List, Destinations, Books, **Recipes**,
   **Wildcards**, **YouTube** (`/together/youtube`), Quick Picks (Random
   Question, Love Quiz, Mood Check, Coin Toss).
-- `/together/youtube` — paste-and-watch YouTube page
-  (`youtube_watch_screen.dart`, `youtube_player_iframe` package). Started
-  as a "free TV channels via VLC" request; pivoted after checking —
-  FAST-TV services (Pluto TV, Xumo, Samsung TV Plus, etc.) and their
-  channels only distribute through their own official apps, and every
-  public "M3U playlist" for them turned out to be an unofficial scrape of
-  their private APIs, not something to source or maintain here. YouTube's
-  own iframe embed API is the one legitimate, ToS-sanctioned path, so the
-  page is a URL-paste player rather than a curated channel browser —
-  specific channel/live-video IDs go stale and can't be verified without
-  a YouTube Data API key, which isn't set up in this project.
+- `/together/youtube` — search-and-watch YouTube page
+  (`youtube_watch_screen.dart`, `youtube_search_service.dart`,
+  `youtube_config.dart`). Started as a "free TV channels via VLC"
+  request; pivoted after checking — FAST-TV services (Pluto TV, Xumo,
+  Samsung TV Plus, etc.) and their channels only distribute through
+  their own official apps, and every public "M3U playlist" for them
+  turned out to be an unofficial scrape of their private APIs, not
+  something to source or maintain here. Two real, ToS-compliant pieces
+  instead: the actual YouTube Data API v3 for in-app search (needs your
+  own API key, same `String.fromEnvironment` + `isConfigured` pattern as
+  `SpotifyConfig` — see `youtube_config.dart` for setup steps) and
+  YouTube's own official embeddable iframe player for playback (needs no
+  key at all). Pasting a direct YouTube link always works regardless of
+  whether search is configured.
 - `/together/journal` — bookshelf-styled journal (real background image
   `assets/images/journal_bookshelf_bg.png`, year-grouped dynamic-capacity
   shelves, book-spine entries, "Memory of the Day", real stats).
