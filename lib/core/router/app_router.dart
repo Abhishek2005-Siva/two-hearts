@@ -26,6 +26,7 @@ import '../../features/memory/photo_booth_screen.dart';
 import '../../features/together/bucket_list_screen.dart';
 import '../../features/together/wildcards_screen.dart';
 import '../../features/together/shared_note_screen.dart';
+import '../../features/together/youtube_watch_screen.dart';
 import '../../features/avatar/avatar_creator_screen.dart';
 import '../../features/places/places_screen.dart';
 import '../../features/books/book_wishlist_screen.dart';
@@ -233,6 +234,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             GoRoute(path: '/together/bucket', builder: (_, _) => const BucketListScreen()),
             GoRoute(path: '/together/wildcards', builder: (_, _) => const WildcardsScreen()),
             GoRoute(path: '/together/note', builder: (_, _) => const SharedNoteScreen()),
+            GoRoute(path: '/together/youtube', builder: (_, _) => const YoutubeWatchScreen()),
             GoRoute(path: '/places', builder: (_, _) => const PlacesScreen()),
             GoRoute(path: '/books', builder: (_, _) => const BookWishlistScreen()),
             GoRoute(path: '/listen', builder: (_, _) => const ListenTogetherScreen()),

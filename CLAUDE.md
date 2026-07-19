@@ -119,8 +119,19 @@ Android emulator and no physical device attached**. In that situation:
 - `/memory`, `/memory/:id` — photo/video wall, collections, favorites.
 - `/together` — hub screen linking to Journal, Letters, Games, Movie
   Night (`/cinema`), Bucket List, Destinations, Books, **Recipes**,
-  **Wildcards**, Quick Picks (Random Question, Love Quiz, Mood Check,
-  Coin Toss).
+  **Wildcards**, **YouTube** (`/together/youtube`), Quick Picks (Random
+  Question, Love Quiz, Mood Check, Coin Toss).
+- `/together/youtube` — paste-and-watch YouTube page
+  (`youtube_watch_screen.dart`, `youtube_player_iframe` package). Started
+  as a "free TV channels via VLC" request; pivoted after checking —
+  FAST-TV services (Pluto TV, Xumo, Samsung TV Plus, etc.) and their
+  channels only distribute through their own official apps, and every
+  public "M3U playlist" for them turned out to be an unofficial scrape of
+  their private APIs, not something to source or maintain here. YouTube's
+  own iframe embed API is the one legitimate, ToS-sanctioned path, so the
+  page is a URL-paste player rather than a curated channel browser —
+  specific channel/live-video IDs go stale and can't be verified without
+  a YouTube Data API key, which isn't set up in this project.
 - `/together/journal` — bookshelf-styled journal (real background image
   `assets/images/journal_bookshelf_bg.png`, year-grouped dynamic-capacity
   shelves, book-spine entries, "Memory of the Day", real stats).

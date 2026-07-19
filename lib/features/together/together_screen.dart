@@ -307,6 +307,16 @@ class TogetherScreen extends ConsumerWidget {
                   onTap: () => showWildIdeasSheet(context, ref),
                 ),
               ).animate().fadeIn(delay: 380.ms),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 40 - 30) / 4,
+                child: _QuickPick(
+                  icon: Icons.smart_display_rounded,
+                  label: 'YouTube',
+                  accent: accent,
+                  onTap: () => context.push('/together/youtube'),
+                ),
+              ).animate().fadeIn(delay: 390.ms),
               if (isWildcardGranter()) ...[
                 const SizedBox(height: 10),
                 SizedBox(
