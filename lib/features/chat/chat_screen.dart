@@ -1761,6 +1761,7 @@ class _ChatInputState extends State<_ChatInput> {
           SquishyTap(
             onTap: widget.sending ? null : widget.onSend,
             cuteStickers: const ['💌', '✨'],
+            style: TapAnimationStyle.bounce,
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(

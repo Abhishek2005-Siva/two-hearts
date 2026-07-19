@@ -549,6 +549,7 @@ class _Header extends StatelessWidget {
         const SizedBox(width: 12),
         SquishyTap(
           onTap: onSurpriseMe,
+          style: TapAnimationStyle.jelly,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(

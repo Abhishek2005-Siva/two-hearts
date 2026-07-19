@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -403,7 +404,41 @@ class _GradientButtonState extends State<GradientButton>
   }
 }
 
-/// Wrap ANY widget to give it the playful squish-on-tap feel.
+/// Distinct tap-animation "personalities" [SquishyTap] can play — one
+/// consistent, tested set reused across the app rather than one-off
+/// bespoke implementations per button (which would fight the delight
+/// layer's own "one delightful thing at a time" rule at app-wide scale).
+/// All of them are pure Transform math (scale/rotate/translate only, no
+/// shape- or decoration-dependent effects like glows/shadows), so every
+/// variant is safe to drop onto a child of any shape.
+enum TapAnimationStyle {
+  /// The original: a small dip-and-squish, mechanical-key feel. Default.
+  squish,
+  /// Bigger overshoot — shrink, pop past full size, settle. Good for
+  /// primary/completing actions (send, save, give, post).
+  bounce,
+  /// A quick rotational wiggle. Good for playful/cosmetic taps (cards,
+  /// stickers, wildcards).
+  wobble,
+  /// One smooth emphasis pulse, slower and softer than bounce. Good for
+  /// toggles and selectors.
+  pulse,
+  /// Non-uniform squash-stretch, like a jelly wobble. Good for anything
+  /// meant to feel extra soft/cute (mood pills, gift buttons).
+  jelly,
+  /// A quick double-thump scale, echoing a heartbeat. Reserve for the
+  /// app's actual love-themed actions (heart/like/send-love buttons).
+  heartBeat,
+  /// A full rotation spin. Good for refresh/shuffle/randomize actions.
+  spin,
+  /// A horizontal shake. Good for destructive/decline actions (remove,
+  /// delete, decline) — signals "careful" rather than "yay".
+  shake,
+}
+
+/// Wrap ANY widget to give it a playful tap animation — [style] picks
+/// which personality plays; defaults to the original squish so every
+/// existing call site is unaffected.
 class SquishyTap extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
@@ -412,6 +447,7 @@ class SquishyTap extends StatefulWidget {
   // out on tap — a light, playful accent for primary actions. Keep it to
   // the app's real delightful moments, not every single tap everywhere.
   final List<String>? cuteStickers;
+  final TapAnimationStyle style;
 
   const SquishyTap({
     super.key,
@@ -419,6 +455,7 @@ class SquishyTap extends StatefulWidget {
     this.onTap,
     this.onLongPress,
     this.cuteStickers,
+    this.style = TapAnimationStyle.squish,
   });
 
   @override
@@ -428,36 +465,131 @@ class SquishyTap extends StatefulWidget {
 class _SquishyTapState extends State<SquishyTap>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _scale;
-  // A mechanical-key feel — the button dips down a touch as it shrinks,
-  // like it's being pressed into the surface, not just shrinking in place.
-  late final Animation<double> _dip;
+  late Animation<double> _scale;
+  late Animation<double> _scaleY;
+  // A mechanical-key feel — the button dips down (or shakes side to side,
+  // for `shake`) as it plays, like it's being pressed into the surface.
+  late Animation<double> _dip;
+  late Animation<double> _rotation;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 300));
-    _scale = TweenSequence<double>([
-      TweenSequenceItem(
-          tween: Tween(begin: 1.0, end: 0.95)
-              .chain(CurveTween(curve: Curves.easeOut)),
-          weight: 30),
-      TweenSequenceItem(
-          tween: Tween(begin: 0.95, end: 1.0)
-              .chain(CurveTween(curve: Curves.elasticOut)),
-          weight: 70),
-    ]).animate(_ctrl);
-    _dip = TweenSequence<double>([
-      TweenSequenceItem(
-          tween: Tween(begin: 0.0, end: 2.5)
-              .chain(CurveTween(curve: Curves.easeOut)),
-          weight: 30),
-      TweenSequenceItem(
-          tween: Tween(begin: 2.5, end: 0.0)
-              .chain(CurveTween(curve: Curves.elasticOut)),
-          weight: 70),
-    ]).animate(_ctrl);
+    _ctrl = AnimationController(vsync: this, duration: _duration);
+    _scale = const AlwaysStoppedAnimation(1.0);
+    _scaleY = const AlwaysStoppedAnimation(1.0);
+    _dip = const AlwaysStoppedAnimation(0.0);
+    _rotation = const AlwaysStoppedAnimation(0.0);
+    _buildAnimations();
+  }
+
+  Duration get _duration => switch (widget.style) {
+        TapAnimationStyle.bounce => const Duration(milliseconds: 380),
+        TapAnimationStyle.heartBeat => const Duration(milliseconds: 500),
+        TapAnimationStyle.shake => const Duration(milliseconds: 400),
+        TapAnimationStyle.spin => const Duration(milliseconds: 420),
+        TapAnimationStyle.pulse => const Duration(milliseconds: 380),
+        _ => const Duration(milliseconds: 300),
+      };
+
+  void _buildAnimations() {
+    switch (widget.style) {
+      case TapAnimationStyle.squish:
+        _scale = TweenSequence<double>([
+          TweenSequenceItem(
+              tween: Tween(begin: 1.0, end: 0.95).chain(CurveTween(curve: Curves.easeOut)),
+              weight: 30),
+          TweenSequenceItem(
+              tween: Tween(begin: 0.95, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
+              weight: 70),
+        ]).animate(_ctrl);
+        _dip = TweenSequence<double>([
+          TweenSequenceItem(
+              tween: Tween(begin: 0.0, end: 2.5).chain(CurveTween(curve: Curves.easeOut)),
+              weight: 30),
+          TweenSequenceItem(
+              tween: Tween(begin: 2.5, end: 0.0).chain(CurveTween(curve: Curves.elasticOut)),
+              weight: 70),
+        ]).animate(_ctrl);
+      case TapAnimationStyle.bounce:
+        _scale = TweenSequence<double>([
+          TweenSequenceItem(
+              tween: Tween(begin: 1.0, end: 0.85).chain(CurveTween(curve: Curves.easeOut)),
+              weight: 25),
+          TweenSequenceItem(
+              tween: Tween(begin: 0.85, end: 1.12).chain(CurveTween(curve: Curves.easeOut)),
+              weight: 35),
+          TweenSequenceItem(
+              tween: Tween(begin: 1.12, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
+              weight: 40),
+        ]).animate(_ctrl);
+      case TapAnimationStyle.wobble:
+        _rotation = TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 0.0, end: -0.09), weight: 20),
+          TweenSequenceItem(tween: Tween(begin: -0.09, end: 0.09), weight: 30),
+          TweenSequenceItem(tween: Tween(begin: 0.09, end: -0.045), weight: 25),
+          TweenSequenceItem(tween: Tween(begin: -0.045, end: 0.0), weight: 25),
+        ]).chain(CurveTween(curve: Curves.easeOut)).animate(_ctrl);
+      case TapAnimationStyle.pulse:
+        _scale = TweenSequence<double>([
+          TweenSequenceItem(
+              tween: Tween(begin: 1.0, end: 1.14).chain(CurveTween(curve: Curves.easeOut)),
+              weight: 45),
+          TweenSequenceItem(
+              tween: Tween(begin: 1.14, end: 1.0).chain(CurveTween(curve: Curves.easeInOutCubic)),
+              weight: 55),
+        ]).animate(_ctrl);
+      case TapAnimationStyle.jelly:
+        _scale = TweenSequence<double>([
+          TweenSequenceItem(
+              tween: Tween(begin: 1.0, end: 1.18).chain(CurveTween(curve: Curves.easeOut)),
+              weight: 25),
+          TweenSequenceItem(
+              tween: Tween(begin: 1.18, end: 0.9).chain(CurveTween(curve: Curves.easeInOut)),
+              weight: 35),
+          TweenSequenceItem(
+              tween: Tween(begin: 0.9, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
+              weight: 40),
+        ]).animate(_ctrl);
+        _scaleY = TweenSequence<double>([
+          TweenSequenceItem(
+              tween: Tween(begin: 1.0, end: 0.85).chain(CurveTween(curve: Curves.easeOut)),
+              weight: 25),
+          TweenSequenceItem(
+              tween: Tween(begin: 0.85, end: 1.12).chain(CurveTween(curve: Curves.easeInOut)),
+              weight: 35),
+          TweenSequenceItem(
+              tween: Tween(begin: 1.12, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
+              weight: 40),
+        ]).animate(_ctrl);
+      case TapAnimationStyle.heartBeat:
+        _scale = TweenSequence<double>([
+          TweenSequenceItem(
+              tween: Tween(begin: 1.0, end: 1.16).chain(CurveTween(curve: Curves.easeOut)),
+              weight: 15),
+          TweenSequenceItem(
+              tween: Tween(begin: 1.16, end: 1.0).chain(CurveTween(curve: Curves.easeIn)),
+              weight: 15),
+          TweenSequenceItem(
+              tween: Tween(begin: 1.0, end: 1.22).chain(CurveTween(curve: Curves.easeOut)),
+              weight: 15),
+          TweenSequenceItem(
+              tween: Tween(begin: 1.22, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
+              weight: 55),
+        ]).animate(_ctrl);
+      case TapAnimationStyle.spin:
+        _rotation = Tween<double>(begin: 0.0, end: 2 * math.pi)
+            .chain(CurveTween(curve: Curves.easeOutCubic))
+            .animate(_ctrl);
+      case TapAnimationStyle.shake:
+        _dip = TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 0.0, end: -6.0), weight: 12),
+          TweenSequenceItem(tween: Tween(begin: -6.0, end: 6.0), weight: 20),
+          TweenSequenceItem(tween: Tween(begin: 6.0, end: -4.0), weight: 20),
+          TweenSequenceItem(tween: Tween(begin: -4.0, end: 4.0), weight: 20),
+          TweenSequenceItem(tween: Tween(begin: 4.0, end: 0.0), weight: 28),
+        ]).animate(_ctrl);
+    }
   }
 
   @override
@@ -465,6 +597,8 @@ class _SquishyTapState extends State<SquishyTap>
     _ctrl.dispose();
     super.dispose();
   }
+
+  bool get _isHorizontalShake => widget.style == TapAnimationStyle.shake;
 
   @override
   Widget build(BuildContext context) {
@@ -488,8 +622,15 @@ class _SquishyTapState extends State<SquishyTap>
       child: AnimatedBuilder(
         animation: _ctrl,
         builder: (_, child) => Transform.translate(
-          offset: Offset(0, _dip.value),
-          child: ScaleTransition(scale: _scale, child: child),
+          offset: _isHorizontalShake ? Offset(_dip.value, 0) : Offset(0, _dip.value),
+          child: Transform.rotate(
+            angle: _rotation.value,
+            child: Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.diagonal3Values(_scale.value, _scaleY.value, 1.0),
+              child: child,
+            ),
+          ),
         ),
         child: widget.child,
       ),

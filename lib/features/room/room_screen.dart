@@ -880,6 +880,7 @@ void showWildIdeasSheet(BuildContext context, WidgetRef ref) {
             children: [
               ...kWildIdeas.map((idea) => SquishyTap(
                     onTap: () => sendWildIdea(sheetCtx, ref, idea.$3),
+                    style: TapAnimationStyle.jelly,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
@@ -1116,6 +1117,7 @@ class _ThinkingOfYouPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      style: TapAnimationStyle.heartBeat,
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
