@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -72,7 +73,7 @@ class RecipesScreen extends ConsumerStatefulWidget {
 }
 
 class _RecipesScreenState extends ConsumerState<RecipesScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, ActivityAnnouncer {
   bool _newestFirst = true;
   _RecipeFilter _filter = _RecipeFilter.all;
   bool _searching = false;
@@ -85,6 +86,7 @@ class _RecipesScreenState extends ConsumerState<RecipesScreen>
     super.initState();
     _twinkle = AnimationController(vsync: this, duration: const Duration(seconds: 2))
       ..repeat(reverse: true);
+    announceActivity('Browsing Recipes');
   }
 
   @override

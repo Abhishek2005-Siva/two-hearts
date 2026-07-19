@@ -9,6 +9,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/delight/delight.dart';
 import '../../core/firebase/models.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -186,11 +187,20 @@ class GamesScreen extends ConsumerStatefulWidget {
 }
 
 class _GamesScreenState extends ConsumerState<GamesScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, ActivityAnnouncer {
   late final TabController _tabCtrl;
   late final ConfettiController _confettiCtrl;
   bool _initialising = false;
   bool _confettiFired = false;
+
+  static const _gameNames = [
+    'Would You Rather',
+    'Truth or Dare',
+    'Scribble',
+    'Rock Paper Scissors',
+    'Kiss Roulette',
+    'Love Quiz',
+  ];
 
   @override
   void initState() {
@@ -198,6 +208,11 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
     _tabCtrl = TabController(
         length: 6, vsync: this, initialIndex: widget.initialTabIndex);
     _confettiCtrl = ConfettiController(duration: const Duration(seconds: 3));
+    announceActivity('Playing ${_gameNames[_tabCtrl.index]}');
+    _tabCtrl.addListener(() {
+      if (!_tabCtrl.indexIsChanging) return;
+      announceActivity('Playing ${_gameNames[_tabCtrl.index]}');
+    });
   }
 
   @override

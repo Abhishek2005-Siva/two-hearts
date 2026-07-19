@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/firebase/models.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -23,8 +24,15 @@ class DailyMemoryDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<DailyMemoryDetailScreen> createState() => _DailyMemoryDetailScreenState();
 }
 
-class _DailyMemoryDetailScreenState extends ConsumerState<DailyMemoryDetailScreen> {
+class _DailyMemoryDetailScreenState extends ConsumerState<DailyMemoryDetailScreen>
+    with ActivityAnnouncer {
   final _commentCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    announceActivity('Looking at a shared memory');
+  }
 
   @override
   void dispose() {

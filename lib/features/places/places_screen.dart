@@ -14,6 +14,7 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -266,7 +267,8 @@ class PlacesScreen extends ConsumerStatefulWidget {
   ConsumerState<PlacesScreen> createState() => _PlacesScreenState();
 }
 
-class _PlacesScreenState extends ConsumerState<PlacesScreen> {
+class _PlacesScreenState extends ConsumerState<PlacesScreen>
+    with ActivityAnnouncer {
   final _mapController = MapController();
 
   // Current location
@@ -287,6 +289,7 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen> {
   @override
   void initState() {
     super.initState();
+    announceActivity('Exploring Places');
     // Starts on a world view otherwise — fly to the user's location as
     // soon as the map's attached, same as Google Maps opening on you.
     WidgetsBinding.instance.addPostFrameCallback((_) => _flyToCurrentLocation());

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/firebase/models.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -17,7 +18,8 @@ class MemoryDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<MemoryDetailScreen> createState() => _MemoryDetailScreenState();
 }
 
-class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
+class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
+    with ActivityAnnouncer {
   late PageController _pageCtrl;
   int _currentIndex = 0;
   final Set<String> _countedThisSession = {};
@@ -26,6 +28,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen> {
   void initState() {
     super.initState();
     _pageCtrl = PageController();
+    announceActivity('Looking through Memories');
   }
 
   @override

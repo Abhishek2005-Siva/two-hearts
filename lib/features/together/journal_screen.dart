@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/models/content_block.dart';
 import '../../core/delight/delight.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/firebase/models.dart';
 import '../../core/theme/app_theme.dart';
@@ -114,7 +115,7 @@ class JournalScreen extends ConsumerStatefulWidget {
 }
 
 class _JournalScreenState extends ConsumerState<JournalScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, ActivityAnnouncer {
   bool _newestFirst = true;
   _JournalFilter _filter = _JournalFilter.all;
   bool _searching = false;
@@ -129,6 +130,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen>
     _twinkle = AnimationController(
         vsync: this, duration: const Duration(seconds: 2))
       ..repeat(reverse: true);
+    announceActivity('In the Journal');
   }
 
   @override

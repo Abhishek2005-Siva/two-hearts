@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -15,10 +16,17 @@ class SharedNoteScreen extends ConsumerStatefulWidget {
   ConsumerState<SharedNoteScreen> createState() => _SharedNoteScreenState();
 }
 
-class _SharedNoteScreenState extends ConsumerState<SharedNoteScreen> {
+class _SharedNoteScreenState extends ConsumerState<SharedNoteScreen>
+    with ActivityAnnouncer {
   final _ctrl = TextEditingController();
   bool _inited = false;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    announceActivity('Writing the Shared Note');
+  }
 
   @override
   void dispose() {

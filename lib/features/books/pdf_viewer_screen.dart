@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 
 class PdfViewerScreen extends ConsumerStatefulWidget {
@@ -33,7 +34,8 @@ class PdfViewerScreen extends ConsumerStatefulWidget {
   ConsumerState<PdfViewerScreen> createState() => _PdfViewerScreenState();
 }
 
-class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
+class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
+    with ActivityAnnouncer {
   String? _localPath;
   String? _error;
   bool _loading = true;
@@ -60,6 +62,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
     ]);
     _watchBookData();
     _downloadAndLoad();
+    announceActivity('Reading ${widget.title}');
   }
 
   @override

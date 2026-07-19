@@ -62,10 +62,20 @@ Android emulator and no physical device attached**. In that situation:
   `factory X.fromDoc(DocumentSnapshot doc)` (id always from `doc.id`, never
   re-stored in the map) and `Map<String,dynamic> toMap()`. `DateTime` via
   `Timestamp.fromDate`/`(x as Timestamp?)?.toDate() ?? DateTime.now()`.
-- **Routing**: GoRouter, one flat `routes:` list inside a single
-  `ShellRoute` (`lib/core/router/app_router.dart`). The 5 bottom-nav tabs
-  use `pageBuilder: (_, _) => _tabPage(const XScreen())` (shared
-  fade+scale transition); everything else (pushed sub-features) uses plain
+- **Routing**: GoRouter, `StatefulShellRoute.indexedStack`
+  (`lib/core/router/app_router.dart`) with one `StatefulShellBranch` per
+  bottom-nav tab, each owning its own independent Navigator — this is
+  *not* a plain `ShellRoute` (was, until this stopped preserving
+  navigation state across tab switches; see Session history). Every route
+  lives in exactly one branch's `routes:` list, assigned to whichever tab
+  it's most naturally reached from; `MainShell` switches tabs via
+  `navigationShell.goBranch(index)`, never `context.go(path)`. A route
+  pushed from a *different* tab than the one that owns it (e.g. Listen
+  Together, reachable from both Room and Chat) will switch the active tab
+  to wherever that route lives — expected StatefulShellRoute behavior,
+  not a bug. The 5 bottom-nav tab roots use
+  `pageBuilder: (_, _) => _tabPage(const XScreen())` (shared fade+scale
+  transition); everything else (pushed sub-features) uses plain
   `builder:`. `/cinema` is the one screen outside the shell (fullscreen).
 - **Theme/shared widgets** (`lib/core/theme/app_theme.dart`): `AppColors`
   (dark romantic palette, rose/coral/gold accents + per-couple
@@ -84,6 +94,20 @@ Android emulator and no physical device attached**. In that situation:
 - **Honesty principle, enforced throughout**: never fabricate stats,
   detection, or feature state. Real counts only. When something can't be
   verified (e.g. a partner's exact online status), don't fake it.
+- **Presence/activity**: `MainShell` already writes coarse tab-level
+  presence (`presence.$uid`/`lastSeen.$uid`/`sections.$uid` on the couple
+  doc, via `setPresence`). Finer-grained "what are they actually doing"
+  (e.g. "Reading The Great Gatsby") is a separate `activityLabel.$uid`
+  field, written by the specific screen via the `ActivityAnnouncer` mixin
+  (`lib/core/presence/activity_announcer.dart`) — `with ActivityAnnouncer`
+  + call `announceActivity('...')` in `initState` (or again later once a
+  dynamic label, like a title, is known); it auto-clears on dispose. Wired
+  into every Together sub-screen, Books' PDF reader, Memory/Calendar
+  detail, and House Decorate. `_PartnerActivityBanner` on the Room screen
+  merges this with Chat's existing typing/recording/uploading state into
+  one priority-ordered display, shown *only* while the partner is
+  genuinely online (`partnerOnlineProvider`) — never fabricated, and never
+  shown for an offline partner.
 
 ## Feature map (routes → what/why)
 

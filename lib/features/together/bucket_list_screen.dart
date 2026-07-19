@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
 import '../../core/delight/delight.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -163,11 +164,18 @@ class BucketListScreen extends ConsumerStatefulWidget {
   ConsumerState<BucketListScreen> createState() => _BucketListScreenState();
 }
 
-class _BucketListScreenState extends ConsumerState<BucketListScreen> {
+class _BucketListScreenState extends ConsumerState<BucketListScreen>
+    with ActivityAnnouncer {
   final _textCtrl = TextEditingController();
   String? _animatingId;
   String? _throwingId;
   Set<String> _knownIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    announceActivity('Planning the Bucket List');
+  }
 
   @override
   void dispose() {

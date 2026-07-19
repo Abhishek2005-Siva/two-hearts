@@ -206,6 +206,23 @@ class FirestoreService {
       _db.collection('couples').doc(coupleId).snapshots().map(
           (d) => d.data()?['sections']?[partnerUid] as String?);
 
+  /// A finer-grained, human-readable description of what someone is doing
+  /// right now — e.g. "Reading The Great Gatsby", "Writing a letter",
+  /// "Playing Would You Rather" — set by the specific screen they're on,
+  /// separate from [setPresence]'s coarse tab-level `section`. Always a
+  /// real, screen-supplied string (honesty principle: no inferred/guessed
+  /// activity), cleared automatically when that screen is left.
+  Future<void> setActivityLabel(String coupleId, String? label) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .update({'activityLabel.$_uid': label ?? FieldValue.delete()});
+
+  /// Meaningful only while the partner is online — mirrors the
+  /// if-and-only-if-online rule already applied to [watchPartnerSection].
+  Stream<String?> watchPartnerActivityLabel(String coupleId, String partnerUid) =>
+      _db.collection('couples').doc(coupleId).snapshots().map(
+          (d) => d.data()?['activityLabel']?[partnerUid] as String?);
+
   // ── Messages ──────────────────────────────────────────────────────────────
 
   Stream<List<MessageModel>> watchMessages(String coupleId) => _db

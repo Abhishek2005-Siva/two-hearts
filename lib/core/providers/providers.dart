@@ -233,6 +233,22 @@ final partnerSectionProvider = StreamProvider<String?>((ref) {
       .watchPartnerSection(coupleId, partnerUid);
 });
 
+// ── Partner Activity (finer-grained than section — "Reading X", etc.) ────
+
+final partnerActivityLabelProvider = StreamProvider<String?>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  final couple = ref.watch(coupleProvider).valueOrNull;
+  final me = ref.watch(currentUserProvider).valueOrNull;
+  if (coupleId == null || couple == null || me == null) {
+    return Stream.value(null);
+  }
+  final partnerUid = couple.partnerUid(me.uid);
+  if (partnerUid.isEmpty) return Stream.value(null);
+  return ref
+      .read(firestoreServiceProvider)
+      .watchPartnerActivityLabel(coupleId, partnerUid);
+});
+
 // ── Unread chat messages (for the Chat tab badge) ─────────────────────────
 
 final unreadChatCountProvider = Provider<int>((ref) {

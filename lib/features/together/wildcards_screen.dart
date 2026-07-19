@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -376,7 +377,14 @@ class WildcardsScreen extends ConsumerStatefulWidget {
   ConsumerState<WildcardsScreen> createState() => _WildcardsScreenState();
 }
 
-class _WildcardsScreenState extends ConsumerState<WildcardsScreen> {
+class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
+    with ActivityAnnouncer {
+  @override
+  void initState() {
+    super.initState();
+    announceActivity('Looking at Wildcards');
+  }
+
   void _showComposeSheet({WildcardRequest? forRequest}) =>
       showGiveWildcardSheet(context, ref, forRequest: forRequest);
 

@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -22,7 +23,8 @@ class DateIdeasScreen extends ConsumerStatefulWidget {
   ConsumerState<DateIdeasScreen> createState() => _DateIdeasScreenState();
 }
 
-class _DateIdeasScreenState extends ConsumerState<DateIdeasScreen> {
+class _DateIdeasScreenState extends ConsumerState<DateIdeasScreen>
+    with ActivityAnnouncer {
   late Map<String, List<String>> _groups;
   late String _selectedGroup;
   int _selectedIndex = 0;
@@ -31,6 +33,7 @@ class _DateIdeasScreenState extends ConsumerState<DateIdeasScreen> {
   @override
   void initState() {
     super.initState();
+    announceActivity('Picking a date idea');
     _groups = Map<String, List<String>>.fromEntries(
       _kDefaultGroups.entries.map(
         (e) => MapEntry(e.key, List<String>.from(e.value)),

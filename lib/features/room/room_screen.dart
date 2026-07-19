@@ -621,6 +621,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                   ),
                 ),
 
+                const _PartnerActivityBanner(),
+
                 // Characters area — pushed to the lower portion
                 Expanded(
                   child: Column(
@@ -1152,6 +1154,98 @@ class _ThinkingOfYouPill extends StatelessWidget {
                   letterSpacing: 0.3),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Partner Activity Banner ─────────────────────────────────────────────────
+//
+// Honesty principle: only ever shows a real, screen-supplied activity label
+// (via ActivityAnnouncer) or the coarser tab-level section — never guesses.
+// Only rendered while the partner is genuinely online (heartbeat within the
+// last 90s via partnerOnlineProvider) — if-and-only-if-online, per the ask.
+class _PartnerActivityBanner extends ConsumerWidget {
+  const _PartnerActivityBanner();
+
+  static const _sectionLabels = {
+    'room': 'On the Home page',
+    'chat': 'In Chat',
+    'memory': 'Looking at Memories',
+    'calendar': 'On the Calendar',
+    'together': 'In Fun',
+  };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final online = ref.watch(partnerOnlineProvider).valueOrNull ?? false;
+    if (!online) return const SizedBox.shrink();
+
+    final partner = ref.watch(partnerUserProvider).valueOrNull;
+    final chatActivity = ref.watch(partnerActivityStatusProvider).valueOrNull;
+    final typing = ref.watch(partnerTypingProvider).valueOrNull ?? false;
+    final activityLabel = ref.watch(partnerActivityLabelProvider).valueOrNull;
+    final section = ref.watch(partnerSectionProvider).valueOrNull;
+
+    // Priority mirrors Chat's own header status logic: recording/uploading
+    // beats typing beats a specific per-screen activity beats a generic
+    // "which tab" fallback.
+    final String? label;
+    if (chatActivity == 'recording') {
+      label = 'Recording a voice note';
+    } else if (chatActivity == 'uploading_snap') {
+      label = "Uploading today's snap";
+    } else if (chatActivity == 'uploading') {
+      label = 'Uploading…';
+    } else if (typing) {
+      label = 'Typing…';
+    } else if (activityLabel != null) {
+      label = activityLabel;
+    } else {
+      label = _sectionLabels[section];
+    }
+    if (label == null) return const SizedBox.shrink();
+
+    final name = partner?.displayName.split(' ').first ?? 'Your person';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.32),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14), width: 0.6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF4CAF50),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  '$name · $label',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

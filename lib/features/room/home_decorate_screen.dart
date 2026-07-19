@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../../core/firebase/models.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -238,7 +239,8 @@ class HomeDecorateScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeDecorateScreen> createState() => _HomeDecorateScreenState();
 }
 
-class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
+class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen>
+    with ActivityAnnouncer {
   late final WebViewController _webCtrl;
   bool _sceneReady = false;
   String? _placingType;
@@ -260,6 +262,7 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen> {
       ..setBackgroundColor(const Color(0xFF1A1220))
       ..addJavaScriptChannel('FlutterBridge', onMessageReceived: _onJsMessage)
       ..loadFlutterAsset('assets/room3d/index.html');
+    announceActivity('Designing the house');
   }
 
   void _onJsMessage(JavaScriptMessage message) {

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/delight/delight.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import 'spotify_config.dart';
@@ -32,7 +33,8 @@ enum _ConnState { idle, connecting, connected, error }
 
 enum _Tab { search, myPlaylists, partnerPlaylists }
 
-class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
+class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen>
+    with ActivityAnnouncer {
   final _spotify = SpotifyService.instance;
 
   _ConnState _conn = _ConnState.idle;
@@ -70,6 +72,7 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen> {
   @override
   void initState() {
     super.initState();
+    announceActivity('Listening together');
     if (SpotifyConfig.isConfigured) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
     }

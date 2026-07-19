@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
+import '../../core/presence/activity_announcer.dart';
 import '../../core/models/content_block.dart';
 import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
@@ -38,7 +39,8 @@ class LetterComposeScreen extends ConsumerStatefulWidget {
   ConsumerState<LetterComposeScreen> createState() => _LetterComposeScreenState();
 }
 
-class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
+class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen>
+    with ActivityAnnouncer {
   final _title = TextEditingController();
   List<ContentBlock> _blocks = [ContentBlock.newText()];
   _UnlockMode _mode = _UnlockMode.tomorrow;
@@ -46,6 +48,12 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen> {
   TimeOfDay _customTime = const TimeOfDay(hour: 8, minute: 0);
   String _openWhenEmotion = 'Any time';
   bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    announceActivity('Writing a letter');
+  }
 
   @override
   void dispose() {
