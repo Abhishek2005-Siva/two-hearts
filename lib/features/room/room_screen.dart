@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/delight/delight.dart';
 import '../../core/delight/mascot_creature.dart';
 import '../../core/firebase/models.dart';
@@ -635,6 +636,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                 ),
 
                 const _PartnerActivityBanner(),
+                const _CouplePresenceCharacters(),
 
                 // Characters area — pushed to the lower portion
                 Expanded(
@@ -1262,6 +1264,66 @@ class _PartnerActivityBanner extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Couple Presence Characters ───────────────────────────────────────────
+//
+// Asher & Wren, the couple's two illustrated characters (real commissioned
+// art, assets/characters/), shown together as a small companion pair.
+// The pose reflects real state, not decoration: idle by default, a brief
+// wave the moment the partner comes online, or asleep if it's night hours
+// on this device and the partner is offline.
+class _CouplePresenceCharacters extends ConsumerStatefulWidget {
+  const _CouplePresenceCharacters();
+
+  @override
+  ConsumerState<_CouplePresenceCharacters> createState() =>
+      _CouplePresenceCharactersState();
+}
+
+class _CouplePresenceCharactersState extends ConsumerState<_CouplePresenceCharacters> {
+  bool? _lastOnline;
+  bool _justWaved = false;
+
+  void _handleOnlineChange(bool online) {
+    if (_lastOnline == false && online == true) {
+      setState(() => _justWaved = true);
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _justWaved = false);
+      });
+    }
+    _lastOnline = online;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final online = ref.watch(partnerOnlineProvider).valueOrNull ?? false;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handleOnlineChange(online));
+
+    final hour = DateTime.now().hour;
+    final isNight = hour >= 22 || hour < 6;
+
+    final String pose;
+    if (_justWaved) {
+      pose = 'excited';
+    } else if (isNight && !online) {
+      pose = 'goodnight';
+    } else {
+      pose = 'idle';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: CoupleCharacter(
+          character: CoupleCharacterId.combo,
+          pose: pose,
+          height: 70,
         ),
       ),
     );

@@ -8,6 +8,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/models/content_block.dart';
 import '../../core/providers/providers.dart';
@@ -556,7 +557,13 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
+        CoupleCharacter(
+          character: CoupleCharacterId.combo,
+          pose: DateTime.now().hour >= 21 || DateTime.now().hour < 6 ? 'goodnight' : 'walk',
+          height: 58,
+        ),
+        const SizedBox(width: 8),
         SquishyTap(
           onTap: onSurpriseMe,
           style: TapAnimationStyle.jelly,

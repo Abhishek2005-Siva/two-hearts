@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/utils/cloudinary_service.dart';
@@ -477,7 +478,10 @@ class _StreakBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.favorite_rounded, color: _Cal.heart, size: 20),
+          bothPostedToday
+              ? const CoupleCharacter(
+                  character: CoupleCharacterId.combo, pose: 'excited', height: 34)
+              : const Icon(Icons.favorite_rounded, color: _Cal.heart, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
