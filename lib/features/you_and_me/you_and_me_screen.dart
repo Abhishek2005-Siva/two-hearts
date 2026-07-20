@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -764,6 +765,18 @@ class _ProfilePicSectionState extends ConsumerState<_ProfilePicSection> {
                         )
                       : null,
                 ),
+                if (myUser?.gender != null)
+                  Positioned(
+                    right: -14,
+                    bottom: -10,
+                    child: CoupleCharacter(
+                      character: myUser!.gender == 'male'
+                          ? CoupleCharacterId.asher
+                          : CoupleCharacterId.wren,
+                      pose: 'calm',
+                      height: 44,
+                    ),
+                  ),
                 if (_uploading)
                   const Positioned.fill(
                     child: CircleAvatar(

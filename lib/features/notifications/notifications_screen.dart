@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -186,28 +187,23 @@ class _NotificationTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 42,
-              height: 42,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: unread
-                      ? [accent, AppColors.coral]
-                      : [AppColors.bgCardLight, AppColors.bgCardLight],
+            if (unread)
+              const CoupleCharacter(
+                character: CoupleCharacterId.wren, pose: 'surprised', height: 42)
+            else
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [AppColors.bgCardLight, AppColors.bgCardLight],
+                  ),
                 ),
-                boxShadow: unread
-                    ? [
-                        BoxShadow(
-                            color: accent.withValues(alpha: 0.5),
-                            blurRadius: 10),
-                      ]
-                    : null,
+                child: Text(_typeEmoji(notification.type),
+                    style: const TextStyle(fontSize: 18)),
               ),
-              child: Text(_typeEmoji(notification.type),
-                  style: const TextStyle(fontSize: 18)),
-            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(

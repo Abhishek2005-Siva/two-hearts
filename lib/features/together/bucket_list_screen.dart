@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/delight/delight.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
@@ -177,6 +178,24 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen>
     announceActivity('Planning the Bucket List');
   }
 
+  void _showPromiseKept() {
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => const IgnorePointer(
+        child: Center(
+          child: CoupleCharacter(
+            character: CoupleCharacterId.combo, pose: 'pinky_promise', height: 130),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (entry.mounted) entry.remove();
+    });
+  }
+
   @override
   void dispose() {
     _textCtrl.dispose();
@@ -258,6 +277,7 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen>
                     if (mounted) {
                       FloatingStickers.burst(this.context,
                           stickers: const ['🎉', '⭐', '🎊'], count: 8);
+                      _showPromiseKept();
                     }
                     setState(() => _throwingId = item.id);
                     await Future.delayed(const Duration(milliseconds: 500));

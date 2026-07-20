@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/delight/delight.dart';
 import '../../core/firebase/models.dart';
 import '../../core/presence/activity_announcer.dart';
@@ -209,10 +210,30 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
         length: 6, vsync: this, initialIndex: widget.initialTabIndex);
     _confettiCtrl = ConfettiController(duration: const Duration(seconds: 3));
     announceActivity('Playing ${_gameNames[_tabCtrl.index]}');
-    _tabCtrl.addListener(() {
-      if (!_tabCtrl.indexIsChanging) return;
-      announceActivity('Playing ${_gameNames[_tabCtrl.index]}');
+    _tabCtrl.addListener(_onTabChanged);
+  }
+
+  void _showWinMoment() {
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => const IgnorePointer(
+        child: Center(
+          child: CoupleCharacter(
+            character: CoupleCharacterId.combo, pose: 'excited', height: 130),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(const Duration(milliseconds: 1800), () {
+      if (entry.mounted) entry.remove();
     });
+  }
+
+  void _onTabChanged() {
+    if (!_tabCtrl.indexIsChanging) return;
+    announceActivity('Playing ${_gameNames[_tabCtrl.index]}');
   }
 
   @override
@@ -270,6 +291,7 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
         _confettiFired = true;
         HapticFeedback.heavyImpact();
         _confettiCtrl.play();
+        _showWinMoment();
       }
     });
 

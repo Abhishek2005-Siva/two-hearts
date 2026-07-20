@@ -8,6 +8,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/delight/couple_character.dart';
 import '../../core/delight/delight.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
@@ -897,7 +898,17 @@ class _ListenTogetherScreenState extends ConsumerState<ListenTogetherScreen>
                     child: const Icon(Icons.music_note_rounded,
                         color: Colors.white38)),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 10),
+          if (!_localPaused)
+            const Padding(
+              padding: EdgeInsets.only(right: 6),
+              child: CoupleCharacter(
+                character: CoupleCharacterId.combo,
+                pose: 'head_on_shoulder',
+                height: 58,
+              ),
+            ),
+          const SizedBox(width: 4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

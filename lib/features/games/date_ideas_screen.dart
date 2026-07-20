@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -43,6 +44,24 @@ class _DateIdeasScreenState extends ConsumerState<DateIdeasScreen>
     _scrollCtrl = FixedExtentScrollController();
   }
 
+  void _showPickMoment() {
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => const IgnorePointer(
+        child: Center(
+          child: CoupleCharacter(
+            character: CoupleCharacterId.wren, pose: 'excited', height: 110),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(const Duration(milliseconds: 1400), () {
+      if (entry.mounted) entry.remove();
+    });
+  }
+
   @override
   void dispose() {
     _scrollCtrl.dispose();
@@ -75,6 +94,7 @@ class _DateIdeasScreenState extends ConsumerState<DateIdeasScreen>
     if (_ideas.isEmpty) return;
     final idea = _ideas[_selectedIndex];
     HapticFeedback.heavyImpact();
+    _showPickMoment();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Locked in: $idea 🎉'),

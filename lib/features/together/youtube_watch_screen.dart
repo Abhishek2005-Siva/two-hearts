@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
+import '../../core/delight/couple_character.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/theme/app_theme.dart';
 import 'youtube_config.dart';
@@ -121,15 +122,21 @@ class _YoutubeWatchScreenState extends ConsumerState<YoutubeWatchScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_playerLoaded)
+                  if (_playerLoaded) ...[
                     ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: AspectRatio(
                         aspectRatio: 16 / 9,
                         child: YoutubePlayer(controller: _player),
                       ),
-                    )
-                  else
+                    ),
+                    const SizedBox(height: 8),
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child: CoupleCharacter(
+                        character: CoupleCharacterId.combo, pose: 'idle', height: 46),
+                    ),
+                  ] else
                     AspectRatio(
                       aspectRatio: 16 / 9,
                       child: DecoratedBox(

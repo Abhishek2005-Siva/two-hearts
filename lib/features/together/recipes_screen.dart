@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
@@ -178,11 +179,21 @@ class _RecipesScreenState extends ConsumerState<RecipesScreen>
                   twinkle: _twinkle,
                 ),
                 if (!_searching) ...[
-                  _RecipeStatsPlaque(
-                    recipes: recipes.length,
-                    favorites: favCount,
-                    categories: categoriesUsed,
-                    years: years,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: _RecipeStatsPlaque(
+                          recipes: recipes.length,
+                          favorites: favCount,
+                          categories: categoriesUsed,
+                          years: years,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const CoupleCharacter(
+                        character: CoupleCharacterId.asher, pose: 'read', height: 64),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   _RecipeFilterChipsRow(

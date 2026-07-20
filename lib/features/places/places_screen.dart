@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:uuid/uuid.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
@@ -668,20 +669,28 @@ class _PlacesScreenState extends ConsumerState<PlacesScreen>
                             ],
                           ),
                           const Spacer(),
-                          // Micro stats
-                          _MicroStat(
-                            icon: '✓',
-                            count: visited.length,
-                            label: 'visited',
-                            color: _kGreen,
-                          ),
-                          const SizedBox(width: 14),
-                          _MicroStat(
-                            icon: '♡',
-                            count: toGo,
-                            label: 'to go',
-                            color: _kRose,
-                          ),
+                          if (places.isEmpty)
+                            const CoupleCharacter(
+                              character: CoupleCharacterId.combo,
+                              pose: 'umbrella_walk',
+                              height: 48,
+                            )
+                          else ...[
+                            // Micro stats
+                            _MicroStat(
+                              icon: '✓',
+                              count: visited.length,
+                              label: 'visited',
+                              color: _kGreen,
+                            ),
+                            const SizedBox(width: 14),
+                            _MicroStat(
+                              icon: '♡',
+                              count: toGo,
+                              label: 'to go',
+                              color: _kRose,
+                            ),
+                          ],
                         ],
                       ),
                       // Rose gradient line

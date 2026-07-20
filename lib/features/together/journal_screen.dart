@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/models/content_block.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/delight/delight.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
@@ -302,11 +303,21 @@ class _JournalScreenState extends ConsumerState<JournalScreen>
                   twinkle: _twinkle,
                 ),
                 if (!_searching) ...[
-                  _StatsPlaque(
-                    memories: journal.length,
-                    letters: letters.length,
-                    photos: photosCount,
-                    years: years,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: _StatsPlaque(
+                          memories: journal.length,
+                          letters: letters.length,
+                          photos: photosCount,
+                          years: years,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const CoupleCharacter(
+                        character: CoupleCharacterId.wren, pose: 'read', height: 64),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   _FilterChipsRow(

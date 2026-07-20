@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
@@ -797,6 +798,16 @@ class _HomeDecorateScreenState extends ConsumerState<HomeDecorateScreen>
               onStyleTap: _showStylePicker,
               onMyItemsTap: _showMyItems,
             ),
+            // Only shown while the partner is genuinely also in the house
+            // builder right now — real co-presence, via the same
+            // activityLabel each screen already announces via
+            // ActivityAnnouncer, not decoration.
+            if (ref.watch(partnerActivityLabelProvider).valueOrNull == 'Designing the house')
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 4),
+                child: CoupleCharacter(
+                  character: CoupleCharacterId.combo, pose: 'walk', height: 44),
+              ),
             _ModeBar(
               mode: _mode,
               onModeChanged: _setMode,

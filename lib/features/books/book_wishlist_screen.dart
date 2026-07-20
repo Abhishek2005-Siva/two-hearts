@@ -11,6 +11,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'pdf_viewer_screen.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -354,6 +355,7 @@ class _BookWishlistScreenState extends ConsumerState<BookWishlistScreen>
                                                 ? 'No books match "$_query"'
                                                 : 'Nothing read yet.\nFinish a book to see it here ♡',
                                             emptyIcon: '✓',
+                                            readTogetherTab: true,
                                             onToggleRead: (book) async {
                                               final coupleId = ref.read(coupleIdProvider);
                                               if (coupleId == null) return;
@@ -624,6 +626,7 @@ class _BookList extends StatelessWidget {
   final List<BookWish> books;
   final String emptyMessage;
   final String emptyIcon;
+  final bool readTogetherTab;
   final Future<void> Function(BookWish) onToggleRead;
   final Future<void> Function(BookWish) onDelete;
   final Future<void> Function(BookWish) onUndo;
@@ -633,6 +636,7 @@ class _BookList extends StatelessWidget {
     required this.books,
     required this.emptyMessage,
     required this.emptyIcon,
+    this.readTogetherTab = false,
     required this.onToggleRead,
     required this.onDelete,
     required this.onUndo,
@@ -646,7 +650,11 @@ class _BookList extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emptyIcon, style: const TextStyle(fontSize: 48)),
+            readTogetherTab
+                ? const CoupleCharacter(
+                    character: CoupleCharacterId.combo, pose: 'read_together', height: 110)
+                : const CoupleCharacter(
+                    character: CoupleCharacterId.wren, pose: 'read', height: 100),
             const SizedBox(height: 14),
             Text(
               emptyMessage,

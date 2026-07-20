@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import '../../core/delight/couple_character.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -19,18 +20,24 @@ class SharedNoteScreen extends ConsumerStatefulWidget {
 class _SharedNoteScreenState extends ConsumerState<SharedNoteScreen>
     with ActivityAnnouncer {
   final _ctrl = TextEditingController();
+  final _focusNode = FocusNode();
   bool _inited = false;
   bool _saving = false;
+  bool _focused = false;
 
   @override
   void initState() {
     super.initState();
     announceActivity('Writing the Shared Note');
+    _focusNode.addListener(() {
+      setState(() => _focused = _focusNode.hasFocus);
+    });
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -63,6 +70,12 @@ class _SharedNoteScreenState extends ConsumerState<SharedNoteScreen>
         backgroundColor: AppColors.bg,
         title: const Text('Shared Note'),
         actions: [
+          if (_focused)
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
+              child: CoupleCharacter(
+                character: CoupleCharacterId.wren, pose: 'thoughtful', height: 40),
+            ),
           TextButton(
             onPressed: _saving ? null : _save,
             child: Text(_saving ? 'Saving…' : 'Save',
@@ -84,6 +97,7 @@ class _SharedNoteScreenState extends ConsumerState<SharedNoteScreen>
               Expanded(
                 child: TextField(
                   controller: _ctrl,
+                  focusNode: _focusNode,
                   maxLines: null,
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,

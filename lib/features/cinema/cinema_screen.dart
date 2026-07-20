@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../core/delight/couple_character.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
@@ -1121,6 +1122,12 @@ class _CinemaPlayerState extends ConsumerState<_CinemaPlayer> {
                                 ),
                                 onPressed: _toggleFullscreen,
                               ),
+                              if (video.value.isPlaying && !_fullscreen)
+                                const CoupleCharacter(
+                                  character: CoupleCharacterId.combo,
+                                  pose: 'idle',
+                                  height: 44,
+                                ),
                             ],
                           ),
                         ],

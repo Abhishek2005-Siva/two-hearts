@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/models/content_block.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -278,11 +279,31 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen>
         // The letter seals and flies away 💌
         DelightHaptics.crack();
         FlyAway.play(context, '💌');
-        context.go('/together');
+        _showGiftMoment();
+        await Future.delayed(const Duration(milliseconds: 850));
+        if (mounted) context.go('/together');
       }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  void _showGiftMoment() {
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => const IgnorePointer(
+        child: Center(
+          child: CoupleCharacter(
+            character: CoupleCharacterId.combo, pose: 'gift_flower', height: 130),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(const Duration(milliseconds: 1400), () {
+      if (entry.mounted) entry.remove();
+    });
   }
 
   LetterUnlockType _modeToLetterType(_UnlockMode mode) {

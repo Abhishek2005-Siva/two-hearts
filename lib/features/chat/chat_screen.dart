@@ -19,6 +19,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:uuid/uuid.dart';
 import 'snap_camera_screen.dart';
 import 'package:video_player/video_player.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/delight/delight.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
@@ -179,6 +180,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       // A reaction appeared that I didn't just place → partner performed it.
       if (e != null && e.isNotEmpty && !_myRecentReactions.contains(m.id)) {
         _performReaction(e, byPartner: true);
+        if (e == '❤️' || e == '😍' || e == '🥰') _showCoupleHighFive();
       }
     }
   }
@@ -201,6 +203,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ),
     );
     overlay.insert(entry);
+  }
+
+  // A brief centered couple-character moment — used when the partner
+  // reacts with a love-ish emoji, echoing the gesture with Asher & Wren
+  // high-fiving rather than another sticker burst on top of the existing
+  // avatar reaction performance above.
+  void _showCoupleHighFive() {
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => IgnorePointer(
+        child: Center(
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 300),
+            opacity: 1,
+            child: const CoupleCharacter(
+              character: CoupleCharacterId.combo,
+              pose: 'highfive',
+              height: 130,
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (entry.mounted) entry.remove();
+    });
   }
 
   Future<void> _send() async {

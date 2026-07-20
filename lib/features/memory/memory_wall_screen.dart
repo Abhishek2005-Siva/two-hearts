@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/firebase/models.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -1401,7 +1402,8 @@ class _MemoriesTab extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('📸', style: TextStyle(fontSize: 64)),
+                  const CoupleCharacter(
+                    character: CoupleCharacterId.combo, pose: 'excited', height: 110),
                   const SizedBox(height: 16),
                   const Text('Your memories will live here',
                       style: TextStyle(

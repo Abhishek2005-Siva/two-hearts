@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
@@ -999,7 +1000,10 @@ class _CardRevealDialogState extends State<_CardRevealDialog> with SingleTickerP
                 style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, height: 1.4),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 10),
+            const CoupleCharacter(
+              character: CoupleCharacterId.combo, pose: 'playful_boop', height: 90),
+            const SizedBox(height: 6),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Nice! ♡',
