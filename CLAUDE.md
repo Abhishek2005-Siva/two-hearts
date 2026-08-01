@@ -170,6 +170,50 @@ Android emulator and no physical device attached**. In that situation:
 - `/games`, `/dates`, `/places`, `/listen`, `/you`, `/notifications` —
   games hub, date-idea spinner, destinations map, Spotify Listen
   Together (OAuth PKCE), profile/settings, notifications inbox.
+- `/games/uno` — two-player Uno (`uno_screen.dart`). Whole match is ONE
+  Firestore doc (`couples/{id}/uno/game`): one listener, one write per
+  move. House rules forced by having exactly two players — Skip and
+  Reverse both just hand the turn back to whoever played them. Turn and
+  legality checks live in `FirestoreService` and are re-validated there
+  even though the UI only offers legal moves.
+
+## Cost (Firestore reads/writes) — don't regress these
+
+Explicitly optimised once; keep these in mind when adding streams:
+- **Never leave a growing collection's listener unbounded.** A Firestore
+  listener is billed for every doc it returns on attach, so an unlimited
+  query re-reads the whole collection every time a screen mounts.
+  `watchMessages` is `limitToLast(300)` and `watchMemories` is
+  `limit(500)` for exactly this reason — both were previously unbounded
+  and re-read entire history per open.
+- **The couple doc is hot.** `presence`/`lastSeen`/`sections`/
+  `activityLabel`/`typing` all live on it, and 4+ streams listen to it,
+  so every write there bills a read per listener. MainShell's heartbeat
+  is 60 s (not 30) and `watchPartnerOnline`'s window is 150 s — these two
+  move together, the window must stay ≥2x the interval or a single
+  delayed heartbeat flickers a present partner to "offline".
+- **Throttle anything triggered by a high-frequency user action.** The
+  "they're going through your photos" nudge fires at most once per 6 h,
+  and stores its last-sent timestamp in local SharedPreferences rather
+  than Firestore, so the throttle check itself costs zero reads.
+
+## Backup / export
+
+`/you` has a "Back up everything" button (`data_export_service.dart`)
+that dumps every couple-scoped collection to one JSON file and opens the
+share sheet. It deliberately **exports a file instead of pushing to
+GitHub from inside the app** — direct upload would require a GitHub
+token baked into the distributed binary, extractable from the APK. The
+user shares the file into their own repo instead.
+
+## iOS
+
+`ios/` exists and `Info.plist` has the permission usage strings and
+background modes, but **nothing iOS has ever been compiled or run** —
+that needs macOS + Xcode, which the usual dev container doesn't have.
+See `IOS_SETUP.md` for the remaining Mac-only steps and known gaps (the
+home-screen drawing widget is Android-only; screen sharing uses
+MediaProjection with no ReplayKit equivalent).
 
 ## The shared 3D room (`/room/decorate`) — read this before touching it
 
