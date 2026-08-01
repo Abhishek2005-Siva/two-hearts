@@ -6,8 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/delight/couple_character.dart';
+import '../../core/utils/data_export_service.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -66,6 +68,11 @@ class YouAndMeScreen extends ConsumerWidget {
               if (partner != null)
                 _ForeverCard(partner: partner, accent: accent)
                     .animate().fadeIn(delay: 160.ms),
+              const SizedBox(height: 20),
+
+              // Back everything up — see _ExportSection for why this
+              // exports a file rather than pushing to GitHub directly.
+              const _ExportSection().animate().fadeIn(delay: 180.ms),
             ],
           ),
         ),
@@ -673,6 +680,129 @@ class _NicknameSectionState extends ConsumerState<_NicknameSection> {
 }
 
 // ── Profile Picture Section ───────────────────────────────────────────────
+
+/// "Back up everything" — exports every couple-scoped Firestore collection
+/// to a JSON file and hands it to the system share sheet, so it can be
+/// saved to a GitHub repo, a cloud drive, or anywhere else the user likes.
+///
+/// It exports rather than pushing to GitHub itself on purpose: uploading
+/// direct from the app would require a GitHub token baked into the
+/// installed binary, which anyone with the APK could extract. This gets the
+/// same result without shipping a credential.
+class _ExportSection extends ConsumerStatefulWidget {
+  const _ExportSection();
+
+  @override
+  ConsumerState<_ExportSection> createState() => _ExportSectionState();
+}
+
+class _ExportSectionState extends ConsumerState<_ExportSection> {
+  bool _busy = false;
+  int _done = 0;
+  int _total = 0;
+
+  Future<void> _export() async {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _done = 0;
+      _total = 0;
+    });
+    try {
+      final file = await DataExportService.exportAll(
+        coupleId,
+        onProgress: (done, total) {
+          if (mounted) setState(() { _done = done; _total = total; });
+        },
+      );
+      final sizeKb = (await file.length()) / 1024;
+      if (!mounted) return;
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Two Hearts backup — ${sizeKb.toStringAsFixed(0)} KB',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Couldn't export: $e"),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = ref.watch(accentColorProvider);
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.bgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.cloud_download_rounded, color: accent, size: 20),
+              const SizedBox(width: 10),
+              const Text('Back up everything',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Saves every message, memory, letter, journal entry and more '
+            'into one file you can keep anywhere — your own GitHub repo, '
+            'a cloud drive, wherever ♡',
+            style: TextStyle(
+                color: AppColors.textSecondary, fontSize: 12, height: 1.5),
+          ),
+          const SizedBox(height: 14),
+          if (_busy && _total > 0)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: _done / _total,
+                      minHeight: 5,
+                      backgroundColor: AppColors.bgCardLight,
+                      valueColor: AlwaysStoppedAnimation(accent),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text('Gathering… $_done of $_total',
+                      style: const TextStyle(
+                          color: AppColors.textMuted, fontSize: 11)),
+                ],
+              ),
+            ),
+          GradientButton(
+            label: _busy ? 'Exporting…' : 'Export & share',
+            cuteStickers: const ['📦', '✨'],
+            onTap: _busy ? null : _export,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _ProfilePicSection extends ConsumerStatefulWidget {
   const _ProfilePicSection();
