@@ -54,7 +54,15 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     final picker = ImagePicker();
     // Open native gallery directly — pickMultipleMedia allows selecting both
     // photos and videos in a single unified picker session.
-    final media = await picker.pickMultipleMedia();
+    // Photos are capped/compressed here (same as every other upload path in
+    // the app): a full-res modern phone photo can exceed Cloudinary's
+    // unsigned-upload size limit and fail the whole batch. Videos are
+    // unaffected by these params and upload as-is.
+    final media = await picker.pickMultipleMedia(
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 85,
+    );
     if (media.isEmpty || !mounted) return;
     setState(() => _uploading = true);
     // Capture service and ids NOW before any awaits so navigation away
@@ -103,6 +111,21 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
         DelightHaptics.thud();
         FloatingStickers.burst(context,
             stickers: const ['🌸', '✨', '📸'], count: 7);
+      }
+    } catch (e) {
+      // Previously a bare try/finally — any upload failure (Cloudinary
+      // error, file too large, no network) threw silently and the sheet
+      // just closed, looking exactly like "nothing happened". Always tell
+      // the user what actually went wrong.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Couldn't upload: $e"),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 6),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
