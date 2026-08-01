@@ -1262,6 +1262,10 @@ class AppNotification {
 ///
 /// e.g. "R5" red 5, "GS" green skip, "BR" blue reverse, "YD" yellow
 /// draw-two, "W" wild, "W4" wild draw-four.
+///
+/// 'H' is a fifth, non-standard colour: the Heart cards, which carry a
+/// long-distance prompt instead of a number. "HT" truth, "HD" dare,
+/// "HS" sweet, "HX" spicy.
 class UnoCard {
   final String code;
   const UnoCard(this.code);
@@ -1270,22 +1274,47 @@ class UnoCard {
   String get value => code.substring(1);
 
   bool get isWild => color == 'W';
-  bool get isSkip => value == 'S';
-  bool get isReverse => value == 'R';
-  bool get isDrawTwo => value == 'D';
+  bool get isHeart => color == 'H';
+
+  /// NOTE: heart values deliberately reuse letters that mean something else
+  /// on a coloured card — 'HS' (sweet) vs 'GS' (green skip), 'HD' (dare) vs
+  /// 'YD' (yellow draw-two). These action getters must therefore exclude
+  /// hearts, or a Heart Sweet would silently behave like a Skip.
+  bool get isSkip => !isHeart && value == 'S';
+  bool get isReverse => !isHeart && value == 'R';
+  bool get isDrawTwo => !isHeart && value == 'D';
   bool get isWildDrawFour => code == 'W4';
+
+  /// Which prompt list this heart card draws from (null for normal cards).
+  String? get heartCategory => switch (code) {
+        'HT' => 'truth',
+        'HD' => 'dare',
+        'HS' => 'sweet',
+        'HX' => 'spicy',
+        _ => null,
+      };
 
   /// Can this card legally be played on [top], given the [activeColor]
   /// (which differs from top.color after a wild has set a new colour)?
   bool canPlayOn(UnoCard top, String activeColor) {
-    if (isWild) return true;
+    // Hearts are always playable — they're the whole point of the deck.
+    if (isWild || isHeart) return true;
     if (color == activeColor) return true;
-    // Matching the value also works, but only for non-wild tops — a wild
-    // has no meaningful value to match against.
-    return !top.isWild && value == top.value;
+    // Matching the value also works, but only against another coloured
+    // card — wilds and hearts have no comparable value.
+    return !top.isWild && !top.isHeart && value == top.value;
   }
 
   String get label {
+    if (isHeart) {
+      return switch (code) {
+        'HT' => 'Truth',
+        'HD' => 'Dare',
+        'HS' => 'Sweet',
+        'HX' => 'Spicy',
+        _ => 'Heart',
+      };
+    }
     final v = switch (value) {
       'S' => 'Skip',
       'R' => 'Reverse',
@@ -1334,6 +1363,17 @@ class UnoGame {
   /// Cards the current player must draw before playing (from a +2/+4).
   final int pendingDraw;
 
+  /// The Heart-card prompt currently on the table, if any.
+  ///
+  /// Stored on the game doc rather than picked locally, so both players see
+  /// the same text — choosing it client-side would show each of them a
+  /// different prompt for the same card.
+  final String? activePrompt;
+  final String? promptCategory;
+
+  /// Who owes the answer — always the player who did NOT play the card.
+  final String? promptForUid;
+
   final DateTime updatedAt;
 
   const UnoGame({
@@ -1345,6 +1385,9 @@ class UnoGame {
     this.winnerUid,
     this.unoCalledBy,
     this.pendingDraw = 0,
+    this.activePrompt,
+    this.promptCategory,
+    this.promptForUid,
     required this.updatedAt,
   });
 
@@ -1370,6 +1413,9 @@ class UnoGame {
       winnerUid: d['winnerUid'] as String?,
       unoCalledBy: d['unoCalledBy'] as String?,
       pendingDraw: (d['pendingDraw'] as num?)?.toInt() ?? 0,
+      activePrompt: d['activePrompt'] as String?,
+      promptCategory: d['promptCategory'] as String?,
+      promptForUid: d['promptForUid'] as String?,
       updatedAt: (d['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -1383,13 +1429,21 @@ class UnoGame {
         'winnerUid': winnerUid,
         'unoCalledBy': unoCalledBy,
         'pendingDraw': pendingDraw,
+        'activePrompt': activePrompt,
+        'promptCategory': promptCategory,
+        'promptForUid': promptForUid,
         'updatedAt': Timestamp.fromDate(updatedAt),
       };
 
-  /// A fresh shuffled 108-card deck: per colour one 0, two each of 1-9, and
-  /// two each of Skip/Reverse/Draw-two (25 x 4 = 100), plus 4 Wild and 4
-  /// Wild Draw Four.
-  static List<UnoCard> freshDeck() {
+  /// A fresh shuffled deck: the standard 108 (per colour one 0, two each of
+  /// 1-9, two each of Skip/Reverse/Draw-two = 100, plus 4 Wild and 4 Wild
+  /// Draw Four), plus 12 Heart cards when [withHearts] — three each of
+  /// Truth/Dare/Sweet/Spicy, for 120 total.
+  ///
+  /// 12-in-120 is a deliberate density: frequent enough that a 7-card hand
+  /// usually holds one, rare enough that the game is still Uno rather than
+  /// a prompt generator.
+  static List<UnoCard> freshDeck({bool withHearts = true, bool spicy = true}) {
     final cards = <UnoCard>[];
     for (final c in ['R', 'Y', 'G', 'B']) {
       cards.add(UnoCard('${c}0'));
@@ -1406,7 +1460,82 @@ class UnoGame {
       cards.add(const UnoCard('W'));
       cards.add(const UnoCard('W4'));
     }
+    if (withHearts) {
+      // Spicy can be turned off for a softer game; the other three stay.
+      final kinds = spicy
+          ? ['HT', 'HD', 'HS', 'HX']
+          : ['HT', 'HD', 'HS'];
+      for (final k in kinds) {
+        for (var i = 0; i < 3; i++) {
+          cards.add(UnoCard(k));
+        }
+      }
+    }
     cards.shuffle();
     return cards;
   }
+}
+
+/// Prompts for the Heart cards. Every dare is written to be doable from
+/// opposite ends of a country — voice notes, selfies, texts, calls — since
+/// that's the whole situation this app exists for. Nothing here assumes
+/// the two of them are in the same room.
+class UnoHeartPrompts {
+  static const truth = [
+    "What's the first thing you'd do if I turned up at your door right now?",
+    "What's a moment with me you replay in your head more than you admit?",
+    'When did you actually know you were falling for me?',
+    "What's something you've wanted to tell me but never have?",
+    'What do you miss most about me that has nothing to do with talking?',
+    "What's a thing I do that I don't even realise you love?",
+    'Where were you the last time you smiled at your phone because of me?',
+    "What's the pettiest thing you've ever been jealous about with me?",
+    "If you could relive one day with me, which one and why?",
+    "What's something about us you've never told anyone else?",
+  ];
+
+  static const dare = [
+    'Send a voice note saying exactly what you\'d whisper if I were next to you.',
+    'Selfie. Right now. No filter, no warning, no fixing your hair.',
+    'Make me your lock screen and send proof.',
+    'Record yourself humming our song — badly is fine.',
+    'Text me the exact words you\'d use to wake me up in the morning.',
+    'Send a photo of whatever is closest to your left hand, no context.',
+    'Say my name out loud in a voice note, the way you\'d say it in person.',
+    'Send the last photo in your camera roll. No editing, no skipping.',
+    'Give me a 10-second video tour of wherever you are right now.',
+    'Set a timer for tonight and send me a goodnight text at that exact minute.',
+  ];
+
+  static const sweet = [
+    'Say three things you love about them — out loud, not typed.',
+    "Describe the day you'd plan if you got 24 hours together tomorrow.",
+    'Tell them the exact moment you knew this was different.',
+    'Send a photo of something today that reminded you of them.',
+    'Tell them one thing they did this week that you\'re still thinking about.',
+    "Describe what home feels like when they're around.",
+    'Name a small thing they do that you\'d miss most if it stopped.',
+    "Tell them what you're most looking forward to doing together.",
+    'Say something you\'ve been meaning to thank them for.',
+  ];
+
+  static const spicy = [
+    "Tell them the first thing you'd do when you're finally alone together.",
+    'Send a voice note that\'s just their name — the way you\'d say it up close.',
+    'Describe what you\'re wearing… or what you wish you weren\'t.',
+    'Confess the last thought about them that made you blush.',
+    'Tell them exactly where you\'d kiss them first.',
+    'Describe the moment at the airport, in detail, when you finally see them.',
+    "What's something you've imagined doing with them but never said out loud?",
+    'Tell them what you were thinking the last time you went quiet on a call.',
+    'Describe the last dream you had about them that you didn\'t share.',
+  ];
+
+  static List<String> forCategory(String category) => switch (category) {
+        'truth' => truth,
+        'dare' => dare,
+        'sweet' => sweet,
+        'spicy' => spicy,
+        _ => sweet,
+      };
 }

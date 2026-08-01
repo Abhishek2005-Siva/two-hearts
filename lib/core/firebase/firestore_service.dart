@@ -1987,16 +1987,23 @@ class FirestoreService {
   /// Deals a new match: 7 cards each, one card flipped to start the discard.
   /// If the flipped card is a wild, its colour is picked at random so play
   /// can start immediately without an extra "choose a colour" step.
-  Future<void> startUnoGame(String coupleId, List<String> playerUids) async {
+  Future<void> startUnoGame(
+    String coupleId,
+    List<String> playerUids, {
+    bool spicy = true,
+  }) async {
     if (playerUids.length < 2) return;
-    final deck = UnoGame.freshDeck();
+    final deck = UnoGame.freshDeck(spicy: spicy);
     final hands = <String, List<UnoCard>>{};
     for (final uid in playerUids) {
       hands[uid] = deck.sublist(0, 7);
       deck.removeRange(0, 7);
     }
     final first = deck.removeAt(0);
-    final activeColor = first.isWild
+    // Wilds and Hearts have no colour of their own ('W'/'H' aren't playable
+    // colours), so pick one at random rather than starting the game on an
+    // active colour nobody can ever match.
+    final activeColor = (first.isWild || first.isHeart)
         ? ['R', 'Y', 'G', 'B'][Random().nextInt(4)]
         : first.color;
 
@@ -2061,21 +2068,47 @@ class FirestoreService {
     if (card.isDrawTwo) pendingDraw += 2;
     if (card.isWildDrawFour) pendingDraw += 4;
 
+    // A Heart card puts a prompt on the table for the OTHER player. Picked
+    // here, server-side of the two clients, so both see the same one.
+    String? prompt;
+    String? promptCategory;
+    String? promptForUid;
+    final category = card.heartCategory;
+    if (category != null) {
+      final options = UnoHeartPrompts.forCategory(category);
+      prompt = options[Random().nextInt(options.length)];
+      promptCategory = category;
+      promptForUid = opponent;
+    }
+
     await _unoDoc(coupleId).set(UnoGame(
       hands: hands,
       drawPile: game.drawPile,
       discardPile: discard,
+      // Hearts are wild-coloured too — the player picks what's next.
       turnUid: keepsTurn ? uid : opponent,
-      activeColor: card.isWild ? (chosenColor ?? 'R') : card.color,
+      activeColor:
+          (card.isWild || card.isHeart) ? (chosenColor ?? 'R') : card.color,
       winnerUid: hand.isEmpty ? uid : null,
       // Clear a stale "Uno" call once the caller is no longer on one card.
       unoCalledBy: game.unoCalledBy == uid && hand.length != 1
           ? null
           : game.unoCalledBy,
       pendingDraw: pendingDraw,
+      activePrompt: prompt,
+      promptCategory: promptCategory,
+      promptForUid: promptForUid,
       updatedAt: DateTime.now(),
     ).toMap());
   }
+
+  /// Clears the Heart prompt once it's been answered/done.
+  Future<void> clearUnoPrompt(String coupleId) => _unoDoc(coupleId).update({
+        'activePrompt': null,
+        'promptCategory': null,
+        'promptForUid': null,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
 
   /// Draws for [uid]: either the penalty stack from a +2/+4 (which then
   /// passes the turn on), or a single card when they can't or won't play.
@@ -2115,6 +2148,12 @@ class FirestoreService {
       winnerUid: null,
       unoCalledBy: game.unoCalledBy == uid ? null : game.unoCalledBy,
       pendingDraw: 0,
+      // Carry any unanswered Heart prompt through — this is a full set(),
+      // so not re-passing these would silently wipe a prompt the opponent
+      // hasn't answered yet.
+      activePrompt: game.activePrompt,
+      promptCategory: game.promptCategory,
+      promptForUid: game.promptForUid,
       updatedAt: DateTime.now(),
     ).toMap());
   }

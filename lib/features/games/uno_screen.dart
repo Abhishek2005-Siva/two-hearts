@@ -38,7 +38,16 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
         'Y' => const Color(0xFFE3B505),
         'G' => const Color(0xFF3E9C56),
         'B' => const Color(0xFF3A6EA5),
+        'H' => const Color(0xFFD65A8E), // Heart cards — the app's rose
         _ => const Color(0xFF2B2B33),
+      };
+
+  static (String, Color) _categoryStyle(String? category) => switch (category) {
+        'truth' => ('💗 Truth', Color(0xFFE8899B)),
+        'dare' => ('🔥 Dare', Color(0xFFFF8C5A)),
+        'sweet' => ('✨ Sweet', Color(0xFFE8C170)),
+        'spicy' => ('😈 Spicy', Color(0xFFD65A8E)),
+        _ => ('💗 Heart', Color(0xFFE8899B)),
       };
 
   Future<void> _guard(Future<void> Function() action) async {
@@ -57,12 +66,132 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
     }
   }
 
+  bool _spicy = true;
+
   Future<void> _startGame(String coupleId, List<String> uids) =>
-      _guard(() => ref.read(firestoreServiceProvider).startUnoGame(coupleId, uids));
+      _guard(() => ref
+          .read(firestoreServiceProvider)
+          .startUnoGame(coupleId, uids, spicy: _spicy));
+
+  void _showRules() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.8),
+        padding: EdgeInsets.fromLTRB(
+            22, 22, 22, MediaQuery.of(ctx).padding.bottom + 22),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('How to play',
+                  style: Theme.of(context)
+                      .textTheme
+                      .displayMedium
+                      ?.copyWith(fontSize: 22)),
+              const SizedBox(height: 14),
+              _rule('🃏', 'The basics',
+                  'Seven cards each. Play a card matching the colour or the '
+                  'number on the pile. No move? Draw one — you can play it '
+                  'straight away if it fits, otherwise pass.'),
+              _rule('⊘', 'Skip & Reverse',
+                  "With just the two of you these do the same thing: the turn "
+                  'comes right back to you. Play two in a row and you go '
+                  'three times before they move once.'),
+              _rule('+2', 'Draw cards',
+                  'They draw and lose their turn. Stack another +2 or +4 on '
+                  'top before it resolves and the pile grows.'),
+              _rule('★', 'Wild',
+                  'Play it on anything and name the next colour.'),
+              const SizedBox(height: 8),
+              const Divider(color: AppColors.divider),
+              const SizedBox(height: 8),
+              Text('Heart cards ♡',
+                  style: Theme.of(context)
+                      .textTheme
+                      .displayMedium
+                      ?.copyWith(fontSize: 18)),
+              const SizedBox(height: 4),
+              const Text(
+                'Twelve of these are shuffled in. They play on ANY card and '
+                'you name the next colour — but they also land a prompt on '
+                'your partner. Everything is written for distance: voice '
+                'notes, selfies, texts. Nothing assumes you\'re in the same room.',
+                style: TextStyle(
+                    color: AppColors.textSecondary, fontSize: 12.5, height: 1.5),
+              ),
+              const SizedBox(height: 12),
+              _rule('💗', 'Truth',
+                  'They answer honestly. No deflecting.'),
+              _rule('🔥', 'Dare',
+                  'They do it now — a voice note, an unfiltered selfie, '
+                  'a photo of whatever is nearest.'),
+              _rule('✨', 'Sweet',
+                  'The soft ones. Say the thing you keep meaning to say.'),
+              _rule('😈', 'Spicy',
+                  'Flirtier. Toggle these off before dealing if you want a '
+                  'gentler game.'),
+              const SizedBox(height: 10),
+              const Text(
+                'Winning: first to empty their hand. Call UNO when you\'re '
+                'down to one card — it shows on their screen, so there\'s '
+                'nowhere to hide ♡',
+                style: TextStyle(
+                    color: AppColors.textSecondary, fontSize: 12.5, height: 1.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _rule(String glyph, String title, String body) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 34,
+              child: Text(glyph,
+                  style: const TextStyle(fontSize: 17), textAlign: TextAlign.center),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 2),
+                  Text(body,
+                      style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12.5,
+                          height: 1.45)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
 
   Future<void> _play(String coupleId, String uid, UnoCard card) async {
     String? chosen;
-    if (card.isWild) {
+    // Hearts are wild-coloured too, so they also need a colour choice.
+    if (card.isWild || card.isHeart) {
       chosen = await _pickColor();
       if (chosen == null) return; // cancelled
     }
@@ -114,6 +243,13 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
       appBar: AppBar(
         backgroundColor: AppColors.bg,
         title: const Text('Uno'),
+        actions: [
+          IconButton(
+            tooltip: 'How to play',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: _showRules,
+          ),
+        ],
       ),
       body: gameAsync.when(
         loading: () =>
@@ -142,6 +278,9 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
               accent: accent,
               busy: _busy,
               canStart: uids.length >= 2,
+              spicy: _spicy,
+              onSpicyChanged: (v) => setState(() => _spicy = v),
+              onRules: _showRules,
               onStart: () => _startGame(coupleId, uids),
             );
           }
@@ -176,6 +315,18 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
                   cardCount: partnerCount,
                   calledUno: game.unoCalledBy == partnerUid,
                 ),
+                if (game.activePrompt != null)
+                  _PromptCard(
+                    prompt: game.activePrompt!,
+                    style: _categoryStyle(game.promptCategory),
+                    forMe: game.promptForUid == myUid,
+                    partnerName:
+                        partner?.displayName.split(' ').first ?? 'They',
+                    busy: _busy,
+                    onDone: () => _guard(() => ref
+                        .read(firestoreServiceProvider)
+                        .clearUnoPrompt(coupleId)),
+                  ),
                 Expanded(
                   child: _Table(
                     top: top,
@@ -240,11 +391,17 @@ class _EmptyState extends StatelessWidget {
   final Color accent;
   final bool busy;
   final bool canStart;
+  final bool spicy;
+  final ValueChanged<bool> onSpicyChanged;
+  final VoidCallback onRules;
   final VoidCallback onStart;
   const _EmptyState({
     required this.accent,
     required this.busy,
     required this.canStart,
+    required this.spicy,
+    required this.onSpicyChanged,
+    required this.onRules,
     required this.onStart,
   });
 
@@ -261,12 +418,39 @@ class _EmptyState extends StatelessWidget {
                   style: Theme.of(context).textTheme.displayMedium?.copyWith(fontSize: 26)),
               const SizedBox(height: 8),
               const Text(
-                'Seven cards each. Match the colour or the number.\n'
-                'Skip and Reverse hand the turn straight back ♡',
+                'Seven cards each. Match the colour or the number —\n'
+                'and twelve Heart cards are shuffled in ♡',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.5),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 18),
+              // Spicy is opt-out rather than opt-in, but it's right here so
+              // it's a one-tap decision before dealing.
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 6, 10, 6),
+                decoration: BoxDecoration(
+                  color: AppColors.bgCard,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.divider, width: 0.5),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('😈', style: TextStyle(fontSize: 15)),
+                    const SizedBox(width: 8),
+                    const Text('Spicy cards',
+                        style: TextStyle(
+                            color: AppColors.textPrimary, fontSize: 13)),
+                    const SizedBox(width: 6),
+                    Switch(
+                      value: spicy,
+                      activeThumbColor: accent,
+                      onChanged: busy ? null : onSpicyChanged,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
               if (canStart)
                 GradientButton(
                   label: busy ? 'Dealing…' : 'Deal a new game',
@@ -281,6 +465,96 @@ class _EmptyState extends StatelessWidget {
           ),
         ),
       );
+}
+
+/// The Heart-card prompt on the table. Shown to both players — the one who
+/// owes the answer gets the action button, the other just sees what they
+/// asked for.
+class _PromptCard extends StatelessWidget {
+  final String prompt;
+  final (String, Color) style;
+  final bool forMe;
+  final String partnerName;
+  final bool busy;
+  final VoidCallback onDone;
+
+  const _PromptCard({
+    required this.prompt,
+    required this.style,
+    required this.forMe,
+    required this.partnerName,
+    required this.busy,
+    required this.onDone,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color) = style;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [color.withValues(alpha: 0.28), AppColors.bgCard],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: 0.55), width: 1.2),
+        boxShadow: [
+          BoxShadow(color: color.withValues(alpha: 0.22), blurRadius: 18),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(label,
+                  style: TextStyle(
+                      color: color, fontSize: 12, fontWeight: FontWeight.w900)),
+              const Spacer(),
+              Text(forMe ? 'for you' : 'for $partnerName',
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 11)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(prompt,
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontSize: 14.5, height: 1.45)),
+          const SizedBox(height: 12),
+          if (forMe)
+            SquishyTap(
+              onTap: busy ? null : onDone,
+              style: TapAnimationStyle.heartBeat,
+              cuteStickers: const ['💗'],
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Center(
+                  child: Text('Done ♡',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13)),
+                ),
+              ),
+            )
+          else
+            Text('Waiting for $partnerName…',
+                style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic)),
+        ],
+      ),
+    );
+  }
 }
 
 class _PartnerBar extends StatelessWidget {
@@ -568,14 +842,23 @@ class _CardFace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final face = switch (card.value) {
-      'S' => '⊘',
-      'R' => '⇄',
-      'D' => '+2',
-      '4' => '+4',
-      '' => '★',
-      _ => card.value,
-    };
+    // Hearts show their category glyph rather than a number/action symbol.
+    final face = card.isHeart
+        ? switch (card.code) {
+            'HT' => '💗',
+            'HD' => '🔥',
+            'HS' => '✨',
+            'HX' => '😈',
+            _ => '💗',
+          }
+        : switch (card.value) {
+            'S' => '⊘',
+            'R' => '⇄',
+            'D' => '+2',
+            '4' => '+4',
+            '' => '★',
+            _ => card.value,
+          };
     return Container(
       width: width,
       height: height,
@@ -611,7 +894,7 @@ class _CardFace extends StatelessWidget {
               face,
               style: TextStyle(
                 color: Colors.white,
-                fontSize: width * 0.42,
+                fontSize: width * (card.isHeart ? 0.34 : 0.42),
                 fontWeight: FontWeight.w900,
                 shadows: const [
                   Shadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 2)),
@@ -619,6 +902,23 @@ class _CardFace extends StatelessWidget {
               ),
             ),
           ),
+          // Heart cards name their category so you know what you're playing.
+          if (card.isHeart)
+            Positioned(
+              bottom: 6,
+              left: 0,
+              right: 0,
+              child: Text(
+                card.label.toUpperCase(),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.95),
+                  fontSize: width * 0.13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
         ],
       ),
     );
