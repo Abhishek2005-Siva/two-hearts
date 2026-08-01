@@ -1,4 +1,5 @@
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
@@ -115,7 +116,7 @@ exports.onNewSignal = onDocumentCreated(
       body = 'They wished you a beautiful morning ♡';
     } else if (signalType === 'goodNight') {
       title = `🌙 Good night from ${senderName}`;
-      body = 'Sweet dreams — they're thinking of you ♡';
+      body = "Sweet dreams — they're thinking of you ♡";
     } else if (signalType === 'gratitude') {
       title = `🙏 ${senderName} is grateful for you`;
       body = 'They wanted you to know ♡';
@@ -253,5 +254,78 @@ exports.onNewDailySnapEntry = onDocumentWritten(
         route: '/calendar',
       },
     });
+  }
+);
+
+// ── 6. Daily Snap Calendar — evening reminder if today's post is missing ──
+// Runs once every evening. For each couple, checks today's dailySnaps doc
+// and nudges whoever hasn't posted yet. Sends nothing if both already have,
+// so a couple who kept their streak never gets pestered.
+//
+// TIMEZONE: the schedule below runs in Asia/Kolkata; change both the
+// timeZone option and the dateKey construction together if that ever needs
+// to move, so "today" always means the same day the app's own
+// dailySnapDateKey() would produce on the user's device.
+
+exports.remindMissingDailySnap = onSchedule(
+  {
+    schedule: '0 20 * * *', // 20:00 every day
+    timeZone: 'Asia/Kolkata',
+  },
+  async () => {
+    // Local (not UTC) date parts, so the key matches the app's
+    // DateFormat('yyyy-MM-dd') on the same calendar day.
+    const now = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
+    );
+    const dateKey = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0'),
+    ].join('-');
+
+    const couples = await db.collection('couples').get();
+
+    await Promise.all(
+      couples.docs.map(async (coupleDoc) => {
+        const coupleId = coupleDoc.id;
+        const members = coupleDoc.data().members ?? [];
+        if (members.length < 2) return;
+
+        const snapDoc = await db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('dailySnaps')
+          .doc(dateKey)
+          .get();
+
+        const entries = snapDoc.exists ? (snapDoc.data().entries ?? {}) : {};
+        const missing = members.filter((uid) => !(uid in entries));
+        if (missing.length === 0) return; // both posted — say nothing
+
+        await Promise.all(
+          missing.map(async (uid) => {
+            const token = await getToken(uid);
+            if (!token) return;
+            // If the partner already posted, make that the hook — it's a
+            // stronger, and true, nudge than a generic reminder.
+            const partnerPosted = missing.length === 1;
+            await sendNotification(token, {
+              title: partnerPosted
+                ? 'They posted today ♡'
+                : "Today's memory is still empty",
+              body: partnerPosted
+                ? 'Add yours to complete the day together'
+                : 'Post a snap before the day ends ✨',
+              data: {
+                type: 'dailySnapReminder',
+                coupleId,
+                route: '/calendar',
+              },
+            });
+          })
+        );
+      })
+    );
   }
 );

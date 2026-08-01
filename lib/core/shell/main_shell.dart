@@ -77,11 +77,18 @@ class _MainShellState extends ConsumerState<MainShell>
     super.dispose();
   }
 
+  /// COST: every heartbeat writes the couple doc, and several streams listen
+  /// to that doc (online, section, lastSeen, activityLabel, typing, the
+  /// couple model itself) — so one write bills a read on each of them. At
+  /// 30s that was ~2,880 writes/day per person plus a multiple of that in
+  /// reads. 60s halves it and still sits comfortably inside the 90s window
+  /// watchPartnerOnline uses to decide someone's offline.
+  static const _kHeartbeatInterval = Duration(seconds: 60);
+
   void _startHeartbeat() {
     _writePresence();
     _presenceTimer?.cancel();
-    _presenceTimer = Timer.periodic(
-        const Duration(seconds: 30), (_) => _writePresence());
+    _presenceTimer = Timer.periodic(_kHeartbeatInterval, (_) => _writePresence());
   }
 
   void _writePresence() {

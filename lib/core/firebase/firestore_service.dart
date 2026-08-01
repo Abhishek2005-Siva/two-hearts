@@ -168,13 +168,18 @@ class FirestoreService {
       _db.collection('couples').doc(coupleId).snapshots().map(
           (d) => (d.data()?['lastSeen']?[partnerUid] as Timestamp?)?.toDate());
 
-  /// Online = heartbeat within the last 90 s. Re-evaluates on a local timer
+  /// Online = heartbeat within the last 150 s. Re-evaluates on a local timer
   /// too, so the dot turns off even when no further doc updates arrive.
+  ///
+  /// The window must stay comfortably above MainShell's heartbeat interval
+  /// (60 s) — at least 2x it — so one delayed or dropped heartbeat doesn't
+  /// flicker a present partner to "offline". It was 90 s back when the
+  /// heartbeat ran every 30 s; both moved together.
   Stream<bool> watchPartnerOnline(String coupleId, String partnerUid) {
     Timestamp? last;
     bool compute() =>
         last != null &&
-        DateTime.now().difference(last!.toDate()).inSeconds < 90;
+        DateTime.now().difference(last!.toDate()).inSeconds < 150;
     StreamSubscription? sub;
     Timer? timer;
     late final StreamController<bool> ctrl;
@@ -225,11 +230,22 @@ class FirestoreService {
 
   // ── Messages ──────────────────────────────────────────────────────────────
 
+  /// Most recent [_kMessageWindow] messages, oldest-first.
+  ///
+  /// COST: this was previously unbounded. A Firestore listener is billed for
+  /// every document it returns on attach, so an unlimited query re-read the
+  /// entire chat history every time the Chat screen mounted — on a couple
+  /// with 10k messages that's 10k reads per open. limitToLast keeps the
+  /// existing ascending order (so nothing downstream changes) while only
+  /// ever paying for the recent window.
+  static const _kMessageWindow = 300;
+
   Stream<List<MessageModel>> watchMessages(String coupleId) => _db
       .collection('couples')
       .doc(coupleId)
       .collection('messages')
       .orderBy('sentAt', descending: false)
+      .limitToLast(_kMessageWindow)
       .snapshots()
       .map((s) => s.docs.map(MessageModel.fromDoc).toList());
 
@@ -826,11 +842,15 @@ class FirestoreService {
       .collection('couples').doc(coupleId).collection('memories').doc(memoryId)
       .update({'collectionId': collectionId});
 
+  /// Newest-first memories, capped for the same billing reason as
+  /// [watchMessages] — an unbounded listener re-reads the whole wall on
+  /// every mount. 500 is far more than the wall shows at once.
   Stream<List<MemoryModel>> watchMemories(String coupleId) => _db
       .collection('couples')
       .doc(coupleId)
       .collection('memories')
       .orderBy('createdAt', descending: true)
+      .limit(500)
       .snapshots()
       .map((s) => s.docs.map(MemoryModel.fromDoc).toList());
 
