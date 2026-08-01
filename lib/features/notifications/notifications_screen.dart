@@ -16,6 +16,7 @@ String _typeEmoji(String type) => switch (type) {
       'recipe' => '🍳',
       'place' => '📍',
       'letter' => '💌',
+      'reminiscing' => '🥺',
       _ => '✨',
     };
 

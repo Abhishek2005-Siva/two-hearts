@@ -335,6 +335,28 @@ class FirestoreService {
     );
   }
 
+  /// "They're going through your photos together" — a soft nudge sent when
+  /// someone lingers in Memories. Deliberately throttled by the caller (see
+  /// [kReminiscingThrottle] in memory_detail_screen.dart): photo viewing is
+  /// high-frequency, so notifying per-view would both spam the partner and
+  /// burn a Firestore write every tap.
+  Future<void> notifyReminiscing(String coupleId) async {
+    final name = await _myFirstName();
+    final body = _anyOf([
+      '$name is going through your photos… probably missing you ♡',
+      '$name is looking back at your memories right now ♡',
+      'Someone\'s reminiscing — $name is deep in the photo wall ♡',
+      '$name is scrolling through your memories together ♡',
+    ]);
+    await recordNotification(
+      coupleId,
+      type: 'reminiscing',
+      title: 'Thinking of you',
+      body: body,
+      route: '/memory',
+    );
+  }
+
   /// Pushes a high-priority "incoming video call" notification so the
   /// partner hears about the call even when the app is backgrounded.
   Future<void> notifyIncomingCall(String coupleId, String callId) async {

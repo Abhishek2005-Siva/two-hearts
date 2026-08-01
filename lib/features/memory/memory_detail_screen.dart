@@ -4,11 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/firebase/models.dart';
 import '../../core/presence/activity_announcer.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
+
+/// How long to wait before telling the partner "they're going through your
+/// photos" again. Photo viewing is high-frequency, so an unthrottled
+/// notification would spam them and cost a Firestore write per tap. The
+/// timestamp lives in local SharedPreferences rather than Firestore, so the
+/// throttle check itself costs zero reads.
+const kReminiscingThrottle = Duration(hours: 6);
+const _kReminiscingPrefKey = 'last_reminiscing_notify_ms';
 
 class MemoryDetailScreen extends ConsumerStatefulWidget {
   final String memoryId;
@@ -29,6 +38,21 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
     super.initState();
     _pageCtrl = PageController();
     announceActivity('Looking through Memories');
+    _maybeNotifyReminiscing();
+  }
+
+  /// Sends the partner a soft "they're missing you" nudge when someone opens
+  /// the photos — at most once per [kReminiscingThrottle].
+  Future<void> _maybeNotifyReminiscing() async {
+    final coupleId = ref.read(coupleIdProvider);
+    if (coupleId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final lastMs = prefs.getInt(_kReminiscingPrefKey) ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - lastMs < kReminiscingThrottle.inMilliseconds) return;
+    await prefs.setInt(_kReminiscingPrefKey, now);
+    if (!mounted) return;
+    ref.read(firestoreServiceProvider).notifyReminiscing(coupleId).ignore();
   }
 
   @override
