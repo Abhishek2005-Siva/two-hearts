@@ -309,14 +309,28 @@ class TogetherScreen extends ConsumerWidget {
                 ),
               ).animate().fadeIn(delay: 380.ms),
               const SizedBox(height: 10),
-              SizedBox(
-                width: (MediaQuery.of(context).size.width - 40 - 30) / 4,
-                child: _QuickPick(
-                  icon: Icons.smart_display_rounded,
-                  label: 'YouTube',
-                  accent: accent,
-                  onTap: () => context.push('/together/youtube'),
-                ),
+              Row(
+                children: [
+                  SizedBox(
+                    width: (MediaQuery.of(context).size.width - 40 - 30) / 4,
+                    child: _QuickPick(
+                      icon: Icons.smart_display_rounded,
+                      label: 'YouTube',
+                      accent: accent,
+                      onTap: () => context.push('/together/youtube'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    width: (MediaQuery.of(context).size.width - 40 - 30) / 4,
+                    child: _QuickPick(
+                      icon: Icons.style_rounded,
+                      label: 'Uno',
+                      accent: accent,
+                      onTap: () => context.push('/games/uno'),
+                    ),
+                  ),
+                ],
               ).animate().fadeIn(delay: 390.ms),
               if (isWildcardGranter()) ...[
                 const SizedBox(height: 10),

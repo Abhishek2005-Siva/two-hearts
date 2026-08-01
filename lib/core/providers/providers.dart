@@ -467,3 +467,13 @@ final scribbleProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   if (coupleId == null) return Stream.value(null);
   return ref.read(firestoreServiceProvider).watchScribble(coupleId);
 });
+
+// ── Uno ───────────────────────────────────────────────────────────────────
+
+final unoGameProvider = StreamProvider<UnoGame>((ref) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) {
+    return Stream.value(UnoGame(updatedAt: DateTime.now()));
+  }
+  return ref.read(firestoreServiceProvider).watchUnoGame(coupleId);
+});

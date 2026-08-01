@@ -20,6 +20,7 @@ import '../../features/together/journal_screen.dart';
 import '../../features/together/recipes_screen.dart';
 import '../../features/memory/memory_detail_screen.dart';
 import '../../features/games/games_screen.dart';
+import '../../features/games/uno_screen.dart';
 import '../../features/games/date_ideas_screen.dart';
 import '../../features/chat/snaps_screen.dart';
 import '../../features/memory/photo_booth_screen.dart';
@@ -231,6 +232,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               },
             ),
             GoRoute(path: '/dates', builder: (_, _) => const DateIdeasScreen()),
+            GoRoute(path: '/games/uno', builder: (_, _) => const UnoScreen()),
             GoRoute(path: '/together/bucket', builder: (_, _) => const BucketListScreen()),
             GoRoute(path: '/together/wildcards', builder: (_, _) => const WildcardsScreen()),
             GoRoute(path: '/together/note', builder: (_, _) => const SharedNoteScreen()),

@@ -1971,4 +1971,175 @@ class FirestoreService {
   }
 
   double _randomPos() => (Random().nextDouble() * 4 - 2);
+
+  // ── Uno ───────────────────────────────────────────────────────────────
+  //
+  // The whole match lives in ONE document (couples/{id}/uno/game): a single
+  // listener, and a single write per move. Turn logic runs client-side —
+  // fine for a private two-person app, same trust model as the rest of it.
+
+  DocumentReference<Map<String, dynamic>> _unoDoc(String coupleId) =>
+      _db.collection('couples').doc(coupleId).collection('uno').doc('game');
+
+  Stream<UnoGame> watchUnoGame(String coupleId) =>
+      _unoDoc(coupleId).snapshots().map(UnoGame.fromDoc);
+
+  /// Deals a new match: 7 cards each, one card flipped to start the discard.
+  /// If the flipped card is a wild, its colour is picked at random so play
+  /// can start immediately without an extra "choose a colour" step.
+  Future<void> startUnoGame(String coupleId, List<String> playerUids) async {
+    if (playerUids.length < 2) return;
+    final deck = UnoGame.freshDeck();
+    final hands = <String, List<UnoCard>>{};
+    for (final uid in playerUids) {
+      hands[uid] = deck.sublist(0, 7);
+      deck.removeRange(0, 7);
+    }
+    final first = deck.removeAt(0);
+    final activeColor = first.isWild
+        ? ['R', 'Y', 'G', 'B'][Random().nextInt(4)]
+        : first.color;
+
+    await _unoDoc(coupleId).set(UnoGame(
+      hands: hands,
+      drawPile: deck,
+      discardPile: [first],
+      turnUid: playerUids[Random().nextInt(playerUids.length)],
+      activeColor: activeColor,
+      // A starting +2 would need a target before anyone has moved; skip
+      // that edge case by just not applying the first card's effect.
+      pendingDraw: 0,
+      updatedAt: DateTime.now(),
+    ).toMap());
+  }
+
+  /// Reshuffles the discard back into the draw pile when it runs dry,
+  /// keeping the top card in play.
+  static (List<UnoCard>, List<UnoCard>) _replenish(
+      List<UnoCard> drawPile, List<UnoCard> discardPile) {
+    if (drawPile.isNotEmpty || discardPile.length <= 1) {
+      return (drawPile, discardPile);
+    }
+    final top = discardPile.last;
+    final recycled = discardPile.sublist(0, discardPile.length - 1)..shuffle();
+    return (recycled, [top]);
+  }
+
+  /// Plays [card] from [uid]'s hand. [chosenColor] is required for wilds.
+  ///
+  /// With only two players, Skip and Reverse are equivalent — both hand the
+  /// turn straight back to the player who played them.
+  Future<void> playUnoCard(
+    String coupleId,
+    String uid,
+    UnoCard card, {
+    String? chosenColor,
+  }) async {
+    final snap = await _unoDoc(coupleId).get();
+    final game = UnoGame.fromDoc(snap);
+    if (game.turnUid != uid || game.winnerUid != null) return;
+
+    final top = game.topCard;
+    if (top != null && !card.canPlayOn(top, game.activeColor)) return;
+
+    final hands = {
+      for (final e in game.hands.entries) e.key: List<UnoCard>.from(e.value)
+    };
+    final hand = hands[uid];
+    if (hand == null) return;
+    final idx = hand.indexWhere((c) => c.code == card.code);
+    if (idx == -1) return;
+    hand.removeAt(idx);
+
+    final discard = [...game.discardPile, card];
+    final opponent =
+        game.hands.keys.firstWhere((u) => u != uid, orElse: () => uid);
+
+    // Skip/Reverse both return the turn to the player in a 2-player game.
+    final keepsTurn = card.isSkip || card.isReverse;
+    var pendingDraw = game.pendingDraw;
+    if (card.isDrawTwo) pendingDraw += 2;
+    if (card.isWildDrawFour) pendingDraw += 4;
+
+    await _unoDoc(coupleId).set(UnoGame(
+      hands: hands,
+      drawPile: game.drawPile,
+      discardPile: discard,
+      turnUid: keepsTurn ? uid : opponent,
+      activeColor: card.isWild ? (chosenColor ?? 'R') : card.color,
+      winnerUid: hand.isEmpty ? uid : null,
+      // Clear a stale "Uno" call once the caller is no longer on one card.
+      unoCalledBy: game.unoCalledBy == uid && hand.length != 1
+          ? null
+          : game.unoCalledBy,
+      pendingDraw: pendingDraw,
+      updatedAt: DateTime.now(),
+    ).toMap());
+  }
+
+  /// Draws for [uid]: either the penalty stack from a +2/+4 (which then
+  /// passes the turn on), or a single card when they can't or won't play.
+  Future<void> drawUnoCard(String coupleId, String uid) async {
+    final snap = await _unoDoc(coupleId).get();
+    final game = UnoGame.fromDoc(snap);
+    if (game.turnUid != uid || game.winnerUid != null) return;
+
+    var (draw, discard) = _replenish(game.drawPile, game.discardPile);
+    final hands = {
+      for (final e in game.hands.entries) e.key: List<UnoCard>.from(e.value)
+    };
+    final hand = hands[uid];
+    if (hand == null) return;
+
+    final penalty = game.pendingDraw;
+    final count = penalty > 0 ? penalty : 1;
+    for (var i = 0; i < count; i++) {
+      if (draw.isEmpty) {
+        (draw, discard) = _replenish(draw, discard);
+        if (draw.isEmpty) break; // genuinely nothing left to draw
+      }
+      hand.add(draw.removeAt(0));
+    }
+
+    final opponent =
+        game.hands.keys.firstWhere((u) => u != uid, orElse: () => uid);
+
+    await _unoDoc(coupleId).set(UnoGame(
+      hands: hands,
+      drawPile: draw,
+      discardPile: discard,
+      // Serving a penalty ends your turn; a voluntary single draw lets you
+      // still play the card you just drew.
+      turnUid: penalty > 0 ? opponent : uid,
+      activeColor: game.activeColor,
+      winnerUid: null,
+      unoCalledBy: game.unoCalledBy == uid ? null : game.unoCalledBy,
+      pendingDraw: 0,
+      updatedAt: DateTime.now(),
+    ).toMap());
+  }
+
+  /// Passes the turn after a voluntary draw when the drawn card is unplayable.
+  Future<void> passUnoTurn(String coupleId, String uid) async {
+    final snap = await _unoDoc(coupleId).get();
+    final game = UnoGame.fromDoc(snap);
+    if (game.turnUid != uid || game.winnerUid != null) return;
+    final opponent =
+        game.hands.keys.firstWhere((u) => u != uid, orElse: () => uid);
+    await _unoDoc(coupleId).update({
+      'turnUid': opponent,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  /// Calls "Uno" — only meaningful on exactly one remaining card.
+  Future<void> callUno(String coupleId, String uid) async {
+    final snap = await _unoDoc(coupleId).get();
+    final game = UnoGame.fromDoc(snap);
+    if ((game.hands[uid]?.length ?? 0) != 1) return;
+    await _unoDoc(coupleId).update({
+      'unoCalledBy': uid,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
 }

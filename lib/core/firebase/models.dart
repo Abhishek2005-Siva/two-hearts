@@ -1252,3 +1252,161 @@ class AppNotification {
     );
   }
 }
+
+// ──────────────── Uno ────────────────
+
+/// A single Uno card, encoded compactly as a string so the whole game fits
+/// in one Firestore document: first char is the colour (R/Y/G/B, or W for
+/// a wild), the rest is the value ('0'-'9', 'S' skip, 'R' reverse, 'D'
+/// draw-two, '' for a plain wild, '4' for a wild draw-four).
+///
+/// e.g. "R5" red 5, "GS" green skip, "BR" blue reverse, "YD" yellow
+/// draw-two, "W" wild, "W4" wild draw-four.
+class UnoCard {
+  final String code;
+  const UnoCard(this.code);
+
+  String get color => code[0];
+  String get value => code.substring(1);
+
+  bool get isWild => color == 'W';
+  bool get isSkip => value == 'S';
+  bool get isReverse => value == 'R';
+  bool get isDrawTwo => value == 'D';
+  bool get isWildDrawFour => code == 'W4';
+
+  /// Can this card legally be played on [top], given the [activeColor]
+  /// (which differs from top.color after a wild has set a new colour)?
+  bool canPlayOn(UnoCard top, String activeColor) {
+    if (isWild) return true;
+    if (color == activeColor) return true;
+    // Matching the value also works, but only for non-wild tops — a wild
+    // has no meaningful value to match against.
+    return !top.isWild && value == top.value;
+  }
+
+  String get label {
+    final v = switch (value) {
+      'S' => 'Skip',
+      'R' => 'Reverse',
+      'D' => '+2',
+      '4' => '+4',
+      '' => 'Wild',
+      _ => value,
+    };
+    if (isWild) return v;
+    final c = switch (color) {
+      'R' => 'Red',
+      'Y' => 'Yellow',
+      'G' => 'Green',
+      'B' => 'Blue',
+      _ => '',
+    };
+    return '$c $v';
+  }
+}
+
+/// Whole-game state for a two-player Uno match, stored as ONE document at
+/// couples/{coupleId}/uno/game.
+///
+/// Deliberately a single doc: one snapshot listener and one write per move,
+/// rather than a doc per hand/pile. A full 108-card game is far inside
+/// Firestore's 1 MB document limit.
+class UnoGame {
+  /// uid -> that player's hand.
+  final Map<String, List<UnoCard>> hands;
+  final List<UnoCard> drawPile;
+  final List<UnoCard> discardPile;
+
+  /// Whose turn it is.
+  final String turnUid;
+
+  /// The colour in play. Usually the top card's colour, but a wild sets it
+  /// explicitly, which is why it can't just be derived from the discard.
+  final String activeColor;
+
+  /// Set once someone empties their hand.
+  final String? winnerUid;
+
+  /// Who currently has exactly one card and has called "Uno".
+  final String? unoCalledBy;
+
+  /// Cards the current player must draw before playing (from a +2/+4).
+  final int pendingDraw;
+
+  final DateTime updatedAt;
+
+  const UnoGame({
+    this.hands = const {},
+    this.drawPile = const [],
+    this.discardPile = const [],
+    this.turnUid = '',
+    this.activeColor = 'R',
+    this.winnerUid,
+    this.unoCalledBy,
+    this.pendingDraw = 0,
+    required this.updatedAt,
+  });
+
+  UnoCard? get topCard => discardPile.isEmpty ? null : discardPile.last;
+
+  static List<UnoCard> _decode(List<dynamic>? raw) =>
+      (raw ?? const []).map((c) => UnoCard(c as String)).toList();
+
+  static List<String> _encode(List<UnoCard> cards) =>
+      cards.map((c) => c.code).toList();
+
+  factory UnoGame.fromDoc(DocumentSnapshot doc) {
+    if (!doc.exists) return UnoGame(updatedAt: DateTime.now());
+    final d = doc.data() as Map<String, dynamic>;
+    final rawHands = (d['hands'] as Map<String, dynamic>?) ?? {};
+    return UnoGame(
+      hands: rawHands.map((uid, cards) =>
+          MapEntry(uid, _decode(cards as List<dynamic>?))),
+      drawPile: _decode(d['drawPile'] as List<dynamic>?),
+      discardPile: _decode(d['discardPile'] as List<dynamic>?),
+      turnUid: d['turnUid'] as String? ?? '',
+      activeColor: d['activeColor'] as String? ?? 'R',
+      winnerUid: d['winnerUid'] as String?,
+      unoCalledBy: d['unoCalledBy'] as String?,
+      pendingDraw: (d['pendingDraw'] as num?)?.toInt() ?? 0,
+      updatedAt: (d['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'hands': hands.map((uid, cards) => MapEntry(uid, _encode(cards))),
+        'drawPile': _encode(drawPile),
+        'discardPile': _encode(discardPile),
+        'turnUid': turnUid,
+        'activeColor': activeColor,
+        'winnerUid': winnerUid,
+        'unoCalledBy': unoCalledBy,
+        'pendingDraw': pendingDraw,
+        'updatedAt': Timestamp.fromDate(updatedAt),
+      };
+
+  /// A fresh shuffled 108-card deck: per colour one 0, two each of 1-9, and
+  /// two each of Skip/Reverse/Draw-two (25 x 4 = 100), plus 4 Wild and 4
+  /// Wild Draw Four.
+  static List<UnoCard> freshDeck() {
+    final cards = <UnoCard>[];
+    for (final c in ['R', 'Y', 'G', 'B']) {
+      cards.add(UnoCard('${c}0'));
+      for (var n = 1; n <= 9; n++) {
+        cards.add(UnoCard('$c$n'));
+        cards.add(UnoCard('$c$n'));
+      }
+      for (final a in ['S', 'R', 'D']) {
+        cards.add(UnoCard('$c$a'));
+        cards.add(UnoCard('$c$a'));
+      }
+    }
+    for (var i = 0; i < 4; i++) {
+      cards.add(const UnoCard('W'));
+      cards.add(const UnoCard('W4'));
+    }
+    cards.shuffle();
+    return cards;
+  }
+}
