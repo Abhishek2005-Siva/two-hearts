@@ -1375,6 +1375,7 @@ class _MemoriesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final memoriesAsync = ref.watch(memoriesProvider);
+    final density = ref.watch(layoutDensityProvider);
     final accent = ref.watch(accentColorProvider);
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final coupleId = ref.watch(coupleIdProvider) ?? '';
@@ -1456,7 +1457,8 @@ class _MemoriesTab extends ConsumerWidget {
         final groups = _groupByDate(memories);
 
         return SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          padding: EdgeInsets.fromLTRB(
+              16 * density.factor, 8 * density.factor, 16 * density.factor, 24 * density.factor),
           sliver: SliverList(
             delegate: SliverChildListDelegate(
               groups.entries.map((entry) {

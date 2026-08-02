@@ -41,6 +41,7 @@ class NotificationsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = ref.watch(accentColorProvider);
+    final density = ref.watch(layoutDensityProvider);
     final coupleId = ref.watch(coupleIdProvider);
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final notificationsAsync = ref.watch(notificationsProvider);
@@ -101,7 +102,8 @@ class NotificationsScreen extends ConsumerWidget {
                     : notifications.isEmpty
                         ? _EmptyInbox(accent: accent)
                         : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                            padding: EdgeInsets.fromLTRB(16 * density.factor,
+                                8 * density.factor, 16 * density.factor, 32 * density.factor),
                             itemCount: notifications.length,
                             itemBuilder: (context, i) {
                               final n = notifications[i];

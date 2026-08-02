@@ -263,6 +263,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen>
 
   @override
   Widget build(BuildContext context) {
+    final density = ref.watch(layoutDensityProvider);
     final accent = ref.watch(accentColorProvider);
     final journalAsync = ref.watch(journalProvider);
     final journal = journalAsync.valueOrNull ?? [];
@@ -335,7 +336,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen>
                       ? const Center(child: CircularProgressIndicator())
                       : Stack(
                           children: [
-                            _BookshelfBody(books: books),
+                            _BookshelfBody(books: books, density: density),
                             if (!_searching)
                               Positioned(
                                 left: 0,
@@ -601,8 +602,9 @@ List<List<T>> _chunk<T>(List<T> items, int size) {
 
 class _BookshelfBody extends StatelessWidget {
   final List<_ShelfBook> books;
+  final AppDensity density;
 
-  const _BookshelfBody({required this.books});
+  const _BookshelfBody({required this.books, required this.density});
 
   @override
   Widget build(BuildContext context) {
@@ -629,7 +631,8 @@ class _BookshelfBody extends StatelessWidget {
       final maxPerShelf = (shelfW / 46).floor().clamp(4, 14);
 
       return ListView(
-        padding: const EdgeInsets.fromLTRB(0, 12, 0, 210),
+        padding: EdgeInsets.fromLTRB(
+            0 * density.factor, 12 * density.factor, 0 * density.factor, 210 * density.factor),
         children: [
           for (final year in byYear.keys) ...[
             _YearLabel(year: year),

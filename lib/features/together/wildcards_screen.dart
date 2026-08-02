@@ -527,6 +527,7 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final density = ref.watch(layoutDensityProvider);
     final cards = ref.watch(wildcardsProvider).valueOrNull ?? [];
     final requests = ref.watch(wildcardRequestsProvider).valueOrNull ?? [];
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -587,7 +588,8 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
+                  padding: EdgeInsets.fromLTRB(20 * density.factor, 8 * density.factor,
+                      20 * density.factor, 110 * density.factor),
                   children: [
                     if (isGranter && pendingRequests.isNotEmpty) ...[
                       const Text('REQUESTED',

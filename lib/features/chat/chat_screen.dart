@@ -499,6 +499,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
 
     final messagesAsync = ref.watch(messagesProvider);
+    final density = ref.watch(layoutDensityProvider);
     final accent = ref.watch(accentColorProvider);
     final partner = ref.watch(partnerUserProvider).valueOrNull;
     final isTyping = ref.watch(partnerTypingProvider).valueOrNull ?? false;
@@ -717,8 +718,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   return ListView.builder(
                     controller: _scrollController,
                     reverse: true,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                    padding: EdgeInsets.symmetric(
+                        horizontal: 16 * density.factor,
+                        vertical: 12 * density.factor),
                     itemCount: reversed.length,
                     itemBuilder: (context, i) {
                       final msg = reversed[i];

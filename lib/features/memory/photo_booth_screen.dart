@@ -19,6 +19,7 @@ class PhotoBoothScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = ref.watch(accentColorProvider);
+    final density = ref.watch(layoutDensityProvider);
     final collectionsAsync = ref.watch(photoCollectionsProvider);
     final memoriesAsync = ref.watch(memoriesProvider);
 
@@ -137,7 +138,7 @@ class PhotoBoothScreen extends ConsumerWidget {
                     }
 
                     return GridView.count(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.all(16 * density.factor),
                       crossAxisCount: 2,
                       mainAxisSpacing: 14,
                       crossAxisSpacing: 14,

@@ -297,6 +297,7 @@ class _DailySnapCalendarScreenState extends ConsumerState<DailySnapCalendarScree
   @override
   Widget build(BuildContext context) {
     final snaps = ref.watch(dailySnapsProvider).valueOrNull ?? [];
+    final density = ref.watch(layoutDensityProvider);
     final byDate = {for (final s in snaps) s.dateKey: s};
     final streak = _streak(byDate);
     final nextMilestone = _nextMilestone(streak);
@@ -376,7 +377,7 @@ class _DailySnapCalendarScreenState extends ConsumerState<DailySnapCalendarScree
                   Expanded(
                     child: ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: EdgeInsets.symmetric(horizontal: 16 * density.factor),
                       itemCount: _months.length,
                       itemBuilder: (context, i) {
                         final month = _months[i];

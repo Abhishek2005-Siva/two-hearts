@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/comfort_settings.dart';
 import 'archive_search_service.dart';
 
 /// Search & pick a free, legal movie/TV/documentary from the Internet
@@ -11,14 +13,14 @@ import 'archive_search_service.dart';
 /// (videoUrl, title) when a playable file is found, same shape as the
 /// "Play from a link" dialog, so the caller just feeds it into the
 /// existing Movie Night `_start()` flow.
-class ArchiveSearchScreen extends StatefulWidget {
+class ArchiveSearchScreen extends ConsumerStatefulWidget {
   const ArchiveSearchScreen({super.key});
 
   @override
-  State<ArchiveSearchScreen> createState() => _ArchiveSearchScreenState();
+  ConsumerState<ArchiveSearchScreen> createState() => _ArchiveSearchScreenState();
 }
 
-class _ArchiveSearchScreenState extends State<ArchiveSearchScreen> {
+class _ArchiveSearchScreenState extends ConsumerState<ArchiveSearchScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
   int _requestId = 0;
@@ -182,8 +184,9 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen> {
         ),
       );
     }
+    final density = ref.watch(layoutDensityProvider);
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      padding: EdgeInsets.fromLTRB(16 * density.factor, 4, 16 * density.factor, 24 * density.factor),
       itemCount: _results.length,
       itemBuilder: (context, i) {
         final item = _results[i];

@@ -666,8 +666,10 @@ class _BookList extends StatelessWidget {
       ).animate().fadeIn();
     }
 
+    final density = ref.watch(layoutDensityProvider);
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 110),
+      padding: EdgeInsets.fromLTRB(
+          18 * density.factor, 10 * density.factor, 18 * density.factor, 110 * density.factor),
       itemCount: books.length,
       separatorBuilder: (_, _) => Divider(
           height: 1, thickness: 0.6, color: _kInk.withValues(alpha: 0.12)),

@@ -175,15 +175,27 @@ class _TwoHeartsAppState extends ConsumerState<TwoHeartsApp> {
     final accent = ref.watch(accentColorProvider);
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeModeProvider);
+    final textScale = ref.watch(textScaleProvider).scale;
 
     return MaterialApp.router(
       title: 'Two Hearts',
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: scaffoldMessengerKey,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.build(accent),
+      // Both themes are built from the same couple accent now — previously
+      // `theme:` was hardcoded to the app's default accent regardless of
+      // what the couple had actually picked, so light mode silently ignored
+      // their chosen color.
+      theme: AppTheme.build(accent, brightness: Brightness.light),
+      darkTheme: AppTheme.build(accent, brightness: Brightness.dark),
       themeMode: themeMode,
       routerConfig: router,
+      // Applies the user's chosen text-size step to every screen at once —
+      // none of the app's screens override textScaler locally, so this one
+      // wrapper is enough for the whole app rather than touching every file.
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
     );
   }
 }

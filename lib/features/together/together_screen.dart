@@ -37,6 +37,7 @@ class TogetherScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final density = ref.watch(layoutDensityProvider);
     final accent = ref.watch(accentColorProvider);
     final letters = ref.watch(lettersProvider).valueOrNull ?? [];
     final bucket = ref.watch(bucketListProvider).valueOrNull ?? [];
@@ -73,7 +74,8 @@ class TogetherScreen extends ConsumerWidget {
         ),
         child: SafeArea(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            padding: EdgeInsets.fromLTRB(
+                20 * density.factor, 12 * density.factor, 20 * density.factor, 32 * density.factor),
             children: [
               _Header(
                 accent: accent,

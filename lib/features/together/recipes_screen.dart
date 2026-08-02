@@ -141,6 +141,7 @@ class _RecipesScreenState extends ConsumerState<RecipesScreen>
 
   @override
   Widget build(BuildContext context) {
+    final density = ref.watch(layoutDensityProvider);
     final recipesAsync = ref.watch(recipesProvider);
     final recipes = recipesAsync.valueOrNull ?? [];
     final couple = ref.watch(coupleProvider).valueOrNull;
@@ -206,7 +207,7 @@ class _RecipesScreenState extends ConsumerState<RecipesScreen>
                       ? const Center(child: CircularProgressIndicator())
                       : Stack(
                           children: [
-                            _CookbookShelfBody(recipes: filtered),
+                            _CookbookShelfBody(recipes: filtered, density: density),
                             if (!_searching)
                               Positioned(
                                 left: 0,
@@ -452,7 +453,8 @@ List<List<T>> _chunk<T>(List<T> items, int size) {
 
 class _CookbookShelfBody extends StatelessWidget {
   final List<RecipeModel> recipes;
-  const _CookbookShelfBody({required this.recipes});
+  final AppDensity density;
+  const _CookbookShelfBody({required this.recipes, required this.density});
 
   @override
   Widget build(BuildContext context) {
@@ -476,7 +478,8 @@ class _CookbookShelfBody extends StatelessWidget {
       final maxPerShelf = (shelfW / 46).floor().clamp(4, 14);
 
       return ListView(
-        padding: const EdgeInsets.fromLTRB(0, 12, 0, 210),
+        padding: EdgeInsets.fromLTRB(
+            0 * density.factor, 12 * density.factor, 0 * density.factor, 210 * density.factor),
         children: [
           for (final cat in orderedCategories) ...[
             _CategoryLabel(category: cat),

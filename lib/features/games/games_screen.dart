@@ -441,7 +441,7 @@ class _GamesScreenState extends ConsumerState<GamesScreen>
 
 // ── WYR Tab ───────────────────────────────────────────────────────────────
 
-class _WyrTab extends StatelessWidget {
+class _WyrTab extends ConsumerWidget {
   final Color accent;
   final String coupleId;
   final AsyncValue<GameRound?> gameAsync;
@@ -457,9 +457,11 @@ class _WyrTab extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final density = ref.watch(layoutDensityProvider);
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+      padding: EdgeInsets.fromLTRB(
+          20 * density.factor, 8 * density.factor, 20 * density.factor, 40 * density.factor),
       child: Column(
         children: [
           _SectionHeader(emoji: '🎯', title: 'Would You Rather?',

@@ -54,6 +54,7 @@ class _SharedNoteScreenState extends ConsumerState<SharedNoteScreen>
 
   @override
   Widget build(BuildContext context) {
+    final density = ref.watch(layoutDensityProvider);
     final note = ref.watch(sharedNoteProvider).valueOrNull;
     if (!_inited && note != null) {
       _ctrl.text = note['text'] as String? ?? '';
@@ -85,7 +86,7 @@ class _SharedNoteScreenState extends ConsumerState<SharedNoteScreen>
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(20 * density.factor),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

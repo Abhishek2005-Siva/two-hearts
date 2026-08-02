@@ -171,6 +171,7 @@ class _MovieNightLandingState extends ConsumerState<_MovieNightLanding> {
   @override
   Widget build(BuildContext context) {
     final accent = ref.watch(accentColorProvider);
+    final density = ref.watch(layoutDensityProvider);
     final partnerName = ref
             .watch(partnerUserProvider)
             .valueOrNull
@@ -216,7 +217,8 @@ class _MovieNightLandingState extends ConsumerState<_MovieNightLanding> {
                     SliverFillRemaining(
                       hasScrollBody: false,
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(28, 8, 28, 32),
+                        padding: EdgeInsets.fromLTRB(28 * density.factor,
+                            8 * density.factor, 28 * density.factor, 32 * density.factor),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.stretch,

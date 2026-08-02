@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/firebase/firestore_service.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/comfort_settings.dart';
 import '../../shared/widgets/app_logo.dart';
 
 class PairingScreen extends ConsumerStatefulWidget {
@@ -97,6 +98,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final density = ref.watch(layoutDensityProvider);
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: Stack(
@@ -106,8 +108,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF2A0820), Color(0xFF0D0408), Color(0xFF120610)],
-                stops: [0.0, 0.55, 1.0],
+                colors: AppColors.bgGradient,
               ),
             ),
           ),
@@ -126,7 +127,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           ),
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              padding: EdgeInsets.symmetric(
+                  horizontal: 24 * density.factor, vertical: 20 * density.factor),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

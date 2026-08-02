@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/comfort_settings.dart';
 
 // ── Haptic identity ───────────────────────────────────────────────────────
 // Each meaningful event has its own touch signature, so the app can be
@@ -122,8 +123,12 @@ class _TopBannerState extends State<_TopBanner>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 320));
+    // Reduced motion keeps the banner (it carries real information, not
+    // pure decoration) but drops the bouncy slide-in to a near-instant fade.
+    final duration = isReduceMotion(context)
+        ? const Duration(milliseconds: 60)
+        : const Duration(milliseconds: 320);
+    _ctrl = AnimationController(vsync: this, duration: duration);
     _ctrl.forward();
   }
 
@@ -210,6 +215,7 @@ class FloatingStickers {
     int count = 6,
     Offset? origin,
   }) {
+    if (isReduceMotion(context)) return;
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
 
@@ -333,6 +339,7 @@ class HeartBombardment {
   HeartBombardment._();
 
   static void play(BuildContext context) {
+    if (isReduceMotion(context)) return;
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
     late OverlayEntry entry;
@@ -428,6 +435,7 @@ class FlyAway {
   FlyAway._();
 
   static void play(BuildContext context, String emoji, {Offset? from}) {
+    if (isReduceMotion(context)) return;
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
     final size = MediaQuery.of(context).size;
@@ -562,12 +570,14 @@ class _SeasonalDriftState extends State<SeasonalDrift>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final List<_DriftFlake> _flakes;
+  bool _reduceMotion = false;
 
   @override
   void initState() {
     super.initState();
+    _reduceMotion = isReduceMotion(context);
     final season = currentSeason();
-    final stickers = kSeasonStickers[season] ?? const <String>[];
+    final stickers = _reduceMotion ? const <String>[] : (kSeasonStickers[season] ?? const <String>[]);
     final rng = math.Random();
     _flakes = stickers.isEmpty
         ? const []
@@ -594,7 +604,7 @@ class _SeasonalDriftState extends State<SeasonalDrift>
 
   @override
   Widget build(BuildContext context) {
-    if (_flakes.isEmpty) return const SizedBox.shrink();
+    if (_flakes.isEmpty || _reduceMotion) return const SizedBox.shrink();
     final size = MediaQuery.of(context).size;
     return IgnorePointer(
       child: AnimatedBuilder(

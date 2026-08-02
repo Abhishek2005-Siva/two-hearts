@@ -320,6 +320,7 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final density = ref.watch(layoutDensityProvider);
     final accent = ref.watch(accentColorProvider);
     final me = ref.watch(currentUserProvider).valueOrNull;
     final partner = ref.watch(partnerUserProvider).valueOrNull;
@@ -418,7 +419,8 @@ class _LetterComposeScreenState extends ConsumerState<LetterComposeScreen>
 
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+                  padding: EdgeInsets.fromLTRB(
+                      20 * density.factor, 8 * density.factor, 20 * density.factor, 40 * density.factor),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

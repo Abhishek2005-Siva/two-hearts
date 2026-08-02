@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../delight/delight.dart';
+import 'comfort_settings.dart';
 
 class AppColors {
   static const Color defaultAccent = Color(0xFFFF6B8A);
@@ -32,35 +33,65 @@ class AppColors {
   static const List<Color> bgGradient = [Color(0xFF1A0810), Color(0xFF0D0408)];
   static const List<Color> accentGradient = [Color(0xFFFF6B8A), Color(0xFFFF8C42)];
   static const List<Color> cardGradient = [Color(0xFF2E1525), Color(0xFF1E0F1A)];
+
+  // ── Light-mode palette ──────────────────────────────────────────────────
+  // A genuinely light theme (previous "light" mode was a hardcoded dark-plum
+  // variant that never actually got brighter than dark mode) — warm cream
+  // background, the same rose/coral/gold family read as accents on a light
+  // surface instead of a dark one.
+  static const Color lightBg = Color(0xFFFDF6F3);
+  static const Color lightBgMid = Color(0xFFFBEEE9);
+  static const Color lightCard = Color(0xFFFFFFFF);
+  static const Color lightCardAlt = Color(0xFFFFF3EE);
+  static const Color lightTextPrimary = Color(0xFF3A2230);
+  static const Color lightTextSecondary = Color(0xFF7A5A66);
+  static const Color lightTextMuted = Color(0xFFAE8C96);
+  static const Color lightDivider = Color(0xFFF0DDD5);
+  static const List<Color> lightBgGradient = [Color(0xFFFFF8F5), Color(0xFFFBEAE3)];
 }
 
 class AppTheme {
   static ThemeData get darkTheme => build(AppColors.defaultAccent);
+  static ThemeData get lightTheme => build(AppColors.defaultAccent, brightness: Brightness.light);
 
-  // "Light" mode is a soft dusk variant of the romantic theme: noticeably
-  // brighter than dark mode, but its text stays light so it keeps proper
-  // contrast against the app's plum surfaces and gradients.
-  static ThemeData get lightTheme {
-    const accent = AppColors.defaultAccent;
-    const bgColor = Color(0xFF3A2338);
-    const cardColor = Color(0xFF4A2E46);
-    const textPrimary = Color(0xFFFFF4F8);
-    const textSecondary = Color(0xFFD8B8C6);
-    const textMuted = Color(0xFFA98597);
-    const dividerColor = Color(0xFF5C3A55);
+  /// Single theme factory for both brightnesses — [accent] always comes
+  /// from the couple's chosen color (`accentColorProvider`) so light mode
+  /// picks it up too, unlike the old hand-duplicated `lightTheme` getter
+  /// which was hardcoded to `AppColors.defaultAccent` regardless of what
+  /// the couple had actually picked.
+  static ThemeData build(Color accent, {Brightness brightness = Brightness.dark}) {
+    final isDark = brightness == Brightness.dark;
+    final bg = isDark ? AppColors.bg : AppColors.lightBg;
+    final bgMid = isDark ? AppColors.bgMid : AppColors.lightBgMid;
+    final card = isDark ? AppColors.bgCard : AppColors.lightCard;
+    final textPrimary = isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
+    final textSecondary = isDark ? AppColors.textSecondary : AppColors.lightTextSecondary;
+    final textMuted = isDark ? AppColors.textMuted : AppColors.lightTextMuted;
+    final divider = isDark ? AppColors.divider : AppColors.lightDivider;
+    final onPrimary = Colors.white;
+    final onSurface = textPrimary;
 
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
-      scaffoldBackgroundColor: bgColor,
-      colorScheme: const ColorScheme.light(
-        primary: accent,
-        secondary: AppColors.coral,
-        surface: cardColor,
-        onPrimary: Colors.white,
-        onSurface: textPrimary,
-        outline: dividerColor,
-      ),
+      brightness: brightness,
+      scaffoldBackgroundColor: bg,
+      colorScheme: isDark
+          ? ColorScheme.dark(
+              primary: accent,
+              secondary: AppColors.coral,
+              surface: card,
+              onPrimary: onPrimary,
+              onSurface: onSurface,
+              outline: divider,
+            )
+          : ColorScheme.light(
+              primary: accent,
+              secondary: AppColors.coral,
+              surface: card,
+              onPrimary: onPrimary,
+              onSurface: onSurface,
+              outline: divider,
+            ),
       textTheme: TextTheme(
         displayLarge: GoogleFonts.playfairDisplay(
           fontSize: 36,
@@ -102,36 +133,36 @@ class AppTheme {
         ),
       ),
       cardTheme: CardThemeData(
-        color: cardColor,
+        color: card,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: dividerColor, width: 0.5),
+          side: BorderSide(color: divider, width: 0.5),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: cardColor,
-        hintStyle: const TextStyle(color: textMuted),
-        labelStyle: const TextStyle(color: textSecondary),
+        fillColor: card,
+        hintStyle: TextStyle(color: textMuted),
+        labelStyle: TextStyle(color: textSecondary),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: dividerColor),
+          borderSide: BorderSide(color: divider),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: dividerColor),
+          borderSide: BorderSide(color: divider),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: accent, width: 1.5),
+          borderSide: BorderSide(color: accent, width: 1.5),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
+          foregroundColor: isDark ? Colors.white : textPrimary,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 15),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -154,130 +185,13 @@ class AppTheme {
           fontWeight: FontWeight.bold,
           color: textPrimary,
         ),
-        iconTheme: const IconThemeData(color: textPrimary),
+        iconTheme: IconThemeData(color: textPrimary),
       ),
-      dividerTheme: const DividerThemeData(color: dividerColor, space: 1, thickness: 0.5),
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-        backgroundColor: cardColor,
+      dividerTheme: DividerThemeData(color: divider, space: 1, thickness: 0.5),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: isDark ? bgMid : card,
         selectedItemColor: accent,
         unselectedItemColor: textMuted,
-      ),
-    );
-  }
-
-  static ThemeData build(Color accent) {
-    return ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: AppColors.bg,
-      colorScheme: ColorScheme.dark(
-        primary: accent,
-        secondary: AppColors.coral,
-        surface: AppColors.bgCard,
-        onPrimary: Colors.white,
-        onSurface: AppColors.textPrimary,
-        outline: AppColors.divider,
-      ),
-      textTheme: TextTheme(
-        displayLarge: GoogleFonts.playfairDisplay(
-          fontSize: 36,
-          fontWeight: FontWeight.bold,
-          color: AppColors.textPrimary,
-          height: 1.1,
-        ),
-        displayMedium: GoogleFonts.playfairDisplay(
-          fontSize: 26,
-          fontWeight: FontWeight.bold,
-          color: AppColors.textPrimary,
-        ),
-        titleLarge: GoogleFonts.playfairDisplay(
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        titleMedium: GoogleFonts.lato(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-          letterSpacing: 0.2,
-        ),
-        bodyLarge: GoogleFonts.lato(
-          fontSize: 16,
-          color: AppColors.textPrimary,
-          height: 1.6,
-        ),
-        bodyMedium: GoogleFonts.lato(
-          fontSize: 14,
-          color: AppColors.textSecondary,
-          height: 1.5,
-        ),
-        labelSmall: GoogleFonts.lato(
-          fontSize: 11,
-          letterSpacing: 1.2,
-          color: AppColors.textMuted,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      cardTheme: CardThemeData(
-        color: AppColors.bgCard,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: AppColors.divider, width: 0.5),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: AppColors.bgCard,
-        hintStyle: const TextStyle(color: AppColors.textMuted),
-        labelStyle: const TextStyle(color: AppColors.textSecondary),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.divider),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.divider),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: accent, width: 1.5),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 15),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          textStyle: GoogleFonts.lato(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.5),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: accent,
-          textStyle: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-      ),
-      appBarTheme: AppBarTheme(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: true,
-        titleTextStyle: GoogleFonts.playfairDisplay(
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          color: AppColors.textPrimary,
-        ),
-        iconTheme: const IconThemeData(color: AppColors.textPrimary),
-      ),
-      dividerTheme: const DividerThemeData(color: AppColors.divider, space: 1, thickness: 0.5),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: AppColors.bgMid,
-        selectedItemColor: accent,
-        unselectedItemColor: AppColors.textMuted,
       ),
     );
   }
@@ -348,9 +262,10 @@ class _GradientButtonState extends State<GradientButton>
   void _handleTap() {
     if (widget.loading || widget.onTap == null) return;
     HapticFeedback.lightImpact();
-    _ctrl.forward(from: 0);
+    final reduceMotion = isReduceMotion(context);
+    if (!reduceMotion) _ctrl.forward(from: 0);
     final stickers = widget.cuteStickers;
-    if (stickers != null && stickers.isNotEmpty) {
+    if (!reduceMotion && stickers != null && stickers.isNotEmpty) {
       final box = context.findRenderObject() as RenderBox?;
       if (box != null && box.hasSize) {
         final origin = box.localToGlobal(box.size.center(Offset.zero));
@@ -607,9 +522,10 @@ class _SquishyTapState extends State<SquishyTap>
           ? null
           : () {
               HapticFeedback.selectionClick();
-              _ctrl.forward(from: 0);
+              final reduceMotion = isReduceMotion(context);
+              if (!reduceMotion) _ctrl.forward(from: 0);
               final stickers = widget.cuteStickers;
-              if (stickers != null && stickers.isNotEmpty) {
+              if (!reduceMotion && stickers != null && stickers.isNotEmpty) {
                 final box = context.findRenderObject() as RenderBox?;
                 if (box != null && box.hasSize) {
                   final origin = box.localToGlobal(box.size.center(Offset.zero));

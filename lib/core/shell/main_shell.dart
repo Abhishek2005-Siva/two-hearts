@@ -120,6 +120,9 @@ class _MainShellState extends ConsumerState<MainShell>
     final to = _sectionIndex(section);
     _lastPartnerSection = section;
     if (!online || from == null || to == null || from == to) return;
+    // Purely decorative — skip it entirely under reduce motion rather than
+    // just shortening it, same as the other one-off delight-layer moments.
+    if (ref.read(reduceMotionProvider)) return;
     setState(() {
       _pawFrom = from;
       _pawTo = to;
@@ -207,6 +210,7 @@ class _MainShellState extends ConsumerState<MainShell>
   @override
   Widget build(BuildContext context) {
     final accent = ref.watch(accentColorProvider);
+    final density = ref.watch(layoutDensityProvider);
     final idx = _currentIndex(context);
 
     // Keep my presence section in sync with the tab I'm on.
@@ -263,7 +267,7 @@ class _MainShellState extends ConsumerState<MainShell>
         ],
       ),
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        padding: EdgeInsets.fromLTRB(16 * density.factor, 0, 16 * density.factor, 12 * density.factor),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(28),
           child: BackdropFilter(
@@ -294,7 +298,7 @@ class _MainShellState extends ConsumerState<MainShell>
             clipBehavior: Clip.none,
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: EdgeInsets.symmetric(vertical: 8 * density.factor),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: List.generate(_tabs.length, (i) {

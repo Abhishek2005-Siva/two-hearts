@@ -67,6 +67,7 @@ class _DailyMemoryDetailScreenState extends ConsumerState<DailyMemoryDetailScree
   @override
   Widget build(BuildContext context) {
     final snaps = ref.watch(dailySnapsProvider).valueOrNull ?? [];
+    final density = ref.watch(layoutDensityProvider);
     final snap = snaps.where((s) => s.dateKey == widget.dateKey).firstOrNull;
     final entries = snap?.entries.values.toList() ?? [];
     final reactions = ref.watch(dailySnapReactionsProvider(widget.dateKey)).valueOrNull ?? [];
@@ -94,7 +95,7 @@ class _DailyMemoryDetailScreenState extends ConsumerState<DailyMemoryDetailScree
           children: [
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(16 * density.factor),
                 children: [
                   if (entries.isEmpty)
                     const Padding(

@@ -2,9 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../firebase/firestore_service.dart';
 import '../firebase/models.dart';
+
+export '../theme/comfort_settings.dart';
 
 // ── Firebase Auth ─────────────────────────────────────────────────────────
 
@@ -436,29 +437,9 @@ final listenSessionProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   return ref.read(firestoreServiceProvider).watchListenSession(coupleId);
 });
 
-// ── Theme Mode (persisted across restarts) ───────────────────────────────
-
-final themeModeProvider =
-    NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
-
-class ThemeModeNotifier extends Notifier<ThemeMode> {
-  static const _prefsKey = 'theme_mode';
-
-  @override
-  ThemeMode build() {
-    SharedPreferences.getInstance().then((prefs) {
-      final saved = prefs.getString(_prefsKey);
-      if (saved == 'light') state = ThemeMode.light;
-    });
-    return ThemeMode.dark;
-  }
-
-  void set(ThemeMode mode) {
-    state = mode;
-    SharedPreferences.getInstance().then((prefs) =>
-        prefs.setString(_prefsKey, mode == ThemeMode.light ? 'light' : 'dark'));
-  }
-}
+// Theme mode / text scale / layout density / reduce motion now live in
+// ../theme/comfort_settings.dart (re-exported above) — kept together since
+// they're all per-device "comfort" preferences with identical persistence.
 
 // ── Scribble ─────────────────────────────────────────────────────────────
 

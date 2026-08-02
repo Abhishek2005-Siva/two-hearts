@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/firebase/firestore_service.dart';
 import '../../core/firebase/models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/comfort_settings.dart';
 import '../../shared/widgets/app_logo.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
@@ -96,6 +97,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final density = ref.watch(layoutDensityProvider);
     return Scaffold(
       body: Stack(
         children: [
@@ -105,8 +107,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF2A0820), Color(0xFF0D0408), Color(0xFF12060E)],
-                stops: [0.0, 0.5, 1.0],
+                colors: AppColors.bgGradient,
               ),
             ),
           ),
@@ -137,7 +138,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           ),
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
+              padding: EdgeInsets.symmetric(horizontal: 28 * density.factor),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

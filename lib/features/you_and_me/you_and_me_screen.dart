@@ -59,6 +59,11 @@ class YouAndMeScreen extends ConsumerWidget {
                   .animate().fadeIn(delay: 80.ms),
               const SizedBox(height: 20),
 
+              // Comfort — text size, layout density, reduce motion
+              _ComfortSection(accent: accent)
+                  .animate().fadeIn(delay: 100.ms),
+              const SizedBox(height: 20),
+
               // Love Dial Connection — mood link, alerts, theme
               _LoveDialCard(accent: accent, partner: partner)
                   .animate().fadeIn(delay: 120.ms),
@@ -207,6 +212,216 @@ class _AppearanceSection extends ConsumerWidget {
                   .set(val ? ThemeMode.dark : ThemeMode.light);
             },
             activeThumbColor: accent,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Comfort — text size, layout density, reduce motion ───────────────────
+
+class _ComfortSection extends ConsumerWidget {
+  final Color accent;
+  const _ComfortSection({required this.accent});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final textStep = ref.watch(textScaleProvider);
+    final density = ref.watch(layoutDensityProvider);
+    final reduceMotion = ref.watch(reduceMotionProvider);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.bgCard,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.tune_rounded, color: accent, size: 20),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Comfort',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700)),
+                      Text('Make the app feel right for you',
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    ref.read(textScaleProvider.notifier).set(TextScaleStep.standard);
+                    ref.read(layoutDensityProvider.notifier).set(AppDensity.comfortable);
+                    ref.read(reduceMotionProvider.notifier).set(false);
+                  },
+                  child: const Text('Reset',
+                      style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline)),
+                ),
+              ],
+            ),
+          ),
+          const Divider(color: AppColors.divider, height: 1),
+          // Text size
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.text_fields_rounded, color: AppColors.textMuted, size: 18),
+                    SizedBox(width: 10),
+                    Text('Text size',
+                        style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: TextScaleStep.values.map((step) {
+                    final selected = step == textStep;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          ref.read(textScaleProvider.notifier).set(step);
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: selected ? accent.withValues(alpha: 0.18) : AppColors.bgCardLight,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: selected ? accent : AppColors.divider,
+                                width: selected ? 1.2 : 0.5),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text('A',
+                              style: TextStyle(
+                                  color: selected ? accent : AppColors.textSecondary,
+                                  fontSize: 12 + TextScaleStep.values.indexOf(step) * 2.5,
+                                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600)),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 6),
+                Text(textStep.label,
+                    style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+              ],
+            ),
+          ),
+          const Divider(color: AppColors.divider, height: 1),
+          // Layout density
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.view_agenda_outlined, color: AppColors.textMuted, size: 18),
+                    SizedBox(width: 10),
+                    Text('Layout density',
+                        style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: AppDensity.values.map((d) {
+                    final selected = d == density;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          ref.read(layoutDensityProvider.notifier).set(d);
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: selected ? accent.withValues(alpha: 0.18) : AppColors.bgCardLight,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: selected ? accent : AppColors.divider,
+                                width: selected ? 1.2 : 0.5),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(d.label,
+                              style: TextStyle(
+                                  color: selected ? accent : AppColors.textSecondary,
+                                  fontSize: 12,
+                                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600)),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
+          const Divider(color: AppColors.divider, height: 1),
+          // Reduce motion
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+            child: Row(
+              children: [
+                const Icon(Icons.motion_photos_off_outlined,
+                    color: AppColors.textMuted, size: 20),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Reduce motion',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                      Text('Fewer bursts, stickers & animated flourishes',
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: reduceMotion,
+                  onChanged: (val) => ref.read(reduceMotionProvider.notifier).set(val),
+                  activeThumbColor: accent,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -434,42 +649,48 @@ class _LoveDialCardState extends ConsumerState<_LoveDialCard> {
                       ],
                     ),
                   ),
-                  ...kCoupleAccents.take(4).map((a) {
-                    final color = a['color'] as Color;
-                    final selected = couple?.themeColor == color.toARGB32();
-                    return Padding(
-                      padding: const EdgeInsets.only(left: 6),
-                      child: GestureDetector(
-                        onTap: () {
-                          if (couple != null) {
-                            HapticFeedback.selectionClick();
-                            ref
-                                .read(firestoreServiceProvider)
-                                .updateCoupleTheme(couple.id, color.toARGB32());
-                          }
-                        },
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                            border: selected
-                                ? Border.all(color: Colors.white, width: 2)
-                                : null,
-                          ),
-                          child: selected
-                              ? const Icon(Icons.check_rounded,
-                                  color: Colors.white, size: 14)
-                              : null,
-                        ),
-                      ),
-                    );
-                  }),
-                  const SizedBox(width: 4),
                   const Icon(Icons.chevron_right_rounded,
                       color: AppColors.textMuted, size: 18),
                 ],
+              ),
+            ),
+            // Full 6-swatch picker, wrapped rather than truncated to the
+            // first 4 — previously two of the six defined kCoupleAccents
+            // colors (Blue, Gold) weren't reachable from this screen at all.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: kCoupleAccents.map((a) {
+                  final color = a['color'] as Color;
+                  final selected = couple?.themeColor == color.toARGB32();
+                  return GestureDetector(
+                    onTap: () {
+                      if (couple != null) {
+                        HapticFeedback.selectionClick();
+                        ref
+                            .read(firestoreServiceProvider)
+                            .updateCoupleTheme(couple.id, color.toARGB32());
+                      }
+                    },
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: selected
+                            ? Border.all(color: Colors.white, width: 2)
+                            : null,
+                      ),
+                      child: selected
+                          ? const Icon(Icons.check_rounded,
+                              color: Colors.white, size: 15)
+                          : null,
+                    ),
+                  );
+                }).toList(),
               ),
             ),
           ],

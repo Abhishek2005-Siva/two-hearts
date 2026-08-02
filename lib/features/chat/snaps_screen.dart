@@ -11,6 +11,7 @@ class SnapsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final imagesAsync = ref.watch(snapsProvider);
+    final density = ref.watch(layoutDensityProvider);
     final accent = ref.watch(accentColorProvider);
 
     return Scaffold(
@@ -76,7 +77,7 @@ class SnapsScreen extends ConsumerWidget {
                       );
                     }
                     return GridView.builder(
-                      padding: const EdgeInsets.all(12),
+                      padding: EdgeInsets.all(12 * density.factor),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3,

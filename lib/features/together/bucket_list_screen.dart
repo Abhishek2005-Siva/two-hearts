@@ -321,6 +321,7 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen>
 
   @override
   Widget build(BuildContext context) {
+    final density = ref.watch(layoutDensityProvider);
     final accent = ref.watch(accentColorProvider);
     final itemsAsync = ref.watch(bucketListProvider);
 
@@ -411,8 +412,8 @@ class _BucketListScreenState extends ConsumerState<BucketListScreen>
                       }
 
                       return SingleChildScrollView(
-                        padding:
-                            const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                        padding: EdgeInsets.fromLTRB(20 * density.factor,
+                            16 * density.factor, 20 * density.factor, 24 * density.factor),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
