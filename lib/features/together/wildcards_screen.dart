@@ -622,6 +622,22 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
                                     style: TextStyle(
                                         color: AppColors.textSecondary, fontSize: 13)),
                               ),
+                              GestureDetector(
+                                onTap: () async {
+                                  final coupleId = ref.read(coupleIdProvider);
+                                  if (coupleId == null) return;
+                                  await ref
+                                      .read(firestoreServiceProvider)
+                                      .respondToWildcardRequest(coupleId,
+                                          myPendingRequest.first.id, WildcardRequestStatus.declined);
+                                },
+                                child: const Text('Cancel',
+                                    style: TextStyle(
+                                        color: AppColors.textMuted,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                        decoration: TextDecoration.underline)),
+                              ),
                             ],
                           ),
                         )
