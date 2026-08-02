@@ -303,6 +303,14 @@ The user then explicitly asked to throw all of that away for **genuine
   gates already accepted for its threat model (Wildcards' `_kGranterEmail`,
   `dev_builds` FCM topic) — don't treat those as findings without
   re-reading why they're documented as deliberate above.
+- `.claude/skills/frontend-design/` — Anthropic's general-purpose
+  frontend design skill: aesthetic-direction, typography-pairing, and
+  copywriting guidance aimed at avoiding templated/AI-default-looking
+  UI. Not Flutter-specific like the others — use it alongside
+  `interior-design-expert`/`apple-design` when a screen's *visual
+  identity* (palette, type, signature element), not just layout
+  correctness, is the ask. User-supplied; the skill's own frontmatter
+  references a `LICENSE.txt` that wasn't included alongside it.
 - All four added from small, single-purpose upstream repos after
   checking each actually ships real content (not just a description) —
   skipped a fifth candidate (`vp-k/flutter-craft`) because it was a heavy
