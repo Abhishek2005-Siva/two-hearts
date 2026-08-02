@@ -1,4 +1,4 @@
-name: Build APK
+name: Build
 
 on:
   push:
@@ -6,10 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  # ── Android ──────────────────────────────────────────────────────────────
+  build-android:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -63,9 +62,111 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: two-hearts-${{ github.run_number }}
+          name: android-build
           path: build/app/outputs/flutter-apk/app-release.zip
           retention-days: 30
+
+  # ── iOS ──────────────────────────────────────────────────────────────────
+  # Needs a macOS runner (free for public repos). Builds UNSIGNED — real
+  # signing needs an Apple Developer account plus a certificate and
+  # provisioning profile in secrets, which this project doesn't have. The
+  # output is therefore NOT installable by just tapping the download: it has
+  # to be re-signed with your own Apple ID via Sideloadly or AltStore.
+  # See IOS_SETUP.md.
+  #
+  # continue-on-error because iOS has never actually been compiled for this
+  # project — a failure here must not stop the Android APK from shipping.
+  build-ios:
+    runs-on: macos-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.9'
+          channel: stable
+          cache: true
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-macos-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-macos-
+
+      # Optional. Without it the build still succeeds, but
+      # Firebase.initializeApp() fails at launch — add a
+      # GOOGLE_SERVICE_INFO_PLIST secret (base64 of the file from the
+      # Firebase console) to get a build that actually runs.
+      - name: Write GoogleService-Info.plist
+        env:
+          PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -n "$PLIST" ]; then
+            echo "$PLIST" | base64 -d > ios/Runner/GoogleService-Info.plist
+            echo "Wrote GoogleService-Info.plist"
+          else
+            echo "::warning::GOOGLE_SERVICE_INFO_PLIST secret not set — build will succeed but Firebase will crash on launch."
+          fi
+
+      - name: Write service_account.json
+        run: echo "${{ secrets.SERVICE_ACCOUNT_JSON }}" | base64 -d > assets/config/service_account.json
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build unsigned iOS app
+        run: flutter build ios --release --no-codesign --dart-define=SPOTIFY_CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}
+
+      # An .ipa is just a zip containing Payload/<App>.app, so this produces
+      # a structurally valid (if unsigned) ipa, then zips that to match how
+      # the Android build is delivered.
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/ios/pkg/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/pkg/Payload/
+          cd build/ios/pkg
+          zip -qr Runner-unsigned.ipa Payload
+          zip -q app-release-ios.zip Runner-unsigned.ipa
+          ls -lh app-release-ios.zip
+
+      - name: Upload iOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: build/ios/pkg/app-release-ios.zip
+          retention-days: 30
+
+  # ── Release ──────────────────────────────────────────────────────────────
+  # ONE job publishes BOTH artifacts. Publishing from each build job instead
+  # would break: removeArtifacts wipes the release's existing files first,
+  # so whichever job finished second would delete the other's upload.
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-android, build-ios]
+    # always() so a failed or skipped iOS build still lets Android publish,
+    # but only when the Android build itself actually succeeded.
+    if: always() && needs.build-android.result == 'success'
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List what will be released
+        run: ls -lhR artifacts
+
+      - name: Write service_account.json
+        run: echo "${{ secrets.SERVICE_ACCOUNT_JSON }}" | base64 -d > assets/config/service_account.json
 
       # A rolling release — same tag every build — so there's one stable
       # URL that always points at the newest zipped build, and so the
@@ -75,8 +176,15 @@ jobs:
         with:
           tag: latest-build
           name: Latest build
-          body: Automatically updated on every push to main. Run ${{ github.run_number }}.
-          artifacts: build/app/outputs/flutter-apk/app-release.zip
+          body: |
+            Automatically updated on every push to main. Run ${{ github.run_number }}.
+
+            - `app-release.zip` — Android APK. Unzip and install.
+            - `app-release-ios.zip` — **unsigned** iOS build, containing
+              `Runner-unsigned.ipa`. Not installable as-is: re-sign it with
+              Sideloadly or AltStore using your own Apple ID. Missing if the
+              iOS job failed.
+          artifacts: artifacts/*.zip
           allowUpdates: true
           removeArtifacts: true
           makeLatest: true
