@@ -10,7 +10,8 @@ import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 
 String _typeEmoji(String type) => switch (type) {
-      'wildcard_request' => '🃏',
+      'wildcard_request' => '🥺',
+      'wildcard' => '🃏',
       'book' => '📚',
       'journal' => '📖',
       'recipe' => '🍳',

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:uuid/uuid.dart';
 import 'fcm_service.dart';
 import 'models.dart';
 import '../../features/avatar/avatar_model.dart';
@@ -1136,12 +1137,42 @@ class FirestoreService {
 
   // ── Wildcards ────────────────────────────────────────────────────────────
 
-  Future<void> sendWildcard(String coupleId, WildCard card) => _db
-      .collection('couples')
-      .doc(coupleId)
-      .collection('wildcards')
-      .doc(card.id)
-      .set(card.toMap());
+  /// Grants a Wildcard. Like [requestWildcard], this deliberately lands in
+  /// BOTH chat and the notification inbox.
+  ///
+  /// It previously only wrote the card document and told the partner
+  /// nothing at all — no push, no inbox entry, no message — so a granted
+  /// card just sat in Wildcards unnoticed unless they happened to open the
+  /// screen. That silence was the main reason this felt broken.
+  Future<void> sendWildcard(String coupleId, WildCard card) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('wildcards')
+        .doc(card.id)
+        .set(card.toMap());
+
+    await sendMessage(
+      coupleId,
+      MessageModel(
+        id: const Uuid().v4(),
+        senderId: _uid,
+        content: '🃏 A Wildcard for you — "${card.favorText}" ♡',
+        type: MessageType.text,
+        sentAt: DateTime.now(),
+      ),
+    );
+
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'wildcard',
+      title: '🃏 $name gave you a Wildcard',
+      body: card.favorText,
+      route: '/together/wildcards',
+      push: false, // sendMessage above already pushed
+    );
+  }
 
   Future<void> setWildcardRedeemed(String coupleId, String cardId, bool redeemed) => _db
       .collection('couples')
@@ -1168,6 +1199,13 @@ class FirestoreService {
       .snapshots()
       .map((s) => s.docs.map(WildCard.fromDoc).toList());
 
+  /// Files a Wildcard request and makes sure it's actually seen: it lands in
+  /// the notification inbox AND as a real chat message.
+  ///
+  /// The chat message matters because the inbox is easy to miss — a request
+  /// that only sat in Wildcards could go unnoticed for days. Sent with
+  /// push: false on the notification so the two paths don't fire two
+  /// separate pushes for one request; sendMessage's own push covers it.
   Future<void> requestWildcard(String coupleId, WildcardRequest req) async {
     await _db
         .collection('couples')
@@ -1175,13 +1213,31 @@ class FirestoreService {
         .collection('wildcardRequests')
         .doc(req.id)
         .set(req.toMap());
+
+    final note = req.note?.trim();
+    final hasNote = note != null && note.isNotEmpty;
+
+    await sendMessage(
+      coupleId,
+      MessageModel(
+        id: const Uuid().v4(),
+        senderId: _uid,
+        content: hasNote
+            ? '🃏 Can I have a Wildcard? "$note"'
+            : '🃏 Can I have a Wildcard? ♡',
+        type: MessageType.text,
+        sentAt: DateTime.now(),
+      ),
+    );
+
     final name = await _myFirstName();
     await recordNotification(
       coupleId,
       type: 'wildcard_request',
       title: '🥺 $name asked for a Wildcard',
-      body: req.note?.isNotEmpty == true ? req.note! : 'Tap to grant it',
+      body: hasNote ? note : 'Tap to grant it',
       route: '/together/wildcards',
+      push: false,
     );
   }
 
