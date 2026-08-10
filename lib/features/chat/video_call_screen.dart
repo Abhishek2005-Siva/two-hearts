@@ -75,6 +75,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
   Timer? _timer;
   Timer? _ringTimer;
+  Timer? _disconnectGraceTimer;
   int _seconds = 0;
 
   StreamSubscription? _answerSub;
@@ -105,6 +106,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     _timer?.cancel();
     _ringTimer?.cancel();
+    _disconnectGraceTimer?.cancel();
     _answerSub?.cancel();
     _calleeCandSub?.cancel();
     _callerCandSub?.cancel();
@@ -179,9 +181,27 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
     _pc!.onConnectionState = (state) {
       if (!mounted || _disposed) return;
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
-        _hangUp(notify: false);
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        // Recovered — cancel any pending "give up" timer from an earlier
+        // Disconnected blip.
+        _disconnectGraceTimer?.cancel();
+        _disconnectGraceTimer = null;
+      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+        // Disconnected is often transient — a few dropped packets, a brief
+        // WiFi-to-cellular handoff — and WebRTC frequently recovers from it
+        // on its own within seconds. Treating it exactly like Failed (as
+        // this used to) hung up on the very first network hiccup, which is
+        // a very plausible reason calls "work for some phones and not
+        // others": phones on weaker or more variable connections would
+        // drop instantly instead of getting a chance to reconnect.
+        _disconnectGraceTimer?.cancel();
+        _disconnectGraceTimer = Timer(const Duration(seconds: 8), () {
+          if (!mounted || _disposed) return;
+          _failCall();
+        });
+      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
+        _disconnectGraceTimer?.cancel();
+        _failCall();
       }
     };
 
@@ -309,6 +329,22 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         }
       }
     });
+  }
+
+  /// The connection genuinely failed (or Disconnected didn't recover within
+  /// the grace period) — tell the person why instead of silently popping
+  /// back to Chat, which previously looked exactly like "this feature is
+  /// broken" rather than "your network dropped the call."
+  void _failCall() {
+    if (_disposed || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+            "Call lost its connection — this can happen on weak WiFi or mobile data with strict NAT/firewalls."),
+        duration: Duration(seconds: 6),
+      ),
+    );
+    _hangUp(notify: false);
   }
 
   Future<void> _hangUp({bool notify = true}) async {

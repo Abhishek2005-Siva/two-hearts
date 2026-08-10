@@ -11,11 +11,17 @@ import '../../core/theme/app_theme.dart';
 
 /// Two-player Uno, synced through a single Firestore document.
 ///
-/// House rules worth knowing (all forced by there being exactly two
-/// players): Skip and Reverse both simply hand the turn straight back to
-/// whoever played them, and a +2/+4 makes the opponent draw and lose their
-/// turn. Turn validation lives in FirestoreService — the UI only ever
-/// offers legal moves, but the service re-checks them anyway.
+/// House rules worth knowing: no Skip (with exactly two players it's
+/// identical to Reverse — both just hand the turn straight back — so it was
+/// dropped rather than kept as a confusing duplicate); a +2/+4 can be
+/// stacked by the receiving player if they hold one, otherwise they draw
+/// the pile and lose their turn; drawing is never a free choice, only
+/// reachable when you genuinely have no legal play; and a Heart card play
+/// freezes the game until the person it's addressed to submits an answer
+/// and the asker accepts it. Turn/move validation lives in
+/// FirestoreService (UnoGame.legalMoves is the single source of truth) —
+/// the UI only ever offers legal moves, but the service re-checks them
+/// anyway.
 class UnoScreen extends ConsumerStatefulWidget {
   const UnoScreen({super.key});
 
@@ -33,13 +39,17 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
     announceActivity('Playing Uno');
   }
 
+  // Pulled from the app's own palette family (AppColors/kCoupleAccents)
+  // instead of the stock crayon-box Uno red/yellow/green/blue — still four
+  // clearly distinct hues, but ones that actually belong next to the rest
+  // of the app rather than looking like a different product.
   static Color _colorOf(String c) => switch (c) {
-        'R' => const Color(0xFFD64545),
-        'Y' => const Color(0xFFE3B505),
-        'G' => const Color(0xFF3E9C56),
-        'B' => const Color(0xFF3A6EA5),
-        'H' => const Color(0xFFD65A8E), // Heart cards — the app's rose
-        _ => const Color(0xFF2B2B33),
+        'R' => const Color(0xFFE85D50), // coral-red
+        'Y' => const Color(0xFFE8B84B), // warm gold
+        'G' => const Color(0xFF4FAF7E), // sage
+        'B' => const Color(0xFF5B9BD5), // soft blue
+        'H' => AppColors.rose, // Heart cards — the app's actual primary rose
+        _ => const Color(0xFF241627), // wild / card back
       };
 
   static (String, Color) _categoryStyle(String? category) => switch (category) {
@@ -101,15 +111,17 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
               const SizedBox(height: 14),
               _rule('🃏', 'The basics',
                   'Seven cards each. Play a card matching the colour or the '
-                  'number on the pile. No move? Draw one — you can play it '
-                  'straight away if it fits, otherwise pass.'),
-              _rule('⊘', 'Skip & Reverse',
-                  "With just the two of you these do the same thing: the turn "
-                  'comes right back to you. Play two in a row and you go '
-                  'three times before they move once.'),
+                  'number on the pile. If you have a legal move, you have '
+                  'to play it — drawing is only for when nothing in your '
+                  'hand fits.'),
+              _rule('⇄', 'Reverse',
+                  'With just the two of you, it hands the turn straight '
+                  'back to you — play another right after and you go again.'),
               _rule('+2', 'Draw cards',
-                  'They draw and lose their turn. Stack another +2 or +4 on '
-                  'top before it resolves and the pile grows.'),
+                  "They draw that many and lose their turn — unless they're "
+                  'holding a +2 or +4 of their own, in which case they can '
+                  'stack it on top instead of drawing, and the pile grows '
+                  'for whoever it lands on next.'),
               _rule('★', 'Wild',
                   'Play it on anything and name the next colour.'),
               const SizedBox(height: 8),
@@ -122,10 +134,14 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
                       ?.copyWith(fontSize: 18)),
               const SizedBox(height: 4),
               const Text(
-                'Twelve of these are shuffled in. They play on ANY card and '
-                'you name the next colour — but they also land a prompt on '
-                'your partner. Everything is written for distance: voice '
-                'notes, selfies, texts. Nothing assumes you\'re in the same room.',
+                'A dozen or so are shuffled in. They play on ANY card and '
+                'you name the next colour — but the game pauses right there: '
+                'your partner has to type and send an actual answer, you '
+                'read it and tap Accept, and only then does play continue. '
+                'Nobody can just tap past it, and a Heart card can never be '
+                'the card that ends the game. Everything is written for '
+                'distance: voice notes, selfies, texts. Nothing assumes '
+                'you\'re in the same room.',
                 style: TextStyle(
                     color: AppColors.textSecondary, fontSize: 12.5, height: 1.5),
               ),
@@ -302,10 +318,11 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
           final partnerCount = game.hands[partnerUid]?.length ?? 0;
           final myTurn = game.turnUid == myUid && game.winnerUid == null;
           final top = game.topCard!;
-          final playable = myHand
-              .where((c) => c.canPlayOn(top, game.activeColor))
-              .map((c) => c.code)
-              .toSet();
+          // Empty while a Heart prompt is unresolved — nobody can play
+          // anything until it's answered and accepted.
+          final playable = game.activePrompt != null
+              ? const <String>{}
+              : game.legalMoves(myUid).map((c) => c.code).toSet();
 
           return SafeArea(
             child: Column(
@@ -317,15 +334,20 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
                 ),
                 if (game.activePrompt != null)
                   _PromptCard(
+                    key: ValueKey(game.activePrompt),
                     prompt: game.activePrompt!,
                     style: _categoryStyle(game.promptCategory),
                     forMe: game.promptForUid == myUid,
                     partnerName:
                         partner?.displayName.split(' ').first ?? 'They',
+                    answer: game.promptAnswer,
                     busy: _busy,
-                    onDone: () => _guard(() => ref
+                    onSubmitAnswer: (text) => _guard(() => ref
                         .read(firestoreServiceProvider)
-                        .clearUnoPrompt(coupleId)),
+                        .answerUnoPrompt(coupleId, myUid, text)),
+                    onAccept: () => _guard(() => ref
+                        .read(firestoreServiceProvider)
+                        .clearUnoPrompt(coupleId, myUid)),
                   ),
                 Expanded(
                   child: _Table(
@@ -338,11 +360,15 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
                         ? (game.winnerUid == myUid
                             ? 'You won! 🎉'
                             : '${partner?.displayName.split(' ').first ?? 'They'} won 🎉')
-                        : myTurn
-                            ? (game.pendingDraw > 0
-                                ? 'Draw ${game.pendingDraw} or play a stacking card'
-                                : 'Your turn')
-                            : 'Waiting for them…',
+                        : game.activePrompt != null
+                            ? (game.promptForUid == myUid
+                                ? 'Answer their card first ♡'
+                                : 'Waiting on their answer…')
+                            : myTurn
+                                ? (game.pendingDraw > 0
+                                    ? 'Draw ${game.pendingDraw} or stack a +2/+4'
+                                    : 'Your turn')
+                                : 'Waiting for them…',
                     accent: accent,
                   ),
                 ),
@@ -357,9 +383,10 @@ class _UnoScreenState extends ConsumerState<UnoScreen> with ActivityAnnouncer {
                   )
                 else
                   _ActionRow(
-                    myTurn: myTurn,
+                    myTurn: myTurn && game.activePrompt == null,
                     busy: _busy,
                     hasPlayable: playable.isNotEmpty,
+                    hasDrawnThisTurn: game.hasDrawnThisTurn,
                     canCallUno: myHand.length == 1 && game.unoCalledBy != myUid,
                     pendingDraw: game.pendingDraw,
                     onDraw: () => _guard(() => ref
@@ -467,29 +494,50 @@ class _EmptyState extends StatelessWidget {
       );
 }
 
-/// The Heart-card prompt on the table. Shown to both players — the one who
-/// owes the answer gets the action button, the other just sees what they
-/// asked for.
-class _PromptCard extends StatelessWidget {
+/// The Heart-card prompt on the table. Blocks the game (see
+/// FirestoreService.playUnoCard/drawUnoCard) until it's resolved: the
+/// person it's addressed to types and submits an answer, then the asker
+/// reads it and taps Accept — only then does play unfreeze. Nobody can just
+/// tap past it, and the answer is never invisible to the other person.
+class _PromptCard extends StatefulWidget {
   final String prompt;
   final (String, Color) style;
   final bool forMe;
   final String partnerName;
+  final String? answer;
   final bool busy;
-  final VoidCallback onDone;
+  final ValueChanged<String> onSubmitAnswer;
+  final VoidCallback onAccept;
 
   const _PromptCard({
+    super.key,
     required this.prompt,
     required this.style,
     required this.forMe,
     required this.partnerName,
+    required this.answer,
     required this.busy,
-    required this.onDone,
+    required this.onSubmitAnswer,
+    required this.onAccept,
   });
 
   @override
+  State<_PromptCard> createState() => _PromptCardState();
+}
+
+class _PromptCardState extends State<_PromptCard> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final (label, color) = style;
+    final (label, color) = widget.style;
+    final answered = widget.answer != null;
     return Container(
       margin: const EdgeInsets.fromLTRB(14, 8, 14, 4),
       padding: const EdgeInsets.all(16),
@@ -514,21 +562,91 @@ class _PromptCard extends StatelessWidget {
                   style: TextStyle(
                       color: color, fontSize: 12, fontWeight: FontWeight.w900)),
               const Spacer(),
-              Text(forMe ? 'for you' : 'for $partnerName',
+              Text(widget.forMe ? 'for you' : 'for ${widget.partnerName}',
                   style: const TextStyle(
                       color: AppColors.textMuted, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 8),
-          Text(prompt,
+          Text(widget.prompt,
               style: const TextStyle(
                   color: AppColors.textPrimary, fontSize: 14.5, height: 1.45)),
           const SizedBox(height: 12),
-          if (forMe)
+          if (answered) ...[
+            // Everyone sees the actual answer — this used to just be a
+            // "Done" tap with the reply typed nowhere the other person
+            // could see it.
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(12),
+                border: Border(left: BorderSide(color: color, width: 3)),
+              ),
+              child: Text(widget.answer!,
+                  style: const TextStyle(
+                      color: AppColors.textPrimary, fontSize: 13.5, height: 1.4)),
+            ),
+            const SizedBox(height: 10),
+            if (widget.forMe)
+              const Text('Waiting for them to accept your answer…',
+                  style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic))
+            else
+              SquishyTap(
+                onTap: widget.busy ? null : widget.onAccept,
+                style: TapAnimationStyle.heartBeat,
+                cuteStickers: const ['💗'],
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Center(
+                    child: Text('Accept ♡ — next card',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13)),
+                  ),
+                ),
+              ),
+          ] else if (widget.forMe) ...[
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.bgMid,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.divider),
+              ),
+              child: TextField(
+                controller: _ctrl,
+                autofocus: true,
+                maxLines: 3,
+                minLines: 2,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 13.5),
+                decoration: const InputDecoration(
+                  hintText: 'Type your answer…',
+                  hintStyle: TextStyle(color: AppColors.textMuted),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.all(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
             SquishyTap(
-              onTap: busy ? null : onDone,
-              style: TapAnimationStyle.heartBeat,
-              cuteStickers: const ['💗'],
+              onTap: widget.busy
+                  ? null
+                  : () {
+                      final text = _ctrl.text.trim();
+                      if (text.isEmpty) return;
+                      widget.onSubmitAnswer(text);
+                    },
+              style: TapAnimationStyle.bounce,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 11),
@@ -537,16 +655,16 @@ class _PromptCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Center(
-                  child: Text('Done ♡',
+                  child: Text('Send answer',
                       style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w800,
                           fontSize: 13)),
                 ),
               ),
-            )
-          else
-            Text('Waiting for $partnerName…',
+            ),
+          ] else
+            Text('Waiting for ${widget.partnerName}…',
                 style: const TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 12,
@@ -703,6 +821,7 @@ class _ActionRow extends StatelessWidget {
   final bool myTurn;
   final bool busy;
   final bool hasPlayable;
+  final bool hasDrawnThisTurn;
   final bool canCallUno;
   final int pendingDraw;
   final VoidCallback onDraw;
@@ -713,6 +832,7 @@ class _ActionRow extends StatelessWidget {
     required this.myTurn,
     required this.busy,
     required this.hasPlayable,
+    required this.hasDrawnThisTurn,
     required this.canCallUno,
     required this.pendingDraw,
     required this.onDraw,
@@ -721,22 +841,30 @@ class _ActionRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) {
+    // Never a free choice: only reachable when there's a +2/+4 to serve, or
+    // you genuinely have nothing playable and haven't already taken this
+    // turn's one draw yet.
+    final canDraw = myTurn &&
+        !busy &&
+        (pendingDraw > 0 || (!hasPlayable && !hasDrawnThisTurn));
+    // Only appears once you've drawn and the card you got still doesn't fit.
+    final canPass = myTurn && !hasPlayable && pendingDraw == 0 && hasDrawnThisTurn;
+    return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SquishyTap(
-              onTap: (!myTurn || busy) ? null : onDraw,
+              onTap: canDraw ? onDraw : null,
               style: TapAnimationStyle.bounce,
               child: _pill(
                 pendingDraw > 0 ? 'Draw $pendingDraw' : 'Draw',
-                enabled: myTurn && !busy,
+                enabled: canDraw,
                 color: AppColors.bgCardLight,
               ),
             ),
-            // Passing only makes sense once you've drawn and still can't go.
-            if (myTurn && !hasPlayable && pendingDraw == 0) ...[
+            if (canPass) ...[
               const SizedBox(width: 10),
               SquishyTap(
                 onTap: busy ? null : onPass,
@@ -756,6 +884,7 @@ class _ActionRow extends StatelessWidget {
           ],
         ),
       );
+  }
 
   Widget _pill(String label, {required bool enabled, required Color color}) =>
       Container(
@@ -852,26 +981,41 @@ class _CardFace extends StatelessWidget {
             _ => '💗',
           }
         : switch (card.value) {
-            'S' => '⊘',
             'R' => '⇄',
             'D' => '+2',
             '4' => '+4',
             '' => '★',
             _ => card.value,
           };
+    final base = colorOf(card.color);
+    final ovalGlyph = !card.isWild && !card.isHeart;
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: colorOf(card.color),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white30, width: 1.2),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [base, Color.lerp(base, Colors.black, 0.28)!],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.28), width: 1.4),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 6),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 3)),
         ],
       ),
       child: Stack(
         children: [
+          // A corner pip on every non-wild, non-heart card — the classic
+          // Uno "read it from a fan of cards" cue.
+          if (ovalGlyph)
+            Positioned(
+              top: 6,
+              left: 8,
+              child: Text(face,
+                  style: TextStyle(
+                      color: Colors.white, fontSize: width * 0.14, fontWeight: FontWeight.w800)),
+            ),
           // A wild shows the four colours so it reads as "any colour".
           if (card.isWild)
             Positioned(
@@ -890,17 +1034,42 @@ class _CardFace extends StatelessWidget {
               ),
             ),
           Center(
-            child: Text(
-              face,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: width * (card.isHeart ? 0.34 : 0.42),
-                fontWeight: FontWeight.w900,
-                shadows: const [
-                  Shadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 2)),
-                ],
-              ),
-            ),
+            child: ovalGlyph
+                ? Transform.rotate(
+                    angle: -0.5,
+                    child: Container(
+                      width: width * 0.72,
+                      height: height * 0.5,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Center(
+                        child: Transform.rotate(
+                          angle: 0.5,
+                          child: Text(
+                            face,
+                            style: TextStyle(
+                              color: base,
+                              fontSize: width * 0.4,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : Text(
+                    face,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: width * (card.isHeart ? 0.34 : 0.42),
+                      fontWeight: FontWeight.w900,
+                      shadows: const [
+                        Shadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 2)),
+                      ],
+                    ),
+                  ),
           ),
           // Heart cards name their category so you know what you're playing.
           if (card.isHeart)

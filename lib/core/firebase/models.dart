@@ -1287,11 +1287,10 @@ class UnoCard {
   bool get isWild => color == 'W';
   bool get isHeart => color == 'H';
 
-  /// NOTE: heart values deliberately reuse letters that mean something else
-  /// on a coloured card — 'HS' (sweet) vs 'GS' (green skip), 'HD' (dare) vs
-  /// 'YD' (yellow draw-two). These action getters must therefore exclude
-  /// hearts, or a Heart Sweet would silently behave like a Skip.
-  bool get isSkip => !isHeart && value == 'S';
+  /// NOTE: heart values deliberately reuse a letter that means something
+  /// else on a coloured card — 'HD' (dare) vs 'YD' (yellow draw-two). This
+  /// getter must therefore exclude hearts, or a Heart Dare would silently
+  /// behave like a Draw Two.
   bool get isReverse => !isHeart && value == 'R';
   bool get isDrawTwo => !isHeart && value == 'D';
   bool get isWildDrawFour => code == 'W4';
@@ -1327,7 +1326,6 @@ class UnoCard {
       };
     }
     final v = switch (value) {
-      'S' => 'Skip',
       'R' => 'Reverse',
       'D' => '+2',
       '4' => '+4',
@@ -1385,6 +1383,17 @@ class UnoGame {
   /// Who owes the answer — always the player who did NOT play the card.
   final String? promptForUid;
 
+  /// [promptForUid]'s typed reply, once they've submitted one — shown to
+  /// the asker, who must accept it (see [FirestoreService.clearUnoPrompt])
+  /// before either player can play or draw again. Null until submitted.
+  final String? promptAnswer;
+
+  /// Whether the current [turnUid] has already taken their one voluntary
+  /// draw this turn — a real Uno turn only ever draws once when stuck, then
+  /// must play the drawn card if it fits or otherwise pass; without this
+  /// flag there'd be nothing stopping repeated draws in the same turn.
+  final bool hasDrawnThisTurn;
+
   final DateTime updatedAt;
 
   const UnoGame({
@@ -1399,10 +1408,41 @@ class UnoGame {
     this.activePrompt,
     this.promptCategory,
     this.promptForUid,
+    this.promptAnswer,
+    this.hasDrawnThisTurn = false,
     required this.updatedAt,
   });
 
   UnoCard? get topCard => discardPile.isEmpty ? null : discardPile.last;
+
+  /// Every card in [uid]'s hand they're legally allowed to play right now —
+  /// the single source of truth used by playUnoCard's validation, the
+  /// "Draw" button's gating, and which cards the hand UI lets you tap, so
+  /// those three can't quietly drift out of sync with each other.
+  List<UnoCard> legalMoves(String uid) {
+    final hand = hands[uid];
+    if (hand == null || hand.isEmpty) return const [];
+    if (pendingDraw > 0) {
+      // A +2/+4 is stacked on the table — the only legal response is
+      // another +2/+4 (any colour); anything else means draw instead.
+      return hand.where((c) => c.isDrawTwo || c.isWildDrawFour).toList();
+    }
+    final top = topCard;
+    return hand.where((c) {
+      // A lone Heart card can't be played as a game-ending last card (see
+      // playUnoCard), so it doesn't count as a legal move in that case —
+      // otherwise a player stuck holding only one Heart card would be
+      // unable to play it (blocked by that rule) AND unable to draw
+      // (blocked by "you have a legal move"), a soft-lock with no way out.
+      if (hand.length == 1 && c.isHeart) return false;
+      return top == null || c.canPlayOn(top, activeColor);
+    }).toList();
+  }
+
+  /// Whether [uid] has any card they're legally allowed to play right now —
+  /// used to gate the "Draw" button (drawing should only ever be reachable
+  /// when this is false, except to serve a pending penalty).
+  bool hasLegalMove(String uid) => legalMoves(uid).isNotEmpty;
 
   static List<UnoCard> _decode(List<dynamic>? raw) =>
       (raw ?? const []).map((c) => UnoCard(c as String)).toList();
@@ -1427,6 +1467,8 @@ class UnoGame {
       activePrompt: d['activePrompt'] as String?,
       promptCategory: d['promptCategory'] as String?,
       promptForUid: d['promptForUid'] as String?,
+      promptAnswer: d['promptAnswer'] as String?,
+      hasDrawnThisTurn: d['hasDrawnThisTurn'] as bool? ?? false,
       updatedAt: (d['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -1439,19 +1481,26 @@ class UnoGame {
         'activeColor': activeColor,
         'winnerUid': winnerUid,
         'unoCalledBy': unoCalledBy,
+        'hasDrawnThisTurn': hasDrawnThisTurn,
         'pendingDraw': pendingDraw,
         'activePrompt': activePrompt,
         'promptCategory': promptCategory,
         'promptForUid': promptForUid,
+        'promptAnswer': promptAnswer,
         'updatedAt': Timestamp.fromDate(updatedAt),
       };
 
-  /// A fresh shuffled deck: the standard 108 (per colour one 0, two each of
-  /// 1-9, two each of Skip/Reverse/Draw-two = 100, plus 4 Wild and 4 Wild
-  /// Draw Four), plus 12 Heart cards when [withHearts] — three each of
-  /// Truth/Dare/Sweet/Spicy, for 120 total.
+  /// A fresh shuffled deck: per colour one 0, two each of 1-9, two each of
+  /// Reverse/Draw-two = 92, plus 4 Wild and 4 Wild Draw Four, plus 12 Heart
+  /// cards when [withHearts] — three each of Truth/Dare/Sweet/Spicy, for
+  /// 112 total.
   ///
-  /// 12-in-120 is a deliberate density: frequent enough that a 7-card hand
+  /// No Skip: with exactly two players it was functionally identical to
+  /// Reverse (both just hand the turn straight back to whoever played
+  /// them), so it was a second name for the same move rather than a real
+  /// choice — dropped rather than kept as a confusing duplicate.
+  ///
+  /// 12-in-112 is a deliberate density: frequent enough that a 7-card hand
   /// usually holds one, rare enough that the game is still Uno rather than
   /// a prompt generator.
   static List<UnoCard> freshDeck({bool withHearts = true, bool spicy = true}) {
@@ -1462,7 +1511,7 @@ class UnoGame {
         cards.add(UnoCard('$c$n'));
         cards.add(UnoCard('$c$n'));
       }
-      for (final a in ['S', 'R', 'D']) {
+      for (final a in ['R', 'D']) {
         cards.add(UnoCard('$c$a'));
         cards.add(UnoCard('$c$a'));
       }

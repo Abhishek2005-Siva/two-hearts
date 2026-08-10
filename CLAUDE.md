@@ -172,10 +172,23 @@ Android emulator and no physical device attached**. In that situation:
   Together (OAuth PKCE), profile/settings, notifications inbox.
 - `/games/uno` — two-player Uno (`uno_screen.dart`). Whole match is ONE
   Firestore doc (`couples/{id}/uno/game`): one listener, one write per
-  move. House rules forced by having exactly two players — Skip and
-  Reverse both just hand the turn back to whoever played them. Turn and
-  legality checks live in `FirestoreService` and are re-validated there
-  even though the UI only offers legal moves.
+  move. No Skip in the deck — with exactly two players it was identical
+  to Reverse (both just hand the turn back to whoever played them), so
+  it was dropped rather than kept as a confusing duplicate; Reverse
+  alone covers that case. A +2/+4 can be stacked by whoever it lands on
+  if they hold a +2/+4 themselves, otherwise they draw the accumulated
+  pile and lose their turn. Drawing is never a free choice — only
+  reachable via `UnoGame.hasLegalMove`/`legalMoves` (the single source
+  of truth the UI, `playUnoCard`, and `drawUnoCard` all defer to) when
+  there's truly no legal play, and only once per turn (`hasDrawnThisTurn`)
+  before you must pass. Playing a Heart/LDR card (`Truth`/`Dare`/`Sweet`/
+  `Spicy`) freezes the whole game — nobody can play or draw — until the
+  partner it's addressed to submits a real typed answer
+  (`answerUnoPrompt`) and the asker reads it and accepts
+  (`clearUnoPrompt`, now uid-gated to the asker specifically); a Heart
+  card can also never be played as your last card, so nobody "wins" on
+  a prompt. Turn and legality checks live in `FirestoreService` and are
+  re-validated there even though the UI only offers legal moves.
 
 ## Cost (Firestore reads/writes) — don't regress these
 

@@ -2107,8 +2107,9 @@ class FirestoreService {
 
   /// Plays [card] from [uid]'s hand. [chosenColor] is required for wilds.
   ///
-  /// With only two players, Skip and Reverse are equivalent — both hand the
-  /// turn straight back to the player who played them.
+  /// With only two players, Reverse hands the turn straight back to the
+  /// player who played it (Skip would do the same thing, which is why it
+  /// isn't in the deck at all — see [UnoGame.freshDeck]).
   Future<void> playUnoCard(
     String coupleId,
     String uid,
@@ -2118,9 +2119,14 @@ class FirestoreService {
     final snap = await _unoDoc(coupleId).get();
     final game = UnoGame.fromDoc(snap);
     if (game.turnUid != uid || game.winnerUid != null) return;
+    // Nobody acts while a Heart prompt is unresolved — the person who owes
+    // the answer must submit one (answerUnoPrompt) and the asker must
+    // accept it (clearUnoPrompt) before play can continue.
+    if (game.activePrompt != null) return;
 
-    final top = game.topCard;
-    if (top != null && !card.canPlayOn(top, game.activeColor)) return;
+    // legalMoves already covers stacking (only +2/+4 while a penalty is
+    // pending) and the no-heart-as-last-card rule — see UnoGame.legalMoves.
+    if (!game.legalMoves(uid).any((c) => c.code == card.code)) return;
 
     final hands = {
       for (final e in game.hands.entries) e.key: List<UnoCard>.from(e.value)
@@ -2135,8 +2141,7 @@ class FirestoreService {
     final opponent =
         game.hands.keys.firstWhere((u) => u != uid, orElse: () => uid);
 
-    // Skip/Reverse both return the turn to the player in a 2-player game.
-    final keepsTurn = card.isSkip || card.isReverse;
+    final keepsTurn = card.isReverse;
     var pendingDraw = game.pendingDraw;
     if (card.isDrawTwo) pendingDraw += 2;
     if (card.isWildDrawFour) pendingDraw += 4;
@@ -2168,27 +2173,66 @@ class FirestoreService {
           ? null
           : game.unoCalledBy,
       pendingDraw: pendingDraw,
+      // A fresh play always resets the "already drew this turn" bookkeeping
+      // — it's only meaningful for the turn-holder who's currently stuck.
+      hasDrawnThisTurn: false,
       activePrompt: prompt,
       promptCategory: promptCategory,
       promptForUid: promptForUid,
+      promptAnswer: null,
       updatedAt: DateTime.now(),
     ).toMap());
   }
 
-  /// Clears the Heart prompt once it's been answered/done.
-  Future<void> clearUnoPrompt(String coupleId) => _unoDoc(coupleId).update({
-        'activePrompt': null,
-        'promptCategory': null,
-        'promptForUid': null,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      });
+  /// Submits [uid]'s reply to the Heart prompt currently addressed to them
+  /// — visible to the asker, who must accept it (below) before play can
+  /// continue. Doesn't clear the prompt itself; that's a separate step so
+  /// the asker actually sees the answer rather than it vanishing the
+  /// instant it's typed.
+  Future<void> answerUnoPrompt(String coupleId, String uid, String answer) async {
+    final snap = await _unoDoc(coupleId).get();
+    final game = UnoGame.fromDoc(snap);
+    if (game.activePrompt == null || game.promptForUid != uid) return;
+    final trimmed = answer.trim();
+    if (trimmed.isEmpty) return;
+    await _unoDoc(coupleId).update({
+      'promptAnswer': trimmed,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  /// The asker accepts the answer and the prompt clears, unfreezing play.
+  /// Only the asker (never the person who owed the answer) can do this,
+  /// and only once an answer actually exists — "only move to next card if
+  /// accepted" means there has to be something to accept first.
+  Future<void> clearUnoPrompt(String coupleId, String uid) async {
+    final snap = await _unoDoc(coupleId).get();
+    final game = UnoGame.fromDoc(snap);
+    if (game.activePrompt == null || game.promptAnswer == null) return;
+    if (uid == game.promptForUid) return;
+    await _unoDoc(coupleId).update({
+      'activePrompt': null,
+      'promptCategory': null,
+      'promptForUid': null,
+      'promptAnswer': null,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
 
   /// Draws for [uid]: either the penalty stack from a +2/+4 (which then
-  /// passes the turn on), or a single card when they can't or won't play.
+  /// passes the turn on), or a single card when they genuinely have no
+  /// legal play. Never a free choice when a legal play exists — see
+  /// [UnoGame.hasLegalMove] — and never a second draw in the same turn once
+  /// the one voluntary draw-when-stuck has already happened.
   Future<void> drawUnoCard(String coupleId, String uid) async {
     final snap = await _unoDoc(coupleId).get();
     final game = UnoGame.fromDoc(snap);
     if (game.turnUid != uid || game.winnerUid != null) return;
+    if (game.activePrompt != null) return;
+    if (game.pendingDraw == 0 &&
+        (game.hasLegalMove(uid) || game.hasDrawnThisTurn)) {
+      return;
+    }
 
     var (draw, discard) = _replenish(game.drawPile, game.discardPile);
     final hands = {
@@ -2215,31 +2259,40 @@ class FirestoreService {
       drawPile: draw,
       discardPile: discard,
       // Serving a penalty ends your turn; a voluntary single draw lets you
-      // still play the card you just drew.
+      // still play the card you just drew (or pass, if it still doesn't fit).
       turnUid: penalty > 0 ? opponent : uid,
       activeColor: game.activeColor,
       winnerUid: null,
       unoCalledBy: game.unoCalledBy == uid ? null : game.unoCalledBy,
       pendingDraw: 0,
-      // Carry any unanswered Heart prompt through — this is a full set(),
-      // so not re-passing these would silently wipe a prompt the opponent
-      // hasn't answered yet.
-      activePrompt: game.activePrompt,
-      promptCategory: game.promptCategory,
-      promptForUid: game.promptForUid,
+      // Only a non-penalty draw counts as "used your one draw this turn" —
+      // serving a penalty already ends the turn outright.
+      hasDrawnThisTurn: penalty == 0,
+      // No prompt can be active here (drawing is blocked above while one
+      // is), so these are always already null — kept explicit since this
+      // is a full set() and silently omitting them would be a landmine for
+      // whoever touches this next.
+      activePrompt: null,
+      promptCategory: null,
+      promptForUid: null,
+      promptAnswer: null,
       updatedAt: DateTime.now(),
     ).toMap());
   }
 
-  /// Passes the turn after a voluntary draw when the drawn card is unplayable.
+  /// Passes the turn after a voluntary draw when the drawn card is still
+  /// unplayable — only reachable once [uid] has actually taken that draw
+  /// this turn, never as a way to skip drawing altogether.
   Future<void> passUnoTurn(String coupleId, String uid) async {
     final snap = await _unoDoc(coupleId).get();
     final game = UnoGame.fromDoc(snap);
     if (game.turnUid != uid || game.winnerUid != null) return;
+    if (!game.hasDrawnThisTurn) return;
     final opponent =
         game.hands.keys.firstWhere((u) => u != uid, orElse: () => uid);
     await _unoDoc(coupleId).update({
       'turnUid': opponent,
+      'hasDrawnThisTurn': false,
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
   }
