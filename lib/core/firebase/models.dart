@@ -146,7 +146,11 @@ class CoupleModel {
 
 // ──────────────── Message ────────────────
 
-enum MessageType { text, image, voice, reaction, video }
+// `system` is a message neither partner "sent" in the usual sense — a
+// Wildcard request/grant, an answered Daily Question, a Random Question
+// reply. Rendered as a centered, unattributed card instead of a left/right
+// bubble so it doesn't read as if one partner typed it themselves.
+enum MessageType { text, image, voice, reaction, video, system }
 
 class MessageModel {
   final String id;
@@ -1220,6 +1224,11 @@ class AppNotification {
   final String title;
   final String body;
   final String? route;
+  // Points at the specific document this notification is about (e.g. a
+  // wildcardRequests doc id) — lets a notification render its own inline
+  // actions (accept/decline) without navigating away first. Null for
+  // notification types that don't need one.
+  final String? refId;
   final String createdBy;
   final DateTime createdAt;
   final List<String> readBy;
@@ -1230,6 +1239,7 @@ class AppNotification {
     required this.title,
     required this.body,
     this.route,
+    this.refId,
     required this.createdBy,
     required this.createdAt,
     this.readBy = const [],
@@ -1246,6 +1256,7 @@ class AppNotification {
       title: d['title'] as String? ?? '',
       body: d['body'] as String? ?? '',
       route: d['route'] as String?,
+      refId: d['refId'] as String?,
       createdBy: d['createdBy'] as String? ?? '',
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       readBy: List<String>.from(d['readBy'] as List? ?? const []),

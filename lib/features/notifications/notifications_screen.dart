@@ -4,10 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../../core/delight/couple_character.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../together/wildcards_screen.dart' show isWildcardGranter, showGiveWildcardSheet;
 
 String _typeEmoji(String type) => switch (type) {
       'wildcard_request' => '🥺',
@@ -17,6 +19,7 @@ String _typeEmoji(String type) => switch (type) {
       'recipe' => '🍳',
       'place' => '📍',
       'letter' => '💌',
+      'daily_snap' => '📸',
       'reminiscing' => '🥺',
       _ => '✨',
     };
@@ -35,6 +38,25 @@ String _relativeTime(DateTime from) {
   return '${months}mo ago';
 }
 
+/// The actual calendar date + clock time, e.g. "Today, 3:45 PM" or
+/// "Aug 2, 2026, 3:45 PM" — shown alongside the relative time since "2h
+/// ago" alone doesn't say which day or what time something arrived.
+String _absoluteTime(DateTime from) {
+  final now = DateTime.now();
+  final isToday =
+      from.year == now.year && from.month == now.month && from.day == now.day;
+  final yesterday = now.subtract(const Duration(days: 1));
+  final isYesterday = from.year == yesterday.year &&
+      from.month == yesterday.month &&
+      from.day == yesterday.day;
+  final time = DateFormat('h:mm a').format(from);
+  if (isToday) return 'Today, $time';
+  if (isYesterday) return 'Yesterday, $time';
+  final sameYear = from.year == now.year;
+  final datePart = DateFormat(sameYear ? 'MMM d' : 'MMM d, yyyy').format(from);
+  return '$datePart, $time';
+}
+
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
 
@@ -50,6 +72,16 @@ class NotificationsScreen extends ConsumerWidget {
         .where((n) => n.isUnreadFor(myUid))
         .map((n) => n.id)
         .toList();
+
+    // Only the granter can act on a Wildcard request, and only while it's
+    // still pending (it may have already been approved/declined from the
+    // Wildcards page itself, in which case no buttons should show here).
+    final isGranter = isWildcardGranter();
+    final pendingWildcardById = <String, WildcardRequest>{
+      if (isGranter)
+        for (final r in ref.watch(wildcardRequestsProvider).valueOrNull ?? const <WildcardRequest>[])
+          if (r.status == WildcardRequestStatus.pending) r.id: r,
+    };
 
     return Scaffold(
       body: Container(
@@ -108,6 +140,9 @@ class NotificationsScreen extends ConsumerWidget {
                             itemBuilder: (context, i) {
                               final n = notifications[i];
                               final unread = n.isUnreadFor(myUid);
+                              final pendingRequest = n.type == 'wildcard_request' && n.refId != null
+                                  ? pendingWildcardById[n.refId]
+                                  : null;
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
                                 child: _NotificationTile(
@@ -123,6 +158,31 @@ class NotificationsScreen extends ConsumerWidget {
                                     }
                                     if (n.route != null) context.push(n.route!);
                                   },
+                                  pendingWildcardRequest: pendingRequest,
+                                  onAcceptWildcard: pendingRequest == null
+                                      ? null
+                                      : () {
+                                          if (unread && coupleId != null) {
+                                            ref
+                                                .read(firestoreServiceProvider)
+                                                .markNotificationRead(coupleId, n.id);
+                                          }
+                                          showGiveWildcardSheet(context, ref, forRequest: pendingRequest);
+                                        },
+                                  onDeclineWildcard: pendingRequest == null || coupleId == null
+                                      ? null
+                                      : () {
+                                          HapticFeedback.selectionClick();
+                                          if (unread) {
+                                            ref
+                                                .read(firestoreServiceProvider)
+                                                .markNotificationRead(coupleId, n.id);
+                                          }
+                                          ref
+                                              .read(firestoreServiceProvider)
+                                              .respondToWildcardRequest(
+                                                  coupleId, pendingRequest.id, WildcardRequestStatus.declined);
+                                        },
                                 ).animate().fadeIn(
                                     delay: (i * 40).clamp(0, 400).ms,
                                     duration: 300.ms).slideY(begin: 0.06),
@@ -143,12 +203,21 @@ class _NotificationTile extends StatelessWidget {
   final bool unread;
   final Color accent;
   final VoidCallback onTap;
+  // Non-null only for a still-pending Wildcard request, shown to the
+  // granter — lets them accept/decline right here instead of having to
+  // navigate to the Wildcards page first.
+  final WildcardRequest? pendingWildcardRequest;
+  final VoidCallback? onAcceptWildcard;
+  final VoidCallback? onDeclineWildcard;
 
   const _NotificationTile({
     required this.notification,
     required this.unread,
     required this.accent,
     required this.onTap,
+    this.pendingWildcardRequest,
+    this.onAcceptWildcard,
+    this.onDeclineWildcard,
   });
 
   @override
@@ -228,9 +297,56 @@ class _NotificationTile extends StatelessWidget {
                           fontSize: 12.5,
                           height: 1.4)),
                   const SizedBox(height: 8),
-                  Text(_relativeTime(notification.createdAt),
+                  Text(
+                      '${_relativeTime(notification.createdAt)} · '
+                      '${_absoluteTime(notification.createdAt)}',
                       style: const TextStyle(
                           color: AppColors.textMuted, fontSize: 11)),
+                  if (pendingWildcardRequest != null) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: onDeclineWildcard,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 9),
+                              decoration: BoxDecoration(
+                                color: AppColors.bgCardLight,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.divider),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Text('Decline',
+                                  style: TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: onAcceptWildcard,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 9),
+                              decoration: BoxDecoration(
+                                color: AppColors.rose,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Text('Accept',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

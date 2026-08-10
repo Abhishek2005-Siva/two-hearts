@@ -1043,7 +1043,7 @@ class _RandomQuestionDialogState extends ConsumerState<_RandomQuestionDialog> {
               id: const Uuid().v4(),
               senderId: uid,
               content: '🎴 ${widget.question}\n\n$answer',
-              type: MessageType.text,
+              type: MessageType.system,
               sentAt: DateTime.now(),
             ),
           );

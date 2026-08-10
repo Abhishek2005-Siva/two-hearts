@@ -15,6 +15,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:uuid/uuid.dart';
 import 'snap_camera_screen.dart';
@@ -75,6 +76,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _activitiesOpen = false;
   String _searchQuery = '';
   bool _promptDismissed = false;
+  static const _promptDismissKey = 'daily_prompt_dismissed_date';
   final Map<String, GlobalKey> _dateSepKeys = {};
   bool _didJumpToDate = false;
 
@@ -119,6 +121,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
+    _loadPromptDismissed();
+  }
+
+  // The dismiss state used to be plain in-memory `State`, so leaving Chat
+  // and coming back (or just a rebuild) reset it and the card reappeared
+  // every time even after being dismissed. Now it's keyed to today's date
+  // in SharedPreferences — dismissed (or answered) stays gone for the rest
+  // of today, then a new question shows up tomorrow.
+  Future<void> _loadPromptDismissed() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dismissedDate = prefs.getString(_promptDismissKey);
+    final todayKey = dailySnapDateKey(DateTime.now());
+    if (mounted && dismissedDate == todayKey) {
+      setState(() => _promptDismissed = true);
+    }
+  }
+
+  Future<void> _dismissPromptForToday() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_promptDismissKey, dailySnapDateKey(DateTime.now()));
+    if (mounted) setState(() => _promptDismissed = true);
   }
 
   @override
@@ -613,13 +636,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             if (!_searchMode && !_promptDismissed)
               _DailyPromptCard(
                 accent: accent,
+                // Previously quoted the question into the composer, so
+                // sending it looked like an ordinary message either partner
+                // had typed. Now it posts directly as a distinct, centered
+                // system message (see _MessageBubble._system) that reads as
+                // "the app asked this," not "I typed this."
                 onTap: () {
-                  _controller.text = kDailyPromptQuestions[
-                      DateTime.now().day % kDailyPromptQuestions.length];
-                  _controller.selection = TextSelection.collapsed(
-                      offset: _controller.text.length);
+                  final coupleId = ref.read(coupleIdProvider);
+                  final uid = FirebaseAuth.instance.currentUser?.uid;
+                  if (coupleId == null || uid == null) return;
+                  final today = DateTime.now();
+                  final seed = today.year * 10000 + today.month * 100 + today.day;
+                  final question = kDailyPromptQuestions[seed % kDailyPromptQuestions.length];
+                  HapticFeedback.mediumImpact();
+                  ref.read(firestoreServiceProvider).sendMessage(
+                        coupleId,
+                        MessageModel(
+                          id: const Uuid().v4(),
+                          senderId: uid,
+                          content: '💭 Today\'s Question: $question',
+                          type: MessageType.system,
+                          sentAt: DateTime.now(),
+                        ),
+                      );
+                  _dismissPromptForToday();
                 },
-                onDismiss: () => setState(() => _promptDismissed = true),
+                onDismiss: _dismissPromptForToday,
               ),
             AnimatedSize(
               duration: const Duration(milliseconds: 220),
@@ -2272,6 +2314,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    if (msg.type == MessageType.system) return _system(context);
     if (msg.isSnap) return _snap(context);
     if (msg.isWhisper) return _whisper(context);
     if (msg.type == MessageType.voice) return _voice(context);
@@ -2279,6 +2322,65 @@ class _MessageBubbleState extends State<_MessageBubble> {
       return _media(context);
     }
     return _text(context);
+  }
+
+  /// A centered, unattributed card for app-generated chat entries — a
+  /// Wildcard request/grant, an answered Daily Question, a Random Question
+  /// reply. Deliberately looks like neither partner "typed" it: no left/
+  /// right alignment, no sender gradient, same appearance regardless of
+  /// who triggered it.
+  Widget _system(BuildContext context) {
+    return GestureDetector(
+      onLongPress: () => _reactSheet(context),
+      child: Align(
+        alignment: Alignment.center,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          constraints:
+              BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      accent.withValues(alpha: 0.22),
+                      AppColors.coral.withValues(alpha: 0.14),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: accent.withValues(alpha: 0.35), width: 0.8),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      msg.content,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13.5,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (msg.reactionEmoji != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(msg.reactionEmoji!,
+                            style: const TextStyle(fontSize: 16)),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Inline media bubble for GIFs, images and videos sent in chat.

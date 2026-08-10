@@ -331,6 +331,7 @@ class FirestoreService {
     required String title,
     required String body,
     String? route,
+    String? refId,
     bool push = true,
   }) async {
     await _notificationsCol(coupleId).add({
@@ -338,6 +339,7 @@ class FirestoreService {
       'title': title,
       'body': body,
       'route': ?route,
+      'refId': ?refId,
       'createdBy': _uid,
       'createdAt': FieldValue.serverTimestamp(),
       'readBy': [_uid],
@@ -371,6 +373,20 @@ class FirestoreService {
       title: 'Thinking of you',
       body: body,
       route: '/memory',
+    );
+  }
+
+  /// A new Daily Snap Calendar entry previously landed with zero signal to
+  /// the partner — they'd only find out by opening Calendar themselves.
+  Future<void> notifyDailySnapAdded(String coupleId, {String? caption}) async {
+    final name = await _myFirstName();
+    final hasCaption = caption != null && caption.trim().isNotEmpty;
+    await recordNotification(
+      coupleId,
+      type: 'daily_snap',
+      title: '📸 $name added today\'s snap',
+      body: hasCaption ? caption.trim() : 'Tap to see it',
+      route: '/calendar',
     );
   }
 
@@ -1158,7 +1174,7 @@ class FirestoreService {
         id: const Uuid().v4(),
         senderId: _uid,
         content: '🃏 A Wildcard for you — "${card.favorText}" ♡',
-        type: MessageType.text,
+        type: MessageType.system,
         sentAt: DateTime.now(),
       ),
     );
@@ -1225,7 +1241,7 @@ class FirestoreService {
         content: hasNote
             ? '🃏 Can I have a Wildcard? "$note"'
             : '🃏 Can I have a Wildcard? ♡',
-        type: MessageType.text,
+        type: MessageType.system,
         sentAt: DateTime.now(),
       ),
     );
@@ -1237,6 +1253,7 @@ class FirestoreService {
       title: '🥺 $name asked for a Wildcard',
       body: hasNote ? note : 'Tap to grant it',
       route: '/together/wildcards',
+      refId: req.id,
       push: false,
     );
   }

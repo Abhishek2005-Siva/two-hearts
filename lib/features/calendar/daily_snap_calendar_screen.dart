@@ -107,6 +107,7 @@ Future<bool> captureTodaysSnap(BuildContext context, WidgetRef ref) async {
       uid,
       DailySnapEntry(imageUrl: imageUrl, caption: compose.$1, mood: compose.$2, createdAt: today),
     );
+    firestoreService.notifyDailySnapAdded(coupleId, caption: compose.$1).ignore();
     if (context.mounted) {
       HapticFeedback.mediumImpact();
       ScaffoldMessenger.of(context).showSnackBar(

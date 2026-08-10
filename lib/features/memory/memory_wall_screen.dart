@@ -69,8 +69,15 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     // doesn't cause ref access errors mid-upload.
     final firestoreService = ref.read(firestoreServiceProvider);
     final uploaderUid = authUser.uid;
-    try {
-      for (final xfile in media) {
+
+    // Upload every selected item concurrently rather than one-at-a-time —
+    // each memory lands on the wall (via the live Firestore listener) the
+    // moment its own upload finishes, instead of everything after the first
+    // item queuing behind it. A sequential loop made picking 5+ photos take
+    // roughly 5x as long as the slowest single upload for no reason.
+    final errors = <String>[];
+    await Future.wait(media.map((xfile) async {
+      try {
         final id = const Uuid().v4();
         final path = xfile.path.toLowerCase();
         final isVideo = path.endsWith('.mp4') ||
@@ -105,31 +112,37 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
             ),
           );
         }
+        if (mounted) {
+          // A new memory joins the wall — petals & a polaroid drift up.
+          // Fired per-item now (not once after the whole batch), since
+          // items finish at different times when uploaded in parallel.
+          DelightHaptics.thud();
+          FloatingStickers.burst(context,
+              stickers: const ['🌸', '✨', '📸'], count: 7);
+        }
+      } catch (e) {
+        // Previously a bare try/finally around the whole loop — one upload
+        // failure (Cloudinary error, file too large, no network) threw
+        // silently and the sheet just closed, looking like nothing
+        // happened, and also killed every upload still queued behind it.
+        // Now each item fails independently and the rest still land.
+        errors.add(e.toString());
       }
-      if (mounted) {
-        // A new memory joins the wall — petals & a polaroid drift up.
-        DelightHaptics.thud();
-        FloatingStickers.burst(context,
-            stickers: const ['🌸', '✨', '📸'], count: 7);
-      }
-    } catch (e) {
-      // Previously a bare try/finally — any upload failure (Cloudinary
-      // error, file too large, no network) threw silently and the sheet
-      // just closed, looking exactly like "nothing happened". Always tell
-      // the user what actually went wrong.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Couldn't upload: $e"),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 6),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _uploading = false);
+    }));
+
+    if (mounted && errors.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errors.length == media.length
+              ? "Couldn't upload: ${errors.first}"
+              : "${errors.length} of ${media.length} didn't upload: ${errors.first}"),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ),
+      );
     }
+    if (mounted) setState(() => _uploading = false);
   }
 
   void _onSelectToggle(String id) {
