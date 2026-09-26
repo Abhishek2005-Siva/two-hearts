@@ -23,6 +23,8 @@ String _typeEmoji(String type) => switch (type) {
       'daily_snap_comment' => '💬',
       'daily_snap_reaction' => '❤️',
       'streak_milestone' => '🎉',
+      'memory_deletion_request' => '🗑️',
+      'memory_deletion_approved' => '🗑️',
       'reminiscing' => '🥺',
       _ => '✨',
     };

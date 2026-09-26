@@ -187,6 +187,47 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     );
   }
 
+  Future<void> _removeSelectedFromCollection(String coupleId) async {
+    final ids = Set<String>.from(_selectedIds);
+    _exitSelectMode();
+    await ref.read(firestoreServiceProvider).removeFromCollection(coupleId, ids.toList());
+  }
+
+  Future<void> _deleteSelected(String coupleId) async {
+    final ids = Set<String>.from(_selectedIds);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete these photos?',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          ids.length == 1
+              ? "They'll need to approve it before it's actually gone."
+              : "${ids.length} photos — they'll need to approve each one before it's actually gone.",
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ask to delete', style: TextStyle(color: AppColors.rose)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    _exitSelectMode();
+    final svc = ref.read(firestoreServiceProvider);
+    for (final id in ids) {
+      await svc.requestMemoryDeletion(coupleId, id);
+    }
+  }
+
   void _onLongPress(MemoryModel memory, String myUid, String coupleId) {
     if (!_selectMode) {
       setState(() {
@@ -481,29 +522,53 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                   color: AppColors.bgCard,
                   padding: EdgeInsets.fromLTRB(
                       16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('${_selectedIds.length} selected',
                           style: const TextStyle(
                               color: AppColors.textSecondary, fontSize: 14)),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: coupleId.isNotEmpty
-                            ? () => _addSelectedToCollection(coupleId)
-                            : null,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 18, vertical: 10),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                                colors: [AppColors.rose, AppColors.coral]),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Text('Add to Collection',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13)),
+                      const SizedBox(height: 10),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            // Only a real collection can have photos removed
+                            // from it — "Liked" is derived from favorite,
+                            // not a collectionId assignment.
+                            if (_activeCollectionId != null &&
+                                _activeCollectionId != _kLikedCollectionId)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: _BulkActionPill(
+                                  label: 'Remove from Collection',
+                                  color: AppColors.bgCardLight,
+                                  textColor: AppColors.textPrimary,
+                                  onTap: coupleId.isNotEmpty
+                                      ? () => _removeSelectedFromCollection(coupleId)
+                                      : null,
+                                ),
+                              ),
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: _BulkActionPill(
+                                label: 'Add to Collection',
+                                gradient: const LinearGradient(
+                                    colors: [AppColors.rose, AppColors.coral]),
+                                textColor: Colors.white,
+                                onTap: coupleId.isNotEmpty
+                                    ? () => _addSelectedToCollection(coupleId)
+                                    : null,
+                              ),
+                            ),
+                            _BulkActionPill(
+                              label: 'Delete',
+                              color: AppColors.bgCardLight,
+                              textColor: AppColors.rose,
+                              onTap: coupleId.isNotEmpty ? () => _deleteSelected(coupleId) : null,
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -731,6 +796,39 @@ String _videoThumb(String videoUrl) {
 
 const _kLikedCollectionId = '__liked__';
 
+class _BulkActionPill extends StatelessWidget {
+  final String label;
+  final Color? color;
+  final Gradient? gradient;
+  final Color textColor;
+  final VoidCallback? onTap;
+
+  const _BulkActionPill({
+    required this.label,
+    this.color,
+    this.gradient,
+    required this.textColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        decoration: BoxDecoration(
+          color: gradient == null ? color : null,
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(label,
+            style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 13)),
+      ),
+    );
+  }
+}
+
 class _CollectionsRow extends ConsumerWidget {
   final String? activeCollectionId;
   final void Function(String?) onSelect;
@@ -834,10 +932,14 @@ class _CollectionsRow extends ConsumerWidget {
                     ),
                   ),
                 )
-              else
-                Text('See all',
-                    style: TextStyle(
-                        color: accent, fontSize: 13, fontWeight: FontWeight.w600)),
+              else if (collections.isNotEmpty)
+                GestureDetector(
+                  onTap: () => _showAllCollectionsSheet(
+                      context, ref, coupleId, accent, collections, photosByCollection),
+                  child: Text('See all',
+                      style: TextStyle(
+                          color: accent, fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
             ],
           ),
         ),
@@ -964,6 +1066,192 @@ class _CollectionsRow extends ConsumerWidget {
             .read(firestoreServiceProvider)
             .createCollection(coupleId, name)
             .ignore();
+      }
+    });
+  }
+
+  /// The "See all" popup — every collection in one scrollable list, each
+  /// with rename/delete, rather than only being browsable via the
+  /// horizontally-scrolling card row above.
+  void _showAllCollectionsSheet(
+    BuildContext context,
+    WidgetRef ref,
+    String? coupleId,
+    Color accent,
+    List<PhotoCollection> collections,
+    Map<String, List<MemoryModel>> photosByCollection,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) => Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetCtx).size.height * 0.75),
+        padding: EdgeInsets.fromLTRB(
+            20, 20, 20, MediaQuery.of(sheetCtx).padding.bottom + 20),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                    color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Text('All Collections',
+                style: Theme.of(sheetCtx).textTheme.displayMedium?.copyWith(fontSize: 19)),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: collections.length,
+                separatorBuilder: (_, _) =>
+                    const Divider(color: AppColors.divider, height: 1),
+                itemBuilder: (_, i) {
+                  final col = collections[i];
+                  final count = photosByCollection[col.id]?.length ?? 0;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      width: 40, height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _collectionColor(col.name).withValues(alpha: 0.18),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(_collectionIcon(col.name), color: _collectionColor(col.name)),
+                    ),
+                    title: Text(col.name,
+                        style: const TextStyle(
+                            color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                    subtitle: Text('$count photo${count == 1 ? '' : 's'}',
+                        style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                    onTap: () {
+                      Navigator.pop(sheetCtx);
+                      onSelect(col.id);
+                    },
+                    trailing: IconButton(
+                      icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMuted),
+                      onPressed: () => _showCollectionActionsSheet(context, ref, coupleId, col),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCollectionActionsSheet(
+      BuildContext context, WidgetRef ref, String? coupleId, PhotoCollection col) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(sheetCtx).padding.bottom + 20),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined, color: AppColors.textPrimary),
+              title: const Text('Rename', style: TextStyle(color: AppColors.textPrimary)),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                if (coupleId != null) _showRenameCollectionDialog(context, ref, coupleId, col);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded, color: AppColors.rose),
+              title: const Text('Delete collection', style: TextStyle(color: AppColors.rose)),
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                if (coupleId == null) return;
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: AppColors.bgCard,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    title: const Text('Delete this collection?',
+                        style: TextStyle(color: AppColors.textPrimary)),
+                    content: const Text(
+                        'The photos stay in Memories — this only removes the album.',
+                        style: TextStyle(color: AppColors.textSecondary)),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel',
+                            style: TextStyle(color: AppColors.textSecondary)),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Delete', style: TextStyle(color: AppColors.rose)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true) {
+                  await ref.read(firestoreServiceProvider).deleteCollection(coupleId, col.id);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRenameCollectionDialog(
+      BuildContext context, WidgetRef ref, String coupleId, PhotoCollection col) {
+    final ctrl = TextEditingController(text: col.name);
+    showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Rename Collection', style: TextStyle(color: AppColors.textPrimary)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: AppColors.textPrimary),
+          decoration: const InputDecoration(
+            hintText: 'Collection name…',
+            hintStyle: TextStyle(color: AppColors.textMuted),
+            enabledBorder:
+                UnderlineInputBorder(borderSide: BorderSide(color: AppColors.divider)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.rose)),
+          ),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted))),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+            child: const Text('Save',
+                style: TextStyle(color: AppColors.rose, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    ).then((name) {
+      ctrl.dispose();
+      if (name != null && name.isNotEmpty && name != col.name) {
+        ref.read(firestoreServiceProvider).renameCollection(coupleId, col.id, name).ignore();
       }
     });
   }

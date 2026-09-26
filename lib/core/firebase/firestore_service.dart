@@ -1001,16 +1001,42 @@ class FirestoreService {
       _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
           .update({'viewCounts.$uid': FieldValue.increment(1)});
 
-  Future<void> requestMemoryDeletion(String coupleId, String memoryId) =>
-      _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
-          .update({'deletionRequestedBy': _uid});
+  /// Deleting a memory always needs the other partner's OK — this is the
+  /// request half. Previously silent (just a field write, no signal at
+  /// all beyond the requester's own device); now it notifies like every
+  /// other approval-needed action in this app (Wildcards, etc.).
+  Future<void> requestMemoryDeletion(String coupleId, String memoryId) async {
+    await _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
+        .update({'deletionRequestedBy': _uid});
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'memory_deletion_request',
+      title: '🗑️ $name wants to delete a memory',
+      body: 'Tap to review it',
+      route: '/memory',
+    );
+  }
 
   Future<void> cancelMemoryDeletion(String coupleId, String memoryId) =>
       _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
           .update({'deletionRequestedBy': FieldValue.delete()});
 
-  Future<void> approveMemoryDeletion(String coupleId, String memoryId) =>
-      _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId).delete();
+  /// The approval half — only ever called by the partner who did NOT
+  /// request it (the UI gates this; see memory_wall_screen.dart). Tells
+  /// the requester it actually went through, since otherwise they'd only
+  /// find out by noticing the photo missing.
+  Future<void> approveMemoryDeletion(String coupleId, String memoryId) async {
+    await _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId).delete();
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'memory_deletion_approved',
+      title: '🗑️ $name approved deleting that memory',
+      body: "It's gone for both of you now",
+      route: '/memory',
+    );
+  }
 
   // ── Photo Collections ─────────────────────────────────────────────────────
 
@@ -1026,11 +1052,29 @@ class FirestoreService {
     return col;
   }
 
+  Future<void> renameCollection(String coupleId, String collectionId, String name) =>
+      _db.collection('couples').doc(coupleId).collection('photoCollections').doc(collectionId)
+          .update({'name': name});
+
   Stream<List<PhotoCollection>> watchCollections(String coupleId) => _db
       .collection('couples').doc(coupleId).collection('photoCollections')
       .orderBy('createdAt', descending: true)
       .snapshots()
       .map((s) => s.docs.map(PhotoCollection.fromDoc).toList());
+
+  /// Unassigns [memoryIds] from whatever collection they're currently in —
+  /// used by the memory wall's multi-select "Remove from collection" bulk
+  /// action. Doesn't delete the memories themselves, just the assignment.
+  Future<void> removeFromCollection(String coupleId, List<String> memoryIds) async {
+    final batch = _db.batch();
+    for (final id in memoryIds) {
+      batch.update(
+        _db.collection('couples').doc(coupleId).collection('memories').doc(id),
+        {'collectionId': FieldValue.delete()},
+      );
+    }
+    await batch.commit();
+  }
 
   Future<void> deleteCollection(String coupleId, String collectionId) async {
     // Unassign photos from the collection

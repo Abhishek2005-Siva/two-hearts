@@ -145,6 +145,17 @@ Android emulator and no physical device attached**. In that situation:
 - `/chat` — main chat, snaps, whispers, voice notes, replies/edits,
   read-receipts (see gotcha below), backgrounds.
 - `/memory`, `/memory/:id` — photo/video wall, collections, favorites.
+  Collections: the horizontally-scrolling card row's "See all" opens a
+  full scrollable list of every collection (`_showAllCollectionsSheet` in
+  `memory_wall_screen.dart`), each with rename (`renameCollection`) and
+  delete. Multi-select's bulk action bar gains "Remove from Collection"
+  (unassigns without deleting the photos — `removeFromCollection`, only
+  shown while actually viewing a real collection, not the synthetic
+  "Liked" pseudo-collection) and "Delete" (bulk `requestMemoryDeletion`).
+  Deleting a memory has always needed the other partner's approval
+  (`deletionRequestedBy`/`cancelMemoryDeletion`/`approveMemoryDeletion`)
+  but that used to be entirely silent — `requestMemoryDeletion` and
+  `approveMemoryDeletion` now both call `recordNotification` too.
 - `/share-import` — outside the shell (like `/cinema`): reached when a
   photo/video is shared into the app from elsewhere (Android share
   sheet → `receive_sharing_intent`, see `main.dart`'s listeners), shows a
