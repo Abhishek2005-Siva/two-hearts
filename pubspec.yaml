@@ -69,7 +69,14 @@ dependencies:
   # Listen Together (Spotify Web API + OAuth PKCE)
   flutter_web_auth_2: ^5.0.3
   crypto: ^3.0.6
-  receive_sharing_intent: ^1.9.0
+  # Pinned, not ^-ranged: 1.9.0 made breaking Android (SDK 37, new Kotlin
+  # Gradle setup) and iOS (dropped CocoaPods for Swift Package Manager
+  # only) changes this project's toolchain isn't set up for — CI failed on
+  # both platforms with ^1.9.0. 1.8.1 predates all of that and still has
+  # the ReceiveSharingIntent.instance API this app's code uses (added in
+  # 1.7.0). Don't bump past 1.8.x without also doing the SDK 37 / SPM
+  # migration work.
+  receive_sharing_intent: 1.8.1
 
 dev_dependencies:
   flutter_test:
