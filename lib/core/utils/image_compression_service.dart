@@ -18,13 +18,20 @@ Future<Uint8List> compressImageBytesForUpload(Uint8List bytes) {
 Uint8List _resizeAndEncode(Uint8List bytes) {
   final decoded = img.decodeImage(bytes);
   if (decoded == null) return bytes;
-  final needsResize = decoded.width > 1920 || decoded.height > 1920;
+  // img.copyResize bakes EXIF orientation internally (rotates the actual
+  // pixels to match how the photo is supposed to look), but only when it
+  // runs — a photo that didn't need resizing skipped that step entirely
+  // and got re-encoded with its raw, un-rotated sensor pixels, so portrait
+  // photos came out sideways. Baking orientation unconditionally first
+  // fixes that regardless of whether a resize happens afterward.
+  final upright = img.bakeOrientation(decoded);
+  final needsResize = upright.width > 1920 || upright.height > 1920;
   final resized = needsResize
       ? img.copyResize(
-          decoded,
-          width: decoded.width >= decoded.height ? 1920 : null,
-          height: decoded.height > decoded.width ? 1920 : null,
+          upright,
+          width: upright.width >= upright.height ? 1920 : null,
+          height: upright.height > upright.width ? 1920 : null,
         )
-      : decoded;
+      : upright;
   return img.encodeJpg(resized, quality: 85);
 }

@@ -186,24 +186,45 @@ Android emulator and no physical device attached**. In that situation:
   wall's own picker or `/share-import`) sends ONE notification
   ("X added 3 photos and 1 video"), not one per file —
   `notifyBulkMemoryUpload`.
-  **Video compression before upload**: "can't upload big videos" was
-  Cloudinary's own unsigned-upload size ceiling, which can't be raised
-  from the client — `compressVideoForUpload`
-  (`lib/core/utils/video_compression_service.dart`, `video_compress`
-  package, `VideoQuality.MediumQuality`) shrinks the file first instead,
-  best-effort (falls back to the original file on any compression
-  failure, never blocks the upload). Wired into both upload paths.
-  Shared-in photos (`/share-import`) previously uploaded raw, uncompressed
-  bytes — unlike every other upload path in this app, which all compress
-  on pick via `ImagePicker`'s own `maxWidth`/`imageQuality`. Fixed with
-  `compressImageBytesForUpload`
+  **Video compression before upload — tried, reverted.** Added
+  `video_compress`-based compression to fix "can't upload big videos"
+  (Cloudinary's own unsigned-upload size ceiling, which can't be raised
+  from the client), but the very next report was videos "displaying very
+  weirdly" everywhere. `video_compress` is a native black-box transcoder
+  this sandbox has no way to verify the output of, and it's a well-known
+  source of exactly this class of bug (orientation/rotation-matrix
+  handling is inconsistent across devices for many Android video
+  compressors). Removed the dependency and both call sites entirely
+  rather than ship an unverifiable risk — videos upload as-is again, so
+  the original "big videos sometimes fail" limitation is back until this
+  can actually be tested on a real device with a properly vetted
+  approach.
+  **Image compression for shared-in photos** (`/share-import`, which
+  previously uploaded raw uncompressed bytes, unlike every other upload
+  path in this app): `compressImageBytesForUpload`
   (`lib/core/utils/image_compression_service.dart`, the `image` package
   already a dependency, decode/resize-to-1920/re-encode-JPEG-85 run via
-  `compute()` so it doesn't jank the UI thread mid-batch).
-  **Grid thumbnail decode cost**: same fix as the Calendar day-tiles —
-  `_MemoryTile`'s `CachedNetworkImage` calls had no `memCacheWidth`/
-  `memCacheHeight`, so every tile decoded at full upload resolution just
-  to render into a small grid cell. Capped to 220×220.
+  `compute()`) stayed, but had a real bug of the same "weird display"
+  family: `img.copyResize` bakes EXIF orientation internally, but only
+  ran for photos that actually needed resizing — a photo already under
+  1920px skipped that step and got re-encoded from raw, un-rotated sensor
+  pixels, so it came out sideways. Fixed by calling `img.bakeOrientation`
+  unconditionally before checking whether a resize is needed at all.
+  **Grid thumbnail decode cost + a real distortion bug**: `_MemoryTile`'s
+  `CachedNetworkImage` calls (and the Calendar day-tile's, and
+  `_PartnerMostViewedCard`'s) had no `memCacheWidth`/`memCacheHeight` at
+  first, so every tile decoded at full upload resolution just to render
+  into a small grid cell — capped to a target size to fix that. But
+  setting BOTH `memCacheWidth` AND `memCacheHeight` on a non-square photo
+  forces the decoder to stretch it to fit that exact box (a documented
+  Flutter/`cached_network_image` gotcha, not a bug in this app's own
+  code) — which is what "weird display, everywhere" actually was for
+  photos, not just videos. Fixed by only ever setting one of the two
+  dimensions on every one of these calls; `BoxFit.cover` in the widget
+  itself still crops the (now correctly-proportioned) decoded image to
+  fill the cell. **Don't reintroduce this** — always use only one
+  dimension unless the target box is guaranteed to match the source's
+  aspect ratio.
 - `/share-import` — outside the shell (like `/cinema`): reached when a
   photo/video is shared into the app from elsewhere (Android share
   sheet → `receive_sharing_intent`, see `main.dart`'s listeners), shows a

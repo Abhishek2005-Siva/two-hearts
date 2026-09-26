@@ -16,7 +16,6 @@ import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
-import '../../core/utils/video_compression_service.dart';
 
 enum _TypeFilter { all, photos, videos, favorites }
 
@@ -87,9 +86,8 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
             path.endsWith('.avi') ||
             path.endsWith('.mkv');
         if (isVideo) {
-          final file = await compressVideoForUpload(File(xfile.path));
           final url = await CloudinaryService.uploadVideo(
-            file,
+            File(xfile.path),
             folder: 'two_hearts/$coupleId',
           );
           await firestoreService.addMemory(
@@ -860,8 +858,9 @@ class _PartnerMostViewedCard extends ConsumerWidget {
                   child: CachedNetworkImage(
                     imageUrl: top.isVideo ? _videoThumb(top.imageUrl) : top.imageUrl,
                     fit: BoxFit.cover,
+                    // Only one dimension — see the grid tile fix below for
+                    // why setting both distorts non-square photos.
                     memCacheWidth: 88,
-                    memCacheHeight: 88,
                     errorWidget: (_, _, _) => Container(color: AppColors.bgCardLight),
                   ),
                 ),
@@ -1999,9 +1998,11 @@ class _MemoryTile extends StatelessWidget {
                       fit: BoxFit.cover,
                       // See the Calendar day-tile fix for why this matters:
                       // every grid tile decoding a full-res image at once
-                      // is what makes a photo grid feel slow to load.
+                      // is what makes a photo grid feel slow to load. Only
+                      // one dimension, though — both together stretches
+                      // non-square source images to fit exactly, which is
+                      // what made thumbnails look distorted.
                       memCacheWidth: 220,
-                      memCacheHeight: 220,
                       placeholder: (ctx, url) =>
                           Container(color: Colors.black87),
                       errorWidget: (ctx, url, err) =>
@@ -2018,7 +2019,6 @@ class _MemoryTile extends StatelessWidget {
                   imageUrl: memory.imageUrl,
                   fit: BoxFit.cover,
                   memCacheWidth: 220,
-                  memCacheHeight: 220,
                   placeholder: (context, url) => Container(
                       color: AppColors.bgCard,
                       child: const Center(

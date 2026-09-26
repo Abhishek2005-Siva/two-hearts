@@ -13,7 +13,6 @@ import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
 import '../../core/utils/image_compression_service.dart';
-import '../../core/utils/video_compression_service.dart';
 
 /// Confirms and adds photos/videos shared into the app from elsewhere
 /// (gallery, Files, another app's share sheet) straight into Memories.
@@ -51,7 +50,7 @@ class _ShareImportScreenState extends ConsumerState<ShareImportScreen> {
         final id = const Uuid().v4();
         final url = isVideo
             ? await CloudinaryService.uploadVideo(
-                await compressVideoForUpload(File(file.path)),
+                File(file.path),
                 folder: 'two_hearts/$coupleId',
               )
             : await CloudinaryService.uploadImage(

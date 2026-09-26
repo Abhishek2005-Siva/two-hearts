@@ -768,8 +768,12 @@ class _DayTile extends StatelessWidget {
             CachedNetworkImage(
               imageUrl: entry.imageUrl,
               fit: BoxFit.cover,
+              // Only one of memCacheWidth/memCacheHeight — specifying BOTH
+              // forces the decoder to stretch the image to exactly that
+              // box, distorting anything that isn't already square. One
+              // dimension alone preserves the source aspect ratio; the
+              // BoxFit.cover above still crops it to fill this cell.
               memCacheWidth: 160,
-              memCacheHeight: 160,
               fadeInDuration: const Duration(milliseconds: 150),
               placeholder: (_, _) => Container(color: _Cal.emptyTile),
               errorWidget: (_, _, _) => Container(color: _Cal.emptyTile),
