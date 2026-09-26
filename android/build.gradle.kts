@@ -30,7 +30,15 @@ subprojects {
 // their build.gradle lives in the pub cache, not this repo, and a fresh
 // `flutter pub get` would just re-fetch the unpatched version), pin
 // every subproject to the same target here.
+// :app already sets its own compileOptions/compilerOptions directly in
+// app/build.gradle.kts and, per the evaluationDependsOn(":app") above, is
+// forced to evaluate before this block runs for it — so by the time this
+// reaches :app, it's already evaluated and afterEvaluate on it throws
+// "Cannot run Project.afterEvaluate(Action) when the project is already
+// evaluated." Every plugin module (the actual target here) evaluates
+// normally, so skipping :app by name is enough.
 subprojects {
+    if (project.name == "app") return@subprojects
     afterEvaluate {
         extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.apply {
             compileOptions {
