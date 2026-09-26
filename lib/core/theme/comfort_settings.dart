@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -162,3 +163,61 @@ class ReduceMotionNotifier extends Notifier<bool> {
 /// `main.dart`.
 bool isReduceMotion(BuildContext context) =>
     ProviderScope.containerOf(context, listen: false).read(reduceMotionProvider);
+
+// ── Tap sound ───────────────────────────────────────────────────────────
+
+/// 0.0 = off, up to 1.0 = full volume. Default is audible-but-gentle
+/// rather than either extreme, so a first-run install isn't silently
+/// mute nor startlingly loud.
+final tapSoundVolumeProvider =
+    NotifierProvider<TapSoundVolumeNotifier, double>(TapSoundVolumeNotifier.new);
+
+class TapSoundVolumeNotifier extends Notifier<double> {
+  static const _prefsKey = 'tap_sound_volume';
+
+  @override
+  double build() {
+    SharedPreferences.getInstance().then((prefs) {
+      final saved = prefs.getDouble(_prefsKey);
+      if (saved != null) state = saved;
+    });
+    return 0.45;
+  }
+
+  void set(double value) {
+    state = value.clamp(0.0, 1.0);
+    SharedPreferences.getInstance().then((prefs) => prefs.setDouble(_prefsKey, state));
+  }
+}
+
+/// Plays the app's one shared tap sound, respecting [tapSoundVolumeProvider]
+/// (silently does nothing at 0). Static, for the same reason [isReduceMotion]
+/// is: called from `SquishyTap`/`GradientButton`'s tap handlers, which are
+/// used at hundreds of call sites and can't all become `Consumer`s.
+///
+/// Uses one shared low-latency `AudioPlayer` rather than a fresh instance
+/// per tap — `PlayerMode.lowLatency` is `audioplayers`' own recommended
+/// mode for exactly this "frequent, short UI sound effect" case, and
+/// creating a new player per tap would be wasteful and could audibly
+/// overlap/glitch on rapid repeated taps.
+class TapSound {
+  TapSound._();
+  static final _player = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
+  static bool _primed = false;
+
+  static Future<void> _prime() async {
+    if (_primed) return;
+    _primed = true;
+    await _player.setSource(AssetSource('sounds/tap.wav'));
+  }
+
+  static void play(BuildContext context) {
+    final volume =
+        ProviderScope.containerOf(context, listen: false).read(tapSoundVolumeProvider);
+    if (volume <= 0) return;
+    _prime().then((_) {
+      _player.setVolume(volume);
+      _player.resume();
+    });
+  }
+}

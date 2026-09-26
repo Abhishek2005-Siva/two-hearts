@@ -84,7 +84,24 @@ Android emulator and no physical device attached**. In that situation:
   `cuteStickers: List<String>?` param that bursts a couple of emoji up
   from the widget on tap (via `FloatingStickers.burst`, see below). Use it
   on primary/completing actions (send, save, give), not on every
-  navigational tap.
+  navigational tap. Both also play a tap sound (`TapSound.play`, see
+  below) — this is the actual mechanism behind "add sounds to buttons
+  throughout the app": rather than wiring sound into every individual
+  `GestureDetector`/`IconButton` across ~30 screens, it's wired once into
+  the two primitives everything else already routes through. A handful
+  of raw `GestureDetector`/`IconButton` taps outside those two
+  primitives (mostly icon-only nav buttons like back arrows) genuinely
+  don't play a sound — that's the honest scope, not a bug.
+- **Tap sound** (`lib/core/theme/comfort_settings.dart`): `TapSound.play
+  (context)` plays `assets/sounds/tap.wav` (a short synthesized "pop," not
+  a sourced/licensed sample — generated in-repo since there was no way to
+  fetch a real asset) through one shared low-latency `AudioPlayer`
+  (`PlayerMode.lowLatency`, `audioplayers`' own recommended mode for
+  frequent short UI sounds — a fresh player per tap would be wasteful and
+  could glitch on rapid taps). Volume is `tapSoundVolumeProvider` (0.0
+  off, up to 1.0), a per-device `SharedPreferences`-backed double
+  controlled from You & Me → Comfort's volume slider — 0 skips playback
+  entirely rather than calling `AudioPlayer.play` at zero volume.
 - **Delight layer** (`lib/core/delight/delight.dart`): `DelightHaptics`
   (named haptic patterns), `FloatingStickers.burst(context, stickers:,
   count:, origin:)` (small rising/fading emoji particles from a point —

@@ -230,6 +230,7 @@ class _ComfortSection extends ConsumerWidget {
     final textStep = ref.watch(textScaleProvider);
     final density = ref.watch(layoutDensityProvider);
     final reduceMotion = ref.watch(reduceMotionProvider);
+    final soundVolume = ref.watch(tapSoundVolumeProvider);
 
     return Container(
       decoration: BoxDecoration(
@@ -272,6 +273,7 @@ class _ComfortSection extends ConsumerWidget {
                     ref.read(textScaleProvider.notifier).set(TextScaleStep.standard);
                     ref.read(layoutDensityProvider.notifier).set(AppDensity.comfortable);
                     ref.read(reduceMotionProvider.notifier).set(false);
+                    ref.read(tapSoundVolumeProvider.notifier).set(0.45);
                   },
                   child: const Text('Reset',
                       style: TextStyle(
@@ -419,6 +421,54 @@ class _ComfortSection extends ConsumerWidget {
                   value: reduceMotion,
                   onChanged: (val) => ref.read(reduceMotionProvider.notifier).set(val),
                   activeThumbColor: accent,
+                ),
+              ],
+            ),
+          ),
+          const Divider(color: AppColors.divider, height: 1),
+          // Tap sound
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+            child: Row(
+              children: [
+                Icon(
+                    soundVolume <= 0
+                        ? Icons.volume_off_rounded
+                        : soundVolume < 0.5
+                            ? Icons.volume_down_rounded
+                            : Icons.volume_up_rounded,
+                    color: AppColors.textMuted,
+                    size: 20),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Tap sound',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                      Text('A little sound on buttons and taps',
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 110,
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 3,
+                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    ),
+                    child: Slider(
+                      value: soundVolume,
+                      onChanged: (val) => ref.read(tapSoundVolumeProvider.notifier).set(val),
+                      activeColor: accent,
+                      inactiveColor: AppColors.bgCardLight,
+                    ),
+                  ),
                 ),
               ],
             ),

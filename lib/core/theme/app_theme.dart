@@ -262,6 +262,7 @@ class _GradientButtonState extends State<GradientButton>
   void _handleTap() {
     if (widget.loading || widget.onTap == null) return;
     HapticFeedback.lightImpact();
+    TapSound.play(context);
     final reduceMotion = isReduceMotion(context);
     if (!reduceMotion) _ctrl.forward(from: 0);
     final stickers = widget.cuteStickers;
@@ -522,6 +523,7 @@ class _SquishyTapState extends State<SquishyTap>
           ? null
           : () {
               HapticFeedback.selectionClick();
+              TapSound.play(context);
               final reduceMotion = isReduceMotion(context);
               if (!reduceMotion) _ctrl.forward(from: 0);
               final stickers = widget.cuteStickers;
