@@ -10,13 +10,13 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-import 'package:video_player/video_player.dart';
 import '../../core/firebase/models.dart';
 import '../../core/delight/couple_character.dart';
 import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
+import '../../core/utils/video_compression_service.dart';
 
 enum _TypeFilter { all, photos, videos, favorites }
 
@@ -76,6 +76,8 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     // item queuing behind it. A sequential loop made picking 5+ photos take
     // roughly 5x as long as the slowest single upload for no reason.
     final errors = <String>[];
+    var photoCount = 0;
+    var videoCount = 0;
     await Future.wait(media.map((xfile) async {
       try {
         final id = const Uuid().v4();
@@ -85,8 +87,9 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
             path.endsWith('.avi') ||
             path.endsWith('.mkv');
         if (isVideo) {
+          final file = await compressVideoForUpload(File(xfile.path));
           final url = await CloudinaryService.uploadVideo(
-            File(xfile.path),
+            file,
             folder: 'two_hearts/$coupleId',
           );
           await firestoreService.addMemory(
@@ -99,6 +102,7 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
               isVideo: true,
             ),
           );
+          videoCount++;
         } else {
           final bytes = await xfile.readAsBytes();
           final url = await CloudinaryService.uploadImage(bytes, folder: 'two_hearts/$coupleId');
@@ -111,6 +115,7 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
               createdAt: DateTime.now(),
             ),
           );
+          photoCount++;
         }
         if (mounted) {
           // A new memory joins the wall — petals & a polaroid drift up.
@@ -129,6 +134,10 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
         errors.add(e.toString());
       }
     }));
+
+    // One notification for the whole batch ("X added N photos and M
+    // videos"), not one per file — see notifyBulkMemoryUpload.
+    firestoreService.notifyBulkMemoryUpload(coupleId, photos: photoCount, videos: videoCount).ignore();
 
     if (mounted && errors.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -256,6 +265,22 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                   color: AppColors.divider,
                   borderRadius: BorderRadius.circular(2)),
             ),
+            // Pin option — pinned memories sort first on the wall.
+            ListTile(
+              leading: Icon(
+                  memory.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                  color: AppColors.textPrimary),
+              title: Text(memory.pinned ? 'Unpin' : 'Pin to top',
+                  style: const TextStyle(color: AppColors.textPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                ref
+                    .read(firestoreServiceProvider)
+                    .togglePinMemory(coupleId, memory.id, !memory.pinned)
+                    .ignore();
+              },
+            ),
+            const Divider(color: AppColors.divider, height: 1),
             // Add to collection option
             ListTile(
               leading: const Icon(Icons.folder_outlined, color: AppColors.textPrimary),
@@ -484,8 +509,9 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                   slivers: [
                     if (!_selectMode && !_searching) ...[
                       const SliverToBoxAdapter(child: SizedBox(height: 4)),
-                      SliverToBoxAdapter(
-                          child: _HeroSnapshotCard(onSurpriseMe: () {})),
+                      const SliverToBoxAdapter(child: _HeroSnapshotCard()),
+                      const SliverToBoxAdapter(child: SizedBox(height: 4)),
+                      const SliverToBoxAdapter(child: _PartnerMostViewedCard()),
                       const SliverToBoxAdapter(child: SizedBox(height: 4)),
                       SliverToBoxAdapter(
                         child: _CollectionsRow(
@@ -597,8 +623,7 @@ String _timeAgo(DateTime from) {
 }
 
 class _HeroSnapshotCard extends ConsumerStatefulWidget {
-  final VoidCallback onSurpriseMe;
-  const _HeroSnapshotCard({required this.onSurpriseMe});
+  const _HeroSnapshotCard();
 
   @override
   ConsumerState<_HeroSnapshotCard> createState() => _HeroSnapshotCardState();
@@ -779,6 +804,86 @@ class _HeroSnapshotCardState extends ConsumerState<_HeroSnapshotCard> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Partner's most-viewed highlight ───────────────────────────────────────
+// A real signal, not a fabricated one — MemoryModel.viewCounts already
+// tracks per-uid view counts (incremented once per detail-screen session
+// per memory, see incrementMemoryView). This just surfaces whichever
+// memory the partner has actually opened the most. Shows nothing if they
+// haven't viewed anything yet, rather than picking an arbitrary "most
+// viewed: 0" memory.
+class _PartnerMostViewedCard extends ConsumerWidget {
+  const _PartnerMostViewedCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final memories = ref.watch(memoriesProvider).valueOrNull ?? [];
+    final partner = ref.watch(partnerUserProvider).valueOrNull;
+    final accent = ref.watch(accentColorProvider);
+    if (partner == null || memories.isEmpty) return const SizedBox.shrink();
+
+    MemoryModel? top;
+    var topCount = 0;
+    for (final m in memories) {
+      final count = m.viewCountOf(partner.uid);
+      if (count > topCount) {
+        top = m;
+        topCount = count;
+      }
+    }
+    if (top == null) return const SizedBox.shrink();
+    final partnerName = partner.displayName.split(' ').first;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: GestureDetector(
+        onTap: () => context.push('/memory/${top!.id}'),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.bgCard,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.divider, width: 0.5),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: CachedNetworkImage(
+                    imageUrl: top.isVideo ? _videoThumb(top.imageUrl) : top.imageUrl,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 88,
+                    memCacheHeight: 88,
+                    errorWidget: (_, _, _) => Container(color: AppColors.bgCardLight),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("$partnerName's most-viewed",
+                        style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700)),
+                    Text('Opened this $topCount time${topCount == 1 ? '' : 's'} ♡',
+                        style: const TextStyle(color: AppColors.textMuted, fontSize: 11.5)),
+                  ],
+                ),
+              ),
+              Icon(Icons.favorite_rounded, color: accent, size: 16),
+            ],
+          ),
         ),
       ),
     );
@@ -1755,7 +1860,16 @@ class _MemoriesTab extends ConsumerWidget {
           );
         }
 
-        final groups = _groupByDate(memories);
+        // Pinned memories get their own leading section instead of being
+        // sorted into the date groups — "important ones come first,"
+        // literally, rather than just reordered within their own day.
+        final pinned = memories.where((m) => m.pinned).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        final unpinned = memories.where((m) => !m.pinned).toList();
+        final groups = {
+          if (pinned.isNotEmpty) '📌 Pinned': pinned,
+          ..._groupByDate(unpinned),
+        };
 
         return SliverPadding(
           padding: EdgeInsets.fromLTRB(
@@ -1806,16 +1920,12 @@ class _MemoriesTab extends ConsumerWidget {
                         selected: selectedIds.contains(memory.id),
                         onTap: selectMode
                             ? () => onSelectToggle(memory.id)
-                            : () {
-                                if (memory.isVideo) {
-                                  Navigator.push(context, MaterialPageRoute(
-                                    builder: (_) => _FullscreenVideoPlayer(
-                                        url: memory.imageUrl),
-                                  ));
-                                } else {
-                                  context.push('/memory/${memory.id}');
-                                }
-                              },
+                            // Videos used to open a separate bare-bones
+                            // player with none of the swipe/comments/
+                            // forward/export/progress-bar features below —
+                            // now both media types go through the same
+                            // detail screen.
+                            : () => context.push('/memory/${memory.id}'),
                         onFavorite: selectMode
                             ? () {}
                             : () async {
@@ -1887,6 +1997,11 @@ class _MemoryTile extends StatelessWidget {
                     CachedNetworkImage(
                       imageUrl: _videoThumb(memory.imageUrl),
                       fit: BoxFit.cover,
+                      // See the Calendar day-tile fix for why this matters:
+                      // every grid tile decoding a full-res image at once
+                      // is what makes a photo grid feel slow to load.
+                      memCacheWidth: 220,
+                      memCacheHeight: 220,
                       placeholder: (ctx, url) =>
                           Container(color: Colors.black87),
                       errorWidget: (ctx, url, err) =>
@@ -1902,6 +2017,8 @@ class _MemoryTile extends StatelessWidget {
                 CachedNetworkImage(
                   imageUrl: memory.imageUrl,
                   fit: BoxFit.cover,
+                  memCacheWidth: 220,
+                  memCacheHeight: 220,
                   placeholder: (context, url) => Container(
                       color: AppColors.bgCard,
                       child: const Center(
@@ -2025,58 +2142,3 @@ class _MemoryTile extends StatelessWidget {
   }
 }
 
-// ── Fullscreen Video Player ───────────────────────────────────────────────
-
-class _FullscreenVideoPlayer extends StatefulWidget {
-  final String url;
-  const _FullscreenVideoPlayer({required this.url});
-
-  @override
-  State<_FullscreenVideoPlayer> createState() => _FullscreenVideoPlayerState();
-}
-
-class _FullscreenVideoPlayerState extends State<_FullscreenVideoPlayer> {
-  late final VideoPlayerController _ctrl;
-  bool _initialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() => _initialized = true);
-          _ctrl.play();
-        }
-      });
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
-      body: Center(
-        child: _initialized
-            ? GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _ctrl.value.isPlaying ? _ctrl.pause() : _ctrl.play();
-                  });
-                },
-                child: AspectRatio(
-                  aspectRatio: _ctrl.value.aspectRatio,
-                  child: VideoPlayer(_ctrl),
-                ),
-              )
-            : const CircularProgressIndicator(color: AppColors.rose),
-      ),
-    );
-  }
-}

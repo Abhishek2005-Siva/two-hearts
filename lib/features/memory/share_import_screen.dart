@@ -12,6 +12,8 @@ import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
+import '../../core/utils/image_compression_service.dart';
+import '../../core/utils/video_compression_service.dart';
 
 /// Confirms and adds photos/videos shared into the app from elsewhere
 /// (gallery, Files, another app's share sheet) straight into Memories.
@@ -38,6 +40,8 @@ class _ShareImportScreenState extends ConsumerState<ShareImportScreen> {
     final uploaderUid = authUser.uid;
 
     final errors = <String>[];
+    var photoCount = 0;
+    var videoCount = 0;
     // Same concurrent-upload pattern as the Memory Wall's own picker —
     // each item lands as soon as its own upload finishes rather than
     // queuing behind the others.
@@ -46,9 +50,12 @@ class _ShareImportScreenState extends ConsumerState<ShareImportScreen> {
         final isVideo = file.type == SharedMediaType.video;
         final id = const Uuid().v4();
         final url = isVideo
-            ? await CloudinaryService.uploadVideo(File(file.path), folder: 'two_hearts/$coupleId')
+            ? await CloudinaryService.uploadVideo(
+                await compressVideoForUpload(File(file.path)),
+                folder: 'two_hearts/$coupleId',
+              )
             : await CloudinaryService.uploadImage(
-                await File(file.path).readAsBytes(),
+                await compressImageBytesForUpload(await File(file.path).readAsBytes()),
                 folder: 'two_hearts/$coupleId',
               );
         await firestoreService.addMemory(
@@ -61,10 +68,17 @@ class _ShareImportScreenState extends ConsumerState<ShareImportScreen> {
             isVideo: isVideo,
           ),
         );
+        if (isVideo) {
+          videoCount++;
+        } else {
+          photoCount++;
+        }
       } catch (e) {
         errors.add(e.toString());
       }
     }));
+
+    firestoreService.notifyBulkMemoryUpload(coupleId, photos: photoCount, videos: videoCount).ignore();
 
     if (mounted) {
       if (errors.isEmpty) {

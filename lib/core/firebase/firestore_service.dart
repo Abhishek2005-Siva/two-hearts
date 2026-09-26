@@ -1001,6 +1001,60 @@ class FirestoreService {
       _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
           .update({'viewCounts.$uid': FieldValue.increment(1)});
 
+  Future<void> togglePinMemory(String coupleId, String memoryId, bool pinned) =>
+      _db.collection('couples').doc(coupleId).collection('memories').doc(memoryId)
+          .update({'pinned': pinned});
+
+  /// A flat comment thread on one memory — same shape as the Daily Snap
+  /// Calendar's ('uid' + 'text' + 'sentAt'), so both the author's name and
+  /// a notification to the other partner work the same way.
+  Future<void> addMemoryComment(String coupleId, String memoryId, String text) async {
+    await _db
+        .collection('couples')
+        .doc(coupleId)
+        .collection('memories')
+        .doc(memoryId)
+        .collection('comments')
+        .add({'uid': _uid, 'text': text, 'sentAt': FieldValue.serverTimestamp()});
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'memory_comment',
+      title: '💬 $name commented on a memory',
+      body: text,
+      route: '/memory/$memoryId',
+    );
+  }
+
+  Stream<List<Map<String, dynamic>>> watchMemoryComments(String coupleId, String memoryId) => _db
+      .collection('couples')
+      .doc(coupleId)
+      .collection('memories')
+      .doc(memoryId)
+      .collection('comments')
+      .orderBy('sentAt')
+      .snapshots()
+      .map((s) => s.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+
+  /// One notification for a whole batch of uploads instead of one per
+  /// file — "X added N photos and M videos" rather than spamming the
+  /// partner's inbox/push once per item in a multi-select upload.
+  Future<void> notifyBulkMemoryUpload(String coupleId, {int photos = 0, int videos = 0}) async {
+    if (photos == 0 && videos == 0) return;
+    final name = await _myFirstName();
+    final parts = <String>[
+      if (photos > 0) '$photos photo${photos == 1 ? '' : 's'}',
+      if (videos > 0) '$videos video${videos == 1 ? '' : 's'}',
+    ];
+    await recordNotification(
+      coupleId,
+      type: 'memory_bulk_upload',
+      title: '📸 $name added ${parts.join(' and ')}',
+      body: 'Tap to see them',
+      route: '/memory',
+    );
+  }
+
   /// Deleting a memory always needs the other partner's OK — this is the
   /// request half. Previously silent (just a field write, no signal at
   /// all beyond the requester's own device); now it notifies like every

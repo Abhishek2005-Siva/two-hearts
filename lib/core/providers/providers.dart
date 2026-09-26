@@ -182,6 +182,13 @@ final dailySnapCommentsProvider =
   return ref.read(firestoreServiceProvider).watchDailySnapComments(coupleId, dateKey);
 });
 
+final memoryCommentsProvider =
+    StreamProvider.family<List<Map<String, dynamic>>, String>((ref, memoryId) {
+  final coupleId = ref.watch(coupleIdProvider);
+  if (coupleId == null) return const Stream.empty();
+  return ref.read(firestoreServiceProvider).watchMemoryComments(coupleId, memoryId);
+});
+
 // ── Wildcards ──────────────────────────────────────────────────────────────
 
 final wildcardsProvider = StreamProvider<List<WildCard>>((ref) {

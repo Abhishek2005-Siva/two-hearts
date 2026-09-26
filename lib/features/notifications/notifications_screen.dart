@@ -25,6 +25,8 @@ String _typeEmoji(String type) => switch (type) {
       'streak_milestone' => '🎉',
       'memory_deletion_request' => '🗑️',
       'memory_deletion_approved' => '🗑️',
+      'memory_comment' => '💬',
+      'memory_bulk_upload' => '📸',
       'reminiscing' => '🥺',
       _ => '✨',
     };

@@ -466,6 +466,7 @@ class MemoryModel {
   final String? collectionId;
   final bool isVideo;
   final Map<String, int> viewCounts;
+  final bool pinned;
 
   const MemoryModel({
     required this.id,
@@ -480,6 +481,7 @@ class MemoryModel {
     this.collectionId,
     this.isVideo = false,
     this.viewCounts = const {},
+    this.pinned = false,
   });
 
   int viewCountOf(String? uid) => uid == null ? 0 : (viewCounts[uid] ?? 0);
@@ -500,6 +502,7 @@ class MemoryModel {
       collectionId: d['collectionId'],
       isVideo: d['isVideo'] ?? false,
       viewCounts: viewsRaw.map((uid, v) => MapEntry(uid, (v as num).toInt())),
+      pinned: d['pinned'] ?? false,
     );
   }
 
@@ -513,6 +516,7 @@ class MemoryModel {
         'createdAt': Timestamp.fromDate(createdAt),
         'deletionRequestedBy': deletionRequestedBy,
         'isVideo': isVideo,
+        'pinned': pinned,
         if (collectionId != null) 'collectionId': collectionId,
         if (viewCounts.isNotEmpty) 'viewCounts': viewCounts,
       };

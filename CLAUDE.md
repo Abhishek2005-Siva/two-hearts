@@ -156,6 +156,54 @@ Android emulator and no physical device attached**. In that situation:
   (`deletionRequestedBy`/`cancelMemoryDeletion`/`approveMemoryDeletion`)
   but that used to be entirely silent — `requestMemoryDeletion` and
   `approveMemoryDeletion` now both call `recordNotification` too.
+  **Pinning**: `MemoryModel.pinned` + `togglePinMemory` (toggle lives in
+  the long-press action sheet); pinned items get their own "📌 Pinned"
+  section at the very top of the wall instead of being sorted into their
+  date group (`_MemoriesTab._groupByDate` only ever sees the unpinned
+  remainder now).
+  **Videos and photos share one detail screen**: videos used to open a
+  separate bare-bones `_FullscreenVideoPlayer` with none of the features
+  below; both media types now route through `memory_detail_screen.dart`
+  (`context.push('/memory/${memory.id}')` regardless of `isVideo`). That
+  screen gained, on top of its existing swipe-between-memories/view-count/
+  details-sheet: a `VideoProgressIndicator` + 3-zone tap (left third
+  seeks -10s, middle toggles play/pause, right third seeks +10s, see
+  `_VideoPageItem`); a comments thread (`_CommentsPill`/`_CommentsSheet`,
+  `addMemoryComment`/`watchMemoryComments`/`memoryCommentsProvider` — same
+  attribution + notification shape as the Daily Snap Calendar's comments);
+  and a "⋮" overflow menu with **Forward to Chat** (`sendMessage` with
+  the memory's own URL, `MessageType.image`/`.video`) and **Save to
+  Photos** (`gal` package, downloads via `http.get` then
+  `Gal.putImageBytes`/`Gal.putVideo` — needs `WRITE_EXTERNAL_STORAGE`
+  maxSdkVersion 29 + `requestLegacyExternalStorage` on Android; iOS's
+  `NSPhotoLibraryAddUsageDescription` was already present in `Info.plist`
+  from an earlier feature).
+  **"Their most-viewed"**: `_PartnerMostViewedCard` on the wall, computed
+  from the real per-uid `viewCounts` already tracked by
+  `incrementMemoryView` — shows nothing if the partner hasn't viewed
+  anything yet, never a fabricated "0 views" pick.
+  **Bulk upload notification**: adding N photos/videos (from either the
+  wall's own picker or `/share-import`) sends ONE notification
+  ("X added 3 photos and 1 video"), not one per file —
+  `notifyBulkMemoryUpload`.
+  **Video compression before upload**: "can't upload big videos" was
+  Cloudinary's own unsigned-upload size ceiling, which can't be raised
+  from the client — `compressVideoForUpload`
+  (`lib/core/utils/video_compression_service.dart`, `video_compress`
+  package, `VideoQuality.MediumQuality`) shrinks the file first instead,
+  best-effort (falls back to the original file on any compression
+  failure, never blocks the upload). Wired into both upload paths.
+  Shared-in photos (`/share-import`) previously uploaded raw, uncompressed
+  bytes — unlike every other upload path in this app, which all compress
+  on pick via `ImagePicker`'s own `maxWidth`/`imageQuality`. Fixed with
+  `compressImageBytesForUpload`
+  (`lib/core/utils/image_compression_service.dart`, the `image` package
+  already a dependency, decode/resize-to-1920/re-encode-JPEG-85 run via
+  `compute()` so it doesn't jank the UI thread mid-batch).
+  **Grid thumbnail decode cost**: same fix as the Calendar day-tiles —
+  `_MemoryTile`'s `CachedNetworkImage` calls had no `memCacheWidth`/
+  `memCacheHeight`, so every tile decoded at full upload resolution just
+  to render into a small grid cell. Capped to 220×220.
 - `/share-import` — outside the shell (like `/cinema`): reached when a
   photo/video is shared into the app from elsewhere (Android share
   sheet → `receive_sharing_intent`, see `main.dart`'s listeners), shows a

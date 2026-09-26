@@ -1,10 +1,17 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gal/gal.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/firebase/models.dart';
 import '../../core/presence/activity_announcer.dart';
@@ -78,6 +85,109 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
         memory: memory,
         partnerUid: partnerUid,
         myUid: myUid,
+      ),
+    );
+  }
+
+  void _showComments(MemoryModel memory, String myUid) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _CommentsSheet(memoryId: memory.id, myUid: myUid),
+    );
+  }
+
+  Future<void> _forwardToChat(MemoryModel memory) async {
+    final coupleId = ref.read(coupleIdProvider);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (coupleId == null || uid == null) return;
+    await ref.read(firestoreServiceProvider).sendMessage(
+          coupleId,
+          MessageModel(
+            id: const Uuid().v4(),
+            senderId: uid,
+            content: memory.imageUrl,
+            type: memory.isVideo ? MessageType.video : MessageType.image,
+            sentAt: DateTime.now(),
+          ),
+        );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Sent to chat ♡'), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  Future<void> _exportToDevice(MemoryModel memory) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final hasAccess = await Gal.hasAccess() || await Gal.requestAccess();
+      if (!hasAccess) {
+        messenger.showSnackBar(const SnackBar(
+            content: Text('Photo library access is needed to save this.'),
+            behavior: SnackBarBehavior.floating));
+        return;
+      }
+      final response = await http.get(Uri.parse(memory.imageUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Download failed (${response.statusCode})');
+      }
+      if (memory.isVideo) {
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/${const Uuid().v4()}.mp4');
+        await file.writeAsBytes(response.bodyBytes);
+        await Gal.putVideo(file.path, album: 'Two Hearts');
+        await file.delete().catchError((_) => file);
+      } else {
+        await Gal.putImageBytes(response.bodyBytes, album: 'Two Hearts');
+      }
+      if (!mounted) return;
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Saved to your photos ♡'), behavior: SnackBarBehavior.floating));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text("Couldn't save: $e"),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  void _showMoreActions(MemoryModel memory) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(sheetCtx).padding.bottom + 20),
+        decoration: const BoxDecoration(
+          color: AppColors.bgMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply_rounded, color: AppColors.textPrimary),
+              title: const Text('Forward to Chat',
+                  style: TextStyle(color: AppColors.textPrimary)),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _forwardToChat(memory);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.download_rounded, color: AppColors.textPrimary),
+              title: const Text('Save to Photos',
+                  style: TextStyle(color: AppColors.textPrimary)),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _exportToDevice(memory);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -284,17 +394,39 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
                       ),
                     ),
                   if (memories.length > 1)
-                    Text(
-                      '${safeIndex + 1} / ${memories.length}',
-                      style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Text(
+                        '${safeIndex + 1} / ${memories.length}',
+                        style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500),
+                      ),
                     ),
+                  IconButton(
+                    icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                    onPressed: () => _showMoreActions(memories[safeIndex]),
+                  ),
                 ],
               ),
             ),
           ),
+
+          // Comments — a small persistent pill, expanding into a sheet on
+          // tap (see _showComments/_CommentsSheet) rather than a fixed
+          // inline block, so it doesn't compete with the swipe-up Details
+          // handle or the deletion banner for the same bottom-of-screen
+          // space on every single memory.
+          if (safeIndex < memories.length)
+            Positioned(
+              left: 12,
+              bottom: MediaQuery.of(context).padding.bottom + 64,
+              child: _CommentsPill(
+                memoryId: memories[safeIndex].id,
+                onTap: () => _showComments(memories[safeIndex], myUid),
+              ),
+            ),
 
           // Swipe-up-for-details handle. A dedicated small hit target (not a
           // gesture layered over the photo itself) so it never fights
@@ -370,21 +502,73 @@ class _VideoPageItemState extends State<_VideoPageItem> {
     super.dispose();
   }
 
+  static const _seekAmount = Duration(seconds: 10);
+
+  Future<void> _seek(Duration delta) async {
+    final target = _ctrl.value.position + delta;
+    final clamped = target < Duration.zero
+        ? Duration.zero
+        : (target > _ctrl.value.duration ? _ctrl.value.duration : target);
+    HapticFeedback.lightImpact();
+    await _ctrl.seekTo(clamped);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_initialized) {
       return const Center(
           child: CircularProgressIndicator(color: AppColors.rose));
     }
-    return GestureDetector(
-      onTap: () => setState(
-          () => _ctrl.value.isPlaying ? _ctrl.pause() : _ctrl.play()),
-      child: Center(
-        child: AspectRatio(
-          aspectRatio: _ctrl.value.aspectRatio,
-          child: VideoPlayer(_ctrl),
+    return Stack(
+      alignment: Alignment.bottomCenter,
+      children: [
+        Center(
+          child: AspectRatio(
+            aspectRatio: _ctrl.value.aspectRatio,
+            child: VideoPlayer(_ctrl),
+          ),
         ),
-      ),
+        // Three tap zones over the whole video: left third seeks back,
+        // right third seeks forward, the middle third toggles play/pause —
+        // same layout convention as most video apps.
+        Positioned.fill(
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => _seek(-_seekAmount),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => setState(
+                      () => _ctrl.value.isPlaying ? _ctrl.pause() : _ctrl.play()),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => _seek(_seekAmount),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+          child: VideoProgressIndicator(
+            _ctrl,
+            allowScrubbing: true,
+            colors: const VideoProgressColors(
+              playedColor: AppColors.rose,
+              bufferedColor: Colors.white38,
+              backgroundColor: Colors.white24,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -597,6 +781,176 @@ class _DetailRow extends StatelessWidget {
                   color: AppColors.textPrimary, fontSize: 14, height: 1.4)),
         ),
       ],
+    );
+  }
+}
+
+// ── Comments — small pill + expandable sheet ──────────────────────────────
+
+class _CommentsPill extends ConsumerWidget {
+  final String memoryId;
+  final VoidCallback onTap;
+  const _CommentsPill({required this.memoryId, required this.onTap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(memoryCommentsProvider(memoryId)).valueOrNull?.length ?? 0;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 15),
+            const SizedBox(width: 6),
+            Text(count == 0 ? 'Comment' : '$count comment${count == 1 ? '' : 's'}',
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CommentsSheet extends ConsumerStatefulWidget {
+  final String memoryId;
+  final String myUid;
+  const _CommentsSheet({required this.memoryId, required this.myUid});
+
+  @override
+  ConsumerState<_CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final text = _ctrl.text.trim();
+    final coupleId = ref.read(coupleIdProvider);
+    if (text.isEmpty || coupleId == null) return;
+    _ctrl.clear();
+    await ref.read(firestoreServiceProvider).addMemoryComment(coupleId, widget.memoryId, text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final comments = ref.watch(memoryCommentsProvider(widget.memoryId)).valueOrNull ?? [];
+    final partnerName =
+        ref.watch(partnerUserProvider).valueOrNull?.displayName.split(' ').first ?? 'Them';
+    String nameFor(String? uid) => uid == widget.myUid ? 'You' : partnerName;
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(
+        color: AppColors.bgMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+            child: Row(
+              children: [
+                Center(
+                  child: Container(
+                    width: 36, height: 4,
+                    decoration: BoxDecoration(
+                        color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Text('Comments',
+              style: TextStyle(
+                  color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Flexible(
+            child: comments.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text('No comments yet ♡',
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: comments.length,
+                    itemBuilder: (_, i) {
+                      final c = comments[i];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.bgCardLight,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(nameFor(c['uid'] as String?),
+                                  style: const TextStyle(
+                                      color: AppColors.rose,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 3),
+                              Text(c['text'] as String? ?? '',
+                                  style: const TextStyle(
+                                      color: AppColors.textPrimary, fontSize: 13)),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Add a comment…',
+                      hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                      filled: true,
+                      fillColor: AppColors.bgCardLight,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.send_rounded, color: AppColors.rose),
+                  onPressed: _send,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

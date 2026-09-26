@@ -77,6 +77,8 @@ dependencies:
   # 1.7.0). Don't bump past 1.8.x without also doing the SDK 37 / SPM
   # migration work.
   receive_sharing_intent: 1.8.1
+  gal: ^2.3.3
+  video_compress: ^3.1.4
 
 dev_dependencies:
   flutter_test:
