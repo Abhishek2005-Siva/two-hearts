@@ -58,6 +58,67 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   int _gridColumns = 3;
   int _gestureBaseColumns = 3;
 
+  // Raw multi-pointer tracking for pinch-to-zoom, deliberately NOT a
+  // GestureDetector(onScaleStart/onScaleUpdate/onScaleEnd). That approach
+  // was tried first and had a real bug: Flutter's ScaleGestureRecognizer
+  // starts tracking from the very first finger down (scale 1.0, moving
+  // focal point) exactly like a pan gesture, so it competes with the
+  // CustomScrollView's own vertical drag recognizer in the gesture arena
+  // for ordinary one-finger scrolling — which is what made a normal scroll
+  // occasionally get eaten as a "zoom" and vice versa. A Listener doesn't
+  // enter the gesture arena at all (it just observes raw pointer events
+  // alongside whatever else handles them), so tracking pointers ourselves
+  // and only ever reacting once a SECOND finger is actually down guarantees
+  // single-finger scrolling is never touched.
+  final Map<int, Offset> _activePointers = {};
+  double? _pinchStartDistance;
+
+  void _onPointerDown(PointerDownEvent event) {
+    _activePointers[event.pointer] = event.position;
+    if (_activePointers.length == 2) {
+      _gestureBaseColumns = _gridColumns;
+      _pinchStartDistance = _pointerDistance();
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (!_activePointers.containsKey(event.pointer)) return;
+    _activePointers[event.pointer] = event.position;
+    if (_activePointers.length < 2) return;
+    final startDist = _pinchStartDistance;
+    if (startDist == null || startDist < 8) return; // avoid divide-by-~0 jitter
+    final scale = _pointerDistance() / startDist;
+    // Pinch OUT (fingers moving apart, scale > 1) should mean bigger
+    // photos, i.e. FEWER columns — hence dividing, not multiplying.
+    final target =
+        (_gestureBaseColumns / scale).round().clamp(_minGridColumns, _maxGridColumns);
+    if (target != _gridColumns) {
+      setState(() => _gridColumns = target);
+    }
+  }
+
+  void _onPointerUpOrCancel(PointerEvent event) {
+    _activePointers.remove(event.pointer);
+    if (_activePointers.length == 2) {
+      // A third+ finger lifted off with exactly two remaining — restart the
+      // baseline from here instead of jumping using the old distance.
+      _gestureBaseColumns = _gridColumns;
+      _pinchStartDistance = _pointerDistance();
+    } else {
+      _pinchStartDistance = null;
+      if (_activePointers.isEmpty) {
+        SharedPreferences.getInstance()
+            .then((prefs) => prefs.setInt(_gridColumnsPrefsKey, _gridColumns));
+      }
+    }
+  }
+
+  double _pointerDistance() {
+    final positions = _activePointers.values.toList();
+    if (positions.length < 2) return 0;
+    return (positions[0] - positions[1]).distance;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -73,24 +134,6 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
-  }
-
-  void _onScaleStart(ScaleStartDetails details) {
-    _gestureBaseColumns = _gridColumns;
-  }
-
-  void _onScaleUpdate(ScaleUpdateDetails details) {
-    // Pinch OUT (fingers moving apart, scale > 1) should mean bigger
-    // photos, i.e. FEWER columns — hence dividing, not multiplying.
-    final target =
-        (_gestureBaseColumns / details.scale).round().clamp(_minGridColumns, _maxGridColumns);
-    if (target != _gridColumns) {
-      setState(() => _gridColumns = target);
-    }
-  }
-
-  void _onScaleEnd(ScaleEndDetails details) {
-    SharedPreferences.getInstance().then((prefs) => prefs.setInt(_gridColumnsPrefsKey, _gridColumns));
   }
 
   Future<void> _showAddMemorySheet() async {
@@ -644,15 +687,15 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                 // fixed-chrome shell.
                 //
                 // Pinch-to-zoom wraps the whole scroll view rather than
-                // just the grid — Flutter's ScaleGestureRecognizer only
-                // actually claims the gesture arena for genuine multi-touch
-                // pinches, so single-finger scrolling underneath is
-                // unaffected (the same technique this app already uses for
-                // InteractiveViewer elsewhere).
-                child: GestureDetector(
-                  onScaleStart: _onScaleStart,
-                  onScaleUpdate: _onScaleUpdate,
-                  onScaleEnd: _onScaleEnd,
+                // just the grid, via a raw Listener (see the pointer
+                // tracking fields/methods above) that never enters the
+                // gesture arena, so single-finger scrolling underneath is
+                // never contested or misread as a pinch.
+                child: Listener(
+                  onPointerDown: _onPointerDown,
+                  onPointerMove: _onPointerMove,
+                  onPointerUp: _onPointerUpOrCancel,
+                  onPointerCancel: _onPointerUpOrCancel,
                   child: CustomScrollView(
                     slivers: [
                     // Deliberately NOT gated on _selectMode — entering
@@ -2115,46 +2158,63 @@ class _MemoriesTab extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                      childAspectRatio: 0.85,
+                  // AnimatedSwitcher rather than swapping crossAxisCount in
+                  // place — GridView doesn't animate a layout change on its
+                  // own, so pinch-zooming used to snap tiles to their new
+                  // size/position instantly. Keying on `columns` crossfades
+                  // + scales between the old and new grid every time the
+                  // column count actually changes, so the resize itself
+                  // reads as a smooth zoom instead of a jump-cut.
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, anim) => FadeTransition(
+                      opacity: anim,
+                      child: ScaleTransition(scale: anim, child: child),
                     ),
-                    itemCount: entry.value.length,
-                    itemBuilder: (ctx, i) {
-                      final memory = entry.value[i];
-                      return _MemoryTile(
-                        memory: memory,
-                        accent: accent,
-                        myUid: myUid,
-                        selectMode: selectMode,
-                        selected: selectedIds.contains(memory.id),
-                        onTap: selectMode
-                            ? () => onSelectToggle(memory.id)
-                            // Videos used to open a separate bare-bones
-                            // player with none of the swipe/comments/
-                            // forward/export/progress-bar features below —
-                            // now both media types go through the same
-                            // detail screen.
-                            : () => context.push('/memory/${memory.id}'),
-                        onFavorite: selectMode
-                            ? () {}
-                            : () async {
-                                if (coupleId.isEmpty) return;
-                                await ref
-                                    .read(firestoreServiceProvider)
-                                    .toggleFavoriteMemory(coupleId, memory.id,
-                                        !memory.favorite);
-                              },
-                        onLongPress: coupleId.isNotEmpty
-                            ? () => onLongPress(memory, myUid, coupleId)
-                            : null,
-                      ).animate().fadeIn(delay: Duration(milliseconds: i * 30));
-                    },
+                    child: GridView.builder(
+                      key: ValueKey(columns),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                        childAspectRatio: 0.85,
+                      ),
+                      itemCount: entry.value.length,
+                      itemBuilder: (ctx, i) {
+                        final memory = entry.value[i];
+                        return _MemoryTile(
+                          memory: memory,
+                          accent: accent,
+                          myUid: myUid,
+                          selectMode: selectMode,
+                          selected: selectedIds.contains(memory.id),
+                          onTap: selectMode
+                              ? () => onSelectToggle(memory.id)
+                              // Videos used to open a separate bare-bones
+                              // player with none of the swipe/comments/
+                              // forward/export/progress-bar features below —
+                              // now both media types go through the same
+                              // detail screen.
+                              : () => context.push('/memory/${memory.id}'),
+                          onFavorite: selectMode
+                              ? () {}
+                              : () async {
+                                  if (coupleId.isEmpty) return;
+                                  await ref
+                                      .read(firestoreServiceProvider)
+                                      .toggleFavoriteMemory(coupleId, memory.id,
+                                          !memory.favorite);
+                                },
+                          onLongPress: coupleId.isNotEmpty
+                              ? () => onLongPress(memory, myUid, coupleId)
+                              : null,
+                        ).animate().fadeIn(delay: Duration(milliseconds: i * 30));
+                      },
+                    ),
                   ),
                 ],
               ),

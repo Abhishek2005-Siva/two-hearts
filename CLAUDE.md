@@ -168,7 +168,19 @@ Android emulator and no physical device attached**. In that situation:
   screen gained, on top of its existing swipe-between-memories/view-count/
   details-sheet: a `VideoProgressIndicator` + 3-zone tap (left third
   seeks -10s, middle toggles play/pause, right third seeks +10s, see
-  `_VideoPageItem`); a comments thread (`_CommentsPill`/`_CommentsSheet`,
+  `_VideoPageItem`), plus an explicit control row (position/duration
+  text, frame-step back/forward, play/pause, a cycling 0.5x/1x/1.5x/2x
+  speed pill via `_ctrl.setPlaybackSpeed`) and a center play icon that
+  only shows while paused, since the 3-zone tap alone gave no visual
+  feedback that anything had (or hadn't) paused. "Frame" stepping is a
+  fixed 1/30s seek, not a true single-frame step — `video_player` has no
+  API exposing a source's actual frame rate, so this is a labeled
+  approximation, not a real per-frame seek; a comment in the code says so.
+  All of these bottom-anchored overlays (progress bar, control row,
+  comments pill, swipe-up-for-Details handle) have fixed pixel offsets
+  chosen to not collide with each other — if you touch any of their
+  paddings, re-check the others. The screen also gained a comments thread
+  (`_CommentsPill`/`_CommentsSheet`,
   `addMemoryComment`/`watchMemoryComments`/`memoryCommentsProvider` — same
   attribution + notification shape as the Daily Snap Calendar's comments);
   and a "⋮" overflow menu with **Forward to Chat** (`sendMessage` with
@@ -225,14 +237,28 @@ Android emulator and no physical device attached**. In that situation:
   fill the cell. **Don't reintroduce this** — always use only one
   dimension unless the target box is guaranteed to match the source's
   aspect ratio.
-  **Pinch-to-zoom grid density**: the wall's `GestureDetector` (wrapping
-  the whole `CustomScrollView`, same "only claims multi-touch, leaves
-  single-finger scroll alone" technique as `InteractiveViewer` elsewhere)
-  drives `_gridColumns` (3–6, persisted in SharedPreferences under
-  `memory_grid_columns`), threaded into `_MemoriesTab`'s `columns` param
-  and from there into the grid's `crossAxisCount`. Wraps the scroll view
-  rather than just the grid so the same gesture works regardless of
-  which section is under your fingers.
+  **Pinch-to-zoom grid density**: drives `_gridColumns` (3–6, persisted in
+  SharedPreferences under `memory_grid_columns`), threaded into
+  `_MemoriesTab`'s `columns` param and from there into the grid's
+  `crossAxisCount`. **Tried `GestureDetector(onScaleStart/Update/End)`
+  wrapping the `CustomScrollView` first — real bug, don't reintroduce
+  it.** `ScaleGestureRecognizer` starts tracking from the very first
+  finger down (behaving exactly like a pan gesture at scale 1.0 until a
+  second finger arrives), so it competes with the `CustomScrollView`'s
+  own vertical drag recognizer in the gesture arena for perfectly
+  ordinary one-finger scrolling — which is what caused "sometimes it
+  thinks I'm scrolling [when pinching]". Fixed by replacing it with a
+  `Listener` (raw pointer events, never enters the gesture arena) that
+  tracks pointers itself in `_activePointers` and only ever computes a
+  pinch scale once a genuine second finger is down — single-finger
+  scrolling is now never contested at all. (`InteractiveViewer`
+  elsewhere in the app, e.g. the photo zoom below, isn't affected by this
+  — it isn't layered on top of a competing scrollable the way this grid
+  is, so the comparison drawn earlier between the two was wrong.) Column
+  changes animate via an `AnimatedSwitcher` (fade+scale, keyed on
+  `columns`) wrapping each date-group's `GridView.builder` — `GridView`
+  doesn't animate a `crossAxisCount` change on its own, so this used to
+  snap tiles to their new size/position instantly.
   **Comments open two ways**: tapping the `_CommentsPill`, or swiping
   down anywhere on the top bar (mirrors the existing swipe-up-for-Details
   handle at the bottom, both deliberately kept as *dedicated* hit targets

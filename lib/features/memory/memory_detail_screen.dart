@@ -622,6 +622,15 @@ class _VideoPageItem extends StatefulWidget {
 class _VideoPageItemState extends State<_VideoPageItem> {
   late final VideoPlayerController _ctrl;
   bool _initialized = false;
+  // video_player exposes no frame-rate metadata (no plugin API surfaces
+  // it), so true frame-accurate stepping isn't something this can honestly
+  // claim. This steps by a fixed 1/30s instead — the common default frame
+  // duration for casual phone video — labeled "frame" in the UI as a
+  // practical, close-enough approximation rather than an exact single
+  // frame on every source.
+  static const _frameStep = Duration(milliseconds: 33);
+  static const _speeds = [0.5, 1.0, 1.5, 2.0];
+  int _speedIndex = 1;
 
   @override
   void initState() {
@@ -651,6 +660,26 @@ class _VideoPageItemState extends State<_VideoPageItem> {
         : (target > _ctrl.value.duration ? _ctrl.value.duration : target);
     HapticFeedback.lightImpact();
     await _ctrl.seekTo(clamped);
+  }
+
+  // Frame-stepping only makes sense paused — same convention as VLC/most
+  // desktop players' frame-step buttons, which pause playback if it was
+  // running rather than nudging a moving video by one frame.
+  Future<void> _stepFrame(int direction) async {
+    if (_ctrl.value.isPlaying) await _ctrl.pause();
+    await _seek(_frameStep * direction);
+  }
+
+  void _cycleSpeed() {
+    setState(() => _speedIndex = (_speedIndex + 1) % _speeds.length);
+    _ctrl.setPlaybackSpeed(_speeds[_speedIndex]);
+    HapticFeedback.selectionClick();
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
@@ -696,8 +725,31 @@ class _VideoPageItemState extends State<_VideoPageItem> {
             ],
           ),
         ),
+        // A big center play icon while paused — the 3-zone tap above has
+        // no visual feedback of its own, so pausing used to give no
+        // indication of *why* nothing is moving.
+        ValueListenableBuilder<VideoPlayerValue>(
+          valueListenable: _ctrl,
+          builder: (context, value, _) {
+            if (value.isPlaying) return const SizedBox.shrink();
+            return IgnorePointer(
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: const BoxDecoration(
+                      color: Colors.black45, shape: BoxShape.circle),
+                  child: const Icon(Icons.play_arrow_rounded,
+                      color: Colors.white, size: 40),
+                ),
+              ),
+            );
+          },
+        ),
+        // Both sit well above the comments pill (bottom ~94-134, see below)
+        // and the swipe-up Details handle (bottom 0-~87) so none of these
+        // bottom-anchored overlays collide.
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 206),
           child: VideoProgressIndicator(
             _ctrl,
             allowScrubbing: true,
@@ -706,6 +758,66 @@ class _VideoPageItemState extends State<_VideoPageItem> {
               bufferedColor: Colors.white38,
               backgroundColor: Colors.white24,
             ),
+          ),
+        ),
+        // Explicit playback controls: frame-step back/forward (pauses
+        // first, same convention as desktop video editors), play/pause,
+        // current position / duration, and a cycling speed control.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 160),
+          child: ValueListenableBuilder<VideoPlayerValue>(
+            valueListenable: _ctrl,
+            builder: (context, value, _) {
+              return Row(
+                children: [
+                  Text('${_fmt(value.position)} / ${_fmt(value.duration)}',
+                      style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.skip_previous_rounded,
+                        color: Colors.white, size: 22),
+                    tooltip: 'Previous frame',
+                    onPressed: () => _stepFrame(-1),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                        value.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 26),
+                    onPressed: () =>
+                        value.isPlaying ? _ctrl.pause() : _ctrl.play(),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.skip_next_rounded,
+                        color: Colors.white, size: 22),
+                    tooltip: 'Next frame',
+                    onPressed: () => _stepFrame(1),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: _cycleSpeed,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black45,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text('${_speeds[_speedIndex]}x',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ],
