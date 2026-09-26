@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/delight/couple_character.dart';
+import '../../core/delight/delight.dart';
 import '../../core/firebase/models.dart';
 import '../../core/providers/providers.dart';
 import '../../core/utils/cloudinary_service.dart';
@@ -225,6 +226,13 @@ class DailySnapCalendarScreen extends ConsumerStatefulWidget {
 class _DailySnapCalendarScreenState extends ConsumerState<DailySnapCalendarScreen> {
   bool _uploading = false;
   bool _wasBothCompleteToday = false;
+  // Guards the in-app celebration burst from firing again on every rebuild
+  // while the streak sits at the same 7-day multiple — the Firestore-backed
+  // notification itself is separately deduped in FirestoreService against
+  // CoupleModel.celebratedStreakMilestone, but that check happens after an
+  // async read, so this is needed to stop the burst animation from
+  // re-triggering many times before that resolves.
+  int _lastAnimatedMilestone = 0;
   final _scrollController = ScrollController();
   final Map<DateTime, GlobalKey> _monthKeys = {};
   bool _didJumpToCurrentMonth = false;
@@ -313,6 +321,28 @@ class _DailySnapCalendarScreenState extends ConsumerState<DailySnapCalendarScree
       _wasBothCompleteToday = true;
     } else if (!bothPostedToday) {
       _wasBothCompleteToday = false;
+    }
+
+    // A small surprise every 7 days on the streak — separate from the
+    // bigger 30/100/365-day visual evolution tiers below, which stay as
+    // they are. celebratedStreakMilestone (Firestore, shared) is the real
+    // guard against re-notifying; _lastAnimatedMilestone (local) just stops
+    // the burst from firing repeatedly before that async check resolves.
+    final couple = ref.watch(coupleProvider).valueOrNull;
+    if (streak > 0 &&
+        streak % 7 == 0 &&
+        streak > (couple?.celebratedStreakMilestone ?? 0) &&
+        streak != _lastAnimatedMilestone) {
+      _lastAnimatedMilestone = streak;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        DelightHaptics.thud();
+        FloatingStickers.burst(context, stickers: const ['🎉', '💗', '✨'], count: 8);
+        final coupleId = ref.read(coupleIdProvider);
+        if (coupleId != null) {
+          ref.read(firestoreServiceProvider).notifyStreakMilestone(coupleId, streak).ignore();
+        }
+      });
     }
 
     final totalMemories = snaps.fold<int>(0, (sum, s) => sum + s.entries.length);

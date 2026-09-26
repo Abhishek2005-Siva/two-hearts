@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import '../firebase/firestore_service.dart';
 import '../firebase/models.dart';
 
@@ -458,3 +459,12 @@ final unoGameProvider = StreamProvider<UnoGame>((ref) {
   }
   return ref.read(firestoreServiceProvider).watchUnoGame(coupleId);
 });
+
+// ── Shared media received from another app ──────────────────────────────
+// Populated by main.dart's receive_sharing_intent listeners; read/cleared
+// by ShareImportScreen. Plain StateProvider — this is transient hand-off
+// state for one screen, not couple data, so it doesn't belong in Firestore
+// or need a Notifier.
+
+final pendingSharedMediaProvider =
+    StateProvider<List<SharedMediaFile>>((ref) => []);

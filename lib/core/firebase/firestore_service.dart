@@ -139,6 +139,31 @@ class FirestoreService {
         if (customUrl == null) 'chatBackgroundUrl': FieldValue.delete(),
       });
 
+  /// A small surprise for hitting a new 7-day Daily Snap Calendar streak
+  /// milestone (7, 14, 21, ...) — distinct from the bigger 30/100/365-day
+  /// visual evolution tiers already on that screen. Gated by
+  /// [CoupleModel.celebratedStreakMilestone] so whichever device notices
+  /// the streak first is the only one that fires it, and it never re-fires
+  /// for a milestone already celebrated.
+  Future<void> notifyStreakMilestone(String coupleId, int milestone) async {
+    final doc = await _db.collection('couples').doc(coupleId).get();
+    final already = (doc.data()?['celebratedStreakMilestone'] as num?)?.toInt() ?? 0;
+    if (milestone <= already) return;
+    await _db.collection('couples').doc(coupleId).update({
+      'celebratedStreakMilestone': milestone,
+    });
+    // recordNotification pushes to the partner and writes one inbox entry
+    // in the couple's shared notifications collection — visible to both of
+    // you, not just whoever's device happened to notice the streak first.
+    await recordNotification(
+      coupleId,
+      type: 'streak_milestone',
+      title: '🎉 $milestone-day streak!',
+      body: "You two have posted a memory every day for $milestone days ♡",
+      route: '/calendar',
+    );
+  }
+
   // ── Presence ──────────────────────────────────────────────────────────────
 
   /// Heartbeat — called every ~30 s while the app is in the foreground, and
@@ -907,10 +932,19 @@ class FirestoreService {
     String dateKey,
     String uid,
     String? emoji,
-  ) {
+  ) async {
     final ref = _dailySnapDoc(coupleId, dateKey).collection('reactions').doc(uid);
     if (emoji == null) return ref.delete();
-    return ref.set({'emoji': emoji, 'sentAt': FieldValue.serverTimestamp()});
+    await ref.set({'emoji': emoji, 'sentAt': FieldValue.serverTimestamp()});
+    // Only notify on an actual reaction, never on clearing one.
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'daily_snap_reaction',
+      title: '$emoji $name reacted to your day',
+      body: 'Tap to see it',
+      route: '/calendar/day/$dateKey',
+    );
   }
 
   Stream<List<Map<String, dynamic>>> watchDailySnapReactions(
@@ -926,12 +960,21 @@ class FirestoreService {
     String coupleId,
     String dateKey,
     String text,
-  ) =>
-      _dailySnapDoc(coupleId, dateKey).collection('comments').add({
-        'uid': _uid,
-        'text': text,
-        'sentAt': FieldValue.serverTimestamp(),
-      });
+  ) async {
+    await _dailySnapDoc(coupleId, dateKey).collection('comments').add({
+      'uid': _uid,
+      'text': text,
+      'sentAt': FieldValue.serverTimestamp(),
+    });
+    final name = await _myFirstName();
+    await recordNotification(
+      coupleId,
+      type: 'daily_snap_comment',
+      title: '💬 $name commented on your day',
+      body: text,
+      route: '/calendar/day/$dateKey',
+    );
+  }
 
   Stream<List<Map<String, dynamic>>> watchDailySnapComments(
     String coupleId,

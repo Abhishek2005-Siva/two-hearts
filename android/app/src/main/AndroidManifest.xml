@@ -48,6 +48,30 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="twohearts"/>
             </intent-filter>
+            <!-- Receive photos/videos shared from another app (gallery, Files,
+                 etc.) via the system share sheet — see receive_sharing_intent
+                 usage in main.dart / share_import_screen.dart. Scoped to
+                 image/video only, matching what Memories can actually store. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="video/*"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="video/*"/>
+            </intent-filter>
         </activity>
         <!-- Spotify OAuth (flutter_web_auth_2) callback:
              twohearts-spotify://callback -->

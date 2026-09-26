@@ -52,6 +52,15 @@ These were configured but never exercised, because iOS can't be built here:
   missing.
 - **Screen sharing**: `FOREGROUND_SERVICE_MEDIA_PROJECTION` is an Android
   concept; the iOS equivalent is ReplayKit and is not implemented.
+- **Share-to-app (receive_sharing_intent)**: Android side is done (the
+  `SEND`/`SEND_MULTIPLE` intent-filters in `AndroidManifest.xml`, plus the
+  `ShareImportScreen` flow). iOS needs a genuinely separate Xcode step this
+  sandbox can't do: File → New → Target → "Share Extension" in Xcode, then
+  the `Info.plist`/`Runner.entitlements`/App Group wiring the package's own
+  README spells out (`~/.pub-cache/.../receive_sharing_intent-*/README.md`
+  has the exact plist snippets). Without that extension, sharing a photo
+  into this app from iOS's share sheet just won't offer it as a target —
+  no crash, it simply won't appear.
 - **Deployment target** is 13.0. If CocoaPods complains about a Firebase
   pod needing something newer, raise it in both the Podfile and Xcode's
   Runner target.

@@ -24,6 +24,7 @@ import '../../features/games/uno_screen.dart';
 import '../../features/games/date_ideas_screen.dart';
 import '../../features/chat/snaps_screen.dart';
 import '../../features/memory/photo_booth_screen.dart';
+import '../../features/memory/share_import_screen.dart';
 import '../../features/together/bucket_list_screen.dart';
 import '../../features/together/wildcards_screen.dart';
 import '../../features/together/shared_note_screen.dart';
@@ -149,6 +150,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
       // Fullscreen — outside the shell so the bottom nav never overlaps the movie.
       GoRoute(path: '/cinema', builder: (_, _) => const CinemaScreen()),
+      // Reached from main.dart's receive_sharing_intent listeners regardless
+      // of which tab is currently active — outside the shell for the same
+      // reason as /cinema.
+      GoRoute(path: '/share-import', builder: (_, _) => const ShareImportScreen()),
       // StatefulShellRoute (not a plain ShellRoute) — each branch below gets
       // its own independent Navigator, so pushed screens (a book reader
       // under Fun, a memory detail under Memories, etc.) stay exactly where

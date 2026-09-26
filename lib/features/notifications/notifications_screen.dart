@@ -20,6 +20,9 @@ String _typeEmoji(String type) => switch (type) {
       'place' => '📍',
       'letter' => '💌',
       'daily_snap' => '📸',
+      'daily_snap_comment' => '💬',
+      'daily_snap_reaction' => '❤️',
+      'streak_milestone' => '🎉',
       'reminiscing' => '🥺',
       _ => '✨',
     };

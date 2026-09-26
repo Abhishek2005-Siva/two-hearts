@@ -105,6 +105,13 @@ class CoupleModel {
   final String? chatBackground;
   final String? chatBackgroundUrl;
 
+  /// The highest Daily Snap Calendar streak length (a multiple of 7) this
+  /// couple has already gotten a "weekly surprise" celebration for — so the
+  /// same 7-day threshold doesn't re-fire the celebration on every screen
+  /// rebuild while the streak sits at that length. See
+  /// `DailySnapCalendarScreen`/`FirestoreService.notifyStreakMilestone`.
+  final int celebratedStreakMilestone;
+
   const CoupleModel({
     required this.id,
     required this.members,
@@ -114,6 +121,7 @@ class CoupleModel {
     this.inviteCode,
     this.chatBackground,
     this.chatBackgroundUrl,
+    this.celebratedStreakMilestone = 0,
   });
 
   factory CoupleModel.fromDoc(DocumentSnapshot doc) {
@@ -127,6 +135,7 @@ class CoupleModel {
       inviteCode: d['inviteCode'],
       chatBackground: d['chatBackground'] as String?,
       chatBackgroundUrl: d['chatBackgroundUrl'] as String?,
+      celebratedStreakMilestone: (d['celebratedStreakMilestone'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -138,6 +147,7 @@ class CoupleModel {
         'inviteCode': inviteCode,
         if (chatBackground != null) 'chatBackground': chatBackground,
         if (chatBackgroundUrl != null) 'chatBackgroundUrl': chatBackgroundUrl,
+        'celebratedStreakMilestone': celebratedStreakMilestone,
       };
 
   String partnerUid(String myUid) =>

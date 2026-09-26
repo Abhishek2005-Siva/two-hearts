@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'core/globals.dart';
@@ -118,6 +120,8 @@ class TwoHeartsApp extends ConsumerStatefulWidget {
 }
 
 class _TwoHeartsAppState extends ConsumerState<TwoHeartsApp> {
+  StreamSubscription<List<SharedMediaFile>>? _shareSub;
+
   @override
   void initState() {
     super.initState();
@@ -141,6 +145,29 @@ class _TwoHeartsAppState extends ConsumerState<TwoHeartsApp> {
         WidgetsBinding.instance
             .addPostFrameCallback((_) => _handleNotificationTap(m));
       }
+    });
+
+    // Photos/videos shared into the app from elsewhere (gallery, Files,
+    // another app's share sheet) — see ShareImportScreen for the confirm
+    // step. Two entry points: already-running (stream) and cold-start
+    // (getInitialMedia), same as every other receive_sharing_intent setup.
+    _shareSub = ReceiveSharingIntent.instance.getMediaStream().listen(_handleSharedMedia);
+    ReceiveSharingIntent.instance.getInitialMedia().then(_handleSharedMedia);
+  }
+
+  @override
+  void dispose() {
+    _shareSub?.cancel();
+    super.dispose();
+  }
+
+  void _handleSharedMedia(List<SharedMediaFile> files) {
+    final usable =
+        files.where((f) => f.type == SharedMediaType.image || f.type == SharedMediaType.video).toList();
+    if (usable.isEmpty) return;
+    ref.read(pendingSharedMediaProvider.notifier).state = usable;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(routerProvider).go('/share-import');
     });
   }
 

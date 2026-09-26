@@ -340,6 +340,42 @@ void showGiveWildcardSheet(BuildContext context, WidgetRef ref, {WildcardRequest
   );
 }
 
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.rose.withValues(alpha: 0.18) : AppColors.bgCard,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: selected ? AppColors.rose : AppColors.divider, width: selected ? 1.2 : 0.5),
+        ),
+        alignment: Alignment.center,
+        child: Text('$label ($count)',
+            style: TextStyle(
+                color: selected ? AppColors.rose : AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600)),
+      ),
+    );
+  }
+}
+
 class _ModeTab extends StatelessWidget {
   final String label;
   final bool selected;
@@ -378,8 +414,12 @@ class WildcardsScreen extends ConsumerStatefulWidget {
   ConsumerState<WildcardsScreen> createState() => _WildcardsScreenState();
 }
 
+enum _CardFilter { all, fromMe, forMe }
+
 class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
     with ActivityAnnouncer {
+  _CardFilter _filter = _CardFilter.all;
+
   @override
   void initState() {
     super.initState();
@@ -540,6 +580,13 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
             .toList()
         : const <WildcardRequest>[];
     final redeemedCount = cards.where((c) => c.redeemed).length;
+    final fromMeCount = cards.where((c) => c.givenBy == uid).length;
+    final forMeCount = cards.length - fromMeCount;
+    final visibleCards = switch (_filter) {
+      _CardFilter.all => cards,
+      _CardFilter.fromMe => cards.where((c) => c.givenBy == uid).toList(),
+      _CardFilter.forMe => cards.where((c) => c.givenBy != uid).toList(),
+    };
 
     return Scaffold(
       body: Container(
@@ -575,7 +622,7 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
                           Text(
                             cards.isEmpty
                                 ? 'Special favors, just for us'
-                                : '${cards.length} given · $redeemedCount redeemed',
+                                : '$fromMeCount from you · $forMeCount for you · $redeemedCount redeemed',
                             style: const TextStyle(
                                 color: AppColors.textSecondary, fontSize: 12),
                           ),
@@ -670,6 +717,33 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
                           ),
                         ),
                     ],
+                    if (cards.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                              child: _FilterChip(
+                                  label: 'All',
+                                  count: cards.length,
+                                  selected: _filter == _CardFilter.all,
+                                  onTap: () => setState(() => _filter = _CardFilter.all))),
+                          const SizedBox(width: 8),
+                          Expanded(
+                              child: _FilterChip(
+                                  label: 'From you',
+                                  count: fromMeCount,
+                                  selected: _filter == _CardFilter.fromMe,
+                                  onTap: () => setState(() => _filter = _CardFilter.fromMe))),
+                          const SizedBox(width: 8),
+                          Expanded(
+                              child: _FilterChip(
+                                  label: 'For you',
+                                  count: forMeCount,
+                                  selected: _filter == _CardFilter.forMe,
+                                  onTap: () => setState(() => _filter = _CardFilter.forMe))),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     if (cards.isEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 60),
@@ -688,8 +762,20 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
                           ],
                         ),
                       )
+                    else if (visibleCards.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 40),
+                        child: Center(
+                          child: Text(
+                            _filter == _CardFilter.fromMe
+                                ? "You haven't given any yet"
+                                : "They haven't given any yet",
+                            style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                          ),
+                        ),
+                      )
                     else
-                      for (final card in cards)
+                      for (final card in visibleCards)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 14),
                           child: _PlayingCardTile(

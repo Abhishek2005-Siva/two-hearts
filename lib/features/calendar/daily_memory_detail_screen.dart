@@ -74,6 +74,9 @@ class _DailyMemoryDetailScreenState extends ConsumerState<DailyMemoryDetailScree
     final comments = ref.watch(dailySnapCommentsProvider(widget.dateKey)).valueOrNull ?? [];
     final myUid = FirebaseAuth.instance.currentUser?.uid;
     final myReaction = reactions.where((r) => r['id'] == myUid).firstOrNull?['emoji'] as String?;
+    final partnerName =
+        ref.watch(partnerUserProvider).valueOrNull?.displayName.split(' ').first ?? 'Them';
+    String nameFor(String? uid) => uid == myUid ? 'You' : partnerName;
 
     final date = DateTime.tryParse(widget.dateKey) ?? DateTime.now();
 
@@ -132,6 +135,13 @@ class _DailyMemoryDetailScreenState extends ConsumerState<DailyMemoryDetailScree
                       );
                     }).toList(),
                   ),
+                  if (reactions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      reactions.map((r) => '${r['emoji']} ${nameFor(r['id'] as String?)}').join('  ·  '),
+                      style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   const Text('Comments',
                       style: TextStyle(
@@ -151,9 +161,20 @@ class _DailyMemoryDetailScreenState extends ConsumerState<DailyMemoryDetailScree
                               color: AppColors.bgCardLight,
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: Text(c['text'] as String? ?? '',
-                                style: const TextStyle(
-                                    color: AppColors.textPrimary, fontSize: 13)),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(nameFor(c['uid'] as String?),
+                                    style: const TextStyle(
+                                        color: AppColors.rose,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700)),
+                                const SizedBox(height: 3),
+                                Text(c['text'] as String? ?? '',
+                                    style: const TextStyle(
+                                        color: AppColors.textPrimary, fontSize: 13)),
+                              ],
+                            ),
                           ),
                         )),
                 ],

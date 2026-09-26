@@ -329,3 +329,144 @@ exports.remindMissingDailySnap = onSchedule(
     );
   }
 );
+
+// ── 7. "You two haven't talked today" reminder ────────────────────────────
+// Runs once daily. For each couple, checks the timestamp of their most
+// recent chat message; if it's more than 24h old (or there's never been
+// one), nudges BOTH partners — this is the one notification in this file
+// that goes to both members instead of just "the other one."
+
+exports.remindNoContactToday = onSchedule(
+  {
+    schedule: '0 9 * * *', // 09:00 every day
+    timeZone: 'Asia/Kolkata',
+  },
+  async () => {
+    const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+    const couples = await db.collection('couples').get();
+
+    await Promise.all(
+      couples.docs.map(async (coupleDoc) => {
+        const coupleId = coupleDoc.id;
+        const members = coupleDoc.data().members ?? [];
+        if (members.length < 2) return;
+
+        const lastMsgSnap = await db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('messages')
+          .orderBy('sentAt', 'desc')
+          .limit(1)
+          .get();
+
+        if (!lastMsgSnap.empty) {
+          const lastSentAt = lastMsgSnap.docs[0].data().sentAt;
+          const lastMs = lastSentAt?.toMillis?.();
+          if (lastMs != null && lastMs > cutoffMs) return; // talked within 24h
+        }
+
+        await Promise.all(
+          members.map(async (uid) => {
+            const token = await getToken(uid);
+            if (!token) return;
+            await sendNotification(token, {
+              title: "You two haven't talked today 💌",
+              body: 'Send them something — even just a hi ♡',
+              data: {
+                type: 'noContactReminder',
+                coupleId,
+                route: '/chat',
+              },
+            });
+          })
+        );
+      })
+    );
+  }
+);
+
+// ── 8. Random "remember this?" favorite-memory nudge ──────────────────────
+// Runs hourly, but only actually sends once per couple per day, at an hour
+// that's picked pseudo-randomly per couple-per-day (a simple string hash of
+// coupleId+date, so it's stable across the 24 hourly checks that day but
+// different from one day to the next) — real per-second randomness isn't
+// something Cloud Scheduler can express, so this is the practical
+// approximation: unpredictable which hour, never more than once a day.
+// Sends nothing if the couple has no favorited memory yet.
+
+function pseudoRandomHour(seed) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return 9 + (h % 13); // 9am-9pm, never the middle of the night
+}
+
+exports.randomFavoriteMemoryReminder = onSchedule(
+  {
+    schedule: '0 * * * *', // every hour, on the hour
+    timeZone: 'Asia/Kolkata',
+  },
+  async () => {
+    const nowLocal = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
+    );
+    const dateKey = [
+      nowLocal.getFullYear(),
+      String(nowLocal.getMonth() + 1).padStart(2, '0'),
+      String(nowLocal.getDate()).padStart(2, '0'),
+    ].join('-');
+    const hour = nowLocal.getHours();
+
+    const couples = await db.collection('couples').get();
+
+    await Promise.all(
+      couples.docs.map(async (coupleDoc) => {
+        const coupleId = coupleDoc.id;
+        const members = coupleDoc.data().members ?? [];
+        if (members.length < 2) return;
+        if (hour !== pseudoRandomHour(`${coupleId}-${dateKey}`)) return;
+
+        // Dedupe against retries/overlap within the target hour.
+        const markerRef = db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('_internal')
+          .doc('lastMemoryPing');
+        const markerDoc = await markerRef.get();
+        if (markerDoc.exists && markerDoc.data().dateKey === dateKey) return;
+
+        const favSnap = await db
+          .collection('couples')
+          .doc(coupleId)
+          .collection('memories')
+          .where('favorite', '==', true)
+          .get();
+        if (favSnap.empty) return;
+
+        const pick = favSnap.docs[Math.floor(Math.random() * favSnap.docs.length)];
+        const memory = pick.data();
+        await markerRef.set({ dateKey, memoryId: pick.id });
+
+        await Promise.all(
+          members.map(async (uid) => {
+            const token = await getToken(uid);
+            if (!token) return;
+            await sendNotification(token, {
+              title: '✨ Remember this?',
+              body: memory.caption && memory.caption.trim()
+                ? memory.caption
+                : 'A favorite memory of yours, from a while back ♡',
+              data: {
+                type: 'memoryReminder',
+                coupleId,
+                memoryId: pick.id,
+                route: `/memory/${pick.id}`,
+              },
+            });
+          })
+        );
+      })
+    );
+  }
+);

@@ -128,6 +128,23 @@ Android emulator and no physical device attached**. In that situation:
 - `/chat` — main chat, snaps, whispers, voice notes, replies/edits,
   read-receipts (see gotcha below), backgrounds.
 - `/memory`, `/memory/:id` — photo/video wall, collections, favorites.
+- `/share-import` — outside the shell (like `/cinema`): reached when a
+  photo/video is shared into the app from elsewhere (Android share
+  sheet → `receive_sharing_intent`, see `main.dart`'s listeners), shows a
+  thumbnail grid and adds them all to Memories on confirm. Android only —
+  iOS needs a separate Xcode Share Extension target, see `IOS_SETUP.md`.
+- `/calendar`, `/calendar/day/:dateKey` — Daily Snap Calendar
+  (`daily_snap_calendar_screen.dart`/`daily_memory_detail_screen.dart`):
+  each partner posts one photo/day, a real (not fabricated) consecutive-
+  day streak with visual evolution tiers at 7/30/100/365 days
+  (`_EvolutionTier`), plus a separate small in-app celebration + real
+  notification every 7-day multiple (`FirestoreService
+  .notifyStreakMilestone`, gated by `CoupleModel.celebratedStreakMilestone`
+  so it only fires once per threshold). The day-detail screen has
+  emoji reactions and a comment thread — both show who did it (`nameFor`
+  helper resolving `uid` → "You"/partner's name) and both notify the
+  other partner (`addDailySnapComment`/`setDailySnapReaction` in
+  `firestore_service.dart` call `recordNotification` internally).
 - `/together` — hub screen linking to Journal, Letters, Games, Movie
   Night (`/cinema`), Bucket List, Destinations, Books, **Recipes**,
   **Wildcards**, **YouTube** (`/together/youtube`), Quick Picks (Random
@@ -164,7 +181,15 @@ Android emulator and no physical device attached**. In that situation:
   (approval opens the same compose flow) or declines. This gating is
   client-side only (no Firestore security rule enforcement) — acceptable
   for this app's threat model, same pattern as the `dev_builds` FCM topic
-  gate in `main.dart`.
+  gate in `main.dart`. The card list is always the full shared history
+  (both directions, both partners can already see every card given
+  either way) with an All/From you/For you filter row and a header stat
+  breakdown (`$fromMeCount from you · $forMeCount for you · $redeemedCount
+  redeemed`) — don't reintroduce a per-uid query filter on
+  `watchWildcards`, that would break "view each other's wildcards."
+  Notifications for a request now carry a `refId` (the wildcardRequests
+  doc id) so a still-pending one can show inline Accept/Decline buttons
+  right in the notification tile, not just a route to this screen.
 - `/books` — shared reading wishlist / read-together tracker with real
   PDF-in-app reading and per-partner page progress.
 - `/games`, `/dates`, `/places`, `/listen`, `/you`, `/notifications` —
@@ -210,6 +235,37 @@ Explicitly optimised once; keep these in mind when adding streams:
   and stores its last-sent timestamp in local SharedPreferences rather
   than Firestore, so the throttle check itself costs zero reads.
 
+## Cloud Functions (`functions/index.js`) — the other notification path
+
+Not everything routes through `FirestoreService.recordNotification`'s
+client-side inbox pattern. A second, older path lives in
+`functions/index.js` (Node 20, `firebase-functions` v2): Firestore-
+triggered functions (`onDocumentCreated`/`onDocumentWritten`) that send a
+**raw FCM push straight from the server**, with no in-app notifications-
+inbox entry — that's why chat messages, mood changes, "thinking of you"
+signals, and Daily Snap posts never show up on `/notifications`, while
+Wildcards/letters/daily-snap-comments (client-side `recordNotification`
+calls) do. Two kinds of trigger:
+- **Document-triggered**: `onNewMessage`, `onNewSignal`, `onMoodChange`,
+  `onNewHomeWidgetDrawing`, `onNewDailySnapEntry` — fire immediately when
+  the relevant doc is written.
+- **Scheduled** (`onSchedule`, Cloud Scheduler under the hood, all
+  `timeZone: 'Asia/Kolkata'`): `remindMissingDailySnap` (8pm, nudges
+  whoever hasn't posted today), `remindNoContactToday` (9am, nudges BOTH
+  partners if the last chat message is >24h old — the one function here
+  that notifies both members, not just "the other one"), and
+  `randomFavoriteMemoryReminder` (hourly, but only actually sends once a
+  day per couple at an hour picked pseudo-randomly from a hash of
+  coupleId+date — real random-time scheduling isn't something Cloud
+  Scheduler can express, so this is the practical approximation).
+- **Important**: this repo's CI (`build.yml`) never deploys these — there
+  is no `firebase deploy --only functions` step anywhere, and this
+  sandbox has no Firebase CLI/credentials to run one either. Editing
+  `functions/index.js` only takes effect once a human runs that deploy
+  themselves from a machine with the Firebase CLI logged in. Say this
+  explicitly when handing off a functions change — "the code is ready,
+  you still need to deploy it" — don't imply it's already live.
+
 ## Backup / export
 
 `/you` has a "Back up everything" button (`data_export_service.dart`)
@@ -226,7 +282,8 @@ background modes, but **nothing iOS has ever been compiled or run** —
 that needs macOS + Xcode, which the usual dev container doesn't have.
 See `IOS_SETUP.md` for the remaining Mac-only steps and known gaps (the
 home-screen drawing widget is Android-only; screen sharing uses
-MediaProjection with no ReplayKit equivalent).
+MediaProjection with no ReplayKit equivalent; receiving shared photos
+from other apps needs an Xcode Share Extension target not yet created).
 
 ## The shared 3D room (`/room/decorate`) — read this before touching it
 
