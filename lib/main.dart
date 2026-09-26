@@ -99,6 +99,35 @@ Future<void> _initNotifications() async {
   // We intentionally do NOT show a system notification when the app is active.
 }
 
+const _lastUidPrefsKey = 'last_signed_in_uid';
+
+/// The reason Firestore's own disk persistence used to be disabled
+/// outright: switching accounts on the same device could otherwise leave
+/// stale, permission-denied cached documents from the previous account
+/// lying around. Enabling persistence gives every other app open a real
+/// disk cache (faster loads, and screens that were recently viewed keep
+/// working with no network) — this just clears that cache the one time
+/// it's actually needed: when the signed-in uid at this launch differs
+/// from the one at the last launch. clearPersistence() must run before
+/// any Firestore listener attaches (it throws otherwise), which is
+/// exactly the window this occupies — before `runApp`.
+Future<void> _clearFirestoreCacheIfAccountChanged() async {
+  final prefs = await SharedPreferences.getInstance();
+  final lastUid = prefs.getString(_lastUidPrefsKey);
+  final currentUid = FirebaseAuth.instance.currentUser?.uid;
+  if (currentUid != null && lastUid != null && lastUid != currentUid) {
+    try {
+      await FirebaseFirestore.instance.clearPersistence();
+    } catch (_) {
+      // Best-effort — worst case is the rare stale-cache scenario this
+      // guards against, not worth blocking startup over.
+    }
+  }
+  if (currentUid != null) {
+    await prefs.setString(_lastUidPrefsKey, currentUid);
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([
@@ -106,8 +135,8 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
   await Firebase.initializeApp();
-  // Disable disk cache so switching accounts never causes stale-permission errors.
-  FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);
+  await _clearFirestoreCacheIfAccountChanged();
+  FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true);
   await _initNotifications();
   runApp(const ProviderScope(child: TwoHeartsApp()));
 }

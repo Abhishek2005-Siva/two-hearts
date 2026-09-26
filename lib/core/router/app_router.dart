@@ -73,9 +73,22 @@ class _RouterNotifier extends ChangeNotifier {
   // Stays false until coupleProvider emits its first non-loading value.
   // While false we suppress the /pair redirect to avoid a flash on auto sign-in.
   bool _coupleLoaded = false;
+  // Stays false until authStateChanges() emits its first value (whether
+  // that's a User or null) — i.e. until Firebase Auth has actually
+  // finished restoring/checking the persisted session, not just "hasn't
+  // reported a user yet". FirebaseAuth.instance.currentUser can be
+  // transiently null for an already-signed-in person on a slow
+  // connection while that restore is still in flight; redirecting to
+  // /auth off that transient null was the "laggy internet bounces me to
+  // the login/OTP screen" bug. While this is false the redirect waits,
+  // exactly like coupleLoaded already does for pairing status below.
+  bool _authLoaded = false;
+  bool _hasUser = false;
 
   _RouterNotifier(Ref ref) {
     FirebaseAuth.instance.authStateChanges().listen((user) {
+      _authLoaded = true;
+      _hasUser = user != null;
       // Reset loaded flag when the auth user changes so we wait for fresh data.
       if (user == null) {
         _coupleLoaded = false;
@@ -100,6 +113,8 @@ class _RouterNotifier extends ChangeNotifier {
 
   bool get isPaired => _isPaired;
   bool get coupleLoaded => _coupleLoaded;
+  bool get authLoaded => _authLoaded;
+  bool get hasUser => _hasUser;
 }
 
 final _routerNotifierProvider = Provider<_RouterNotifier>((ref) {
@@ -113,13 +128,19 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/room',
     refreshListenable: notifier,
     redirect: (context, state) {
-      final isAuth = FirebaseAuth.instance.currentUser != null;
       final isPaired = notifier.isPaired;
       final coupleLoaded = notifier.coupleLoaded;
 
       final onAuth = state.matchedLocation.startsWith('/auth') ||
           state.matchedLocation.startsWith('/pair') ||
           state.matchedLocation.startsWith('/onboarding');
+
+      // Firebase Auth hasn't reported its restored session yet — wait
+      // rather than trusting a transiently-null currentUser (see
+      // _authLoaded above). This is the fix for "laggy internet bounces
+      // me to the login/OTP screen."
+      if (!notifier.authLoaded) return null;
+      final isAuth = notifier.hasUser;
 
       // Not signed in → force to auth.
       if (!isAuth) return onAuth ? null : '/auth';

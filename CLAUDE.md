@@ -234,6 +234,17 @@ Explicitly optimised once; keep these in mind when adding streams:
   "they're going through your photos" nudge fires at most once per 6 h,
   and stores its last-sent timestamp in local SharedPreferences rather
   than Firestore, so the throttle check itself costs zero reads.
+- **Firestore disk persistence is ON** (`main.dart`, `Settings
+  (persistenceEnabled: true)`) — it used to be explicitly disabled to
+  avoid stale-permission errors when switching accounts on the same
+  device. Re-enabled for real load-speed and partial-offline benefit
+  (recently-viewed screens now work with no network), with that original
+  risk handled instead by `_clearFirestoreCacheIfAccountChanged()`: it
+  compares the signed-in uid against the one stored from the previous
+  launch (SharedPreferences key `last_signed_in_uid`) and calls
+  `clearPersistence()` — which must run before any Firestore listener
+  attaches, hence doing this before `runApp` — only on an actual account
+  change, not on every launch.
 
 ## Cloud Functions (`functions/index.js`) — the other notification path
 
