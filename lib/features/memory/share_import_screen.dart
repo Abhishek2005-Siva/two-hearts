@@ -29,12 +29,16 @@ class ShareImportScreen extends ConsumerStatefulWidget {
 
 class _ShareImportScreenState extends ConsumerState<ShareImportScreen> {
   bool _uploading = false;
+  int _uploadDone = 0;
 
   Future<void> _addAll(List<SharedMediaFile> files) async {
     final coupleId = ref.read(coupleIdProvider);
     final authUser = FirebaseAuth.instance.currentUser;
     if (coupleId == null || authUser == null || files.isEmpty) return;
-    setState(() => _uploading = true);
+    setState(() {
+      _uploading = true;
+      _uploadDone = 0;
+    });
     final firestoreService = ref.read(firestoreServiceProvider);
     final uploaderUid = authUser.uid;
 
@@ -74,6 +78,8 @@ class _ShareImportScreenState extends ConsumerState<ShareImportScreen> {
         }
       } catch (e) {
         errors.add(e.toString());
+      } finally {
+        if (mounted) setState(() => _uploadDone++);
       }
     }));
 
@@ -199,10 +205,25 @@ class _ShareImportScreenState extends ConsumerState<ShareImportScreen> {
                         },
                       ),
               ),
+              if (_uploading)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: files.isEmpty ? null : _uploadDone / files.length,
+                      minHeight: 6,
+                      backgroundColor: AppColors.bgCardLight,
+                      valueColor: const AlwaysStoppedAnimation(AppColors.rose),
+                    ),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                 child: GradientButton(
-                  label: _uploading ? 'Adding…' : 'Add to Memories',
+                  label: _uploading
+                      ? 'Adding $_uploadDone/${files.length}…'
+                      : 'Add to Memories',
                   cuteStickers: const ['📸', '✨'],
                   onTap: (_uploading || files.isEmpty) ? null : () => _addAll(files),
                 ),

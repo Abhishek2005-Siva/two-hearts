@@ -118,34 +118,63 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
     );
   }
 
-  Future<void> _exportToDevice(MemoryModel memory) async {
-    final messenger = ScaffoldMessenger.of(context);
+  // Streams the download instead of a plain http.get so a large video's
+  // save-to-photos can show real byte-level progress instead of sitting on
+  // an indeterminate spinner until the whole file lands.
+  Future<Uint8List> _downloadWithProgress(String url, ValueNotifier<double?> progress) async {
+    final client = http.Client();
     try {
-      final hasAccess = await Gal.hasAccess() || await Gal.requestAccess();
-      if (!hasAccess) {
-        messenger.showSnackBar(const SnackBar(
-            content: Text('Photo library access is needed to save this.'),
-            behavior: SnackBarBehavior.floating));
-        return;
-      }
-      final response = await http.get(Uri.parse(memory.imageUrl));
+      final response = await client.send(http.Request('GET', Uri.parse(url)));
       if (response.statusCode != 200) {
         throw Exception('Download failed (${response.statusCode})');
       }
+      final total = response.contentLength;
+      final bytes = <int>[];
+      await for (final chunk in response.stream) {
+        bytes.addAll(chunk);
+        progress.value = (total != null && total > 0) ? bytes.length / total : null;
+      }
+      return Uint8List.fromList(bytes);
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<void> _exportToDevice(MemoryModel memory) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final hasAccess = await Gal.hasAccess() || await Gal.requestAccess();
+    if (!hasAccess) {
+      if (!mounted) return;
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Photo library access is needed to save this.'),
+          behavior: SnackBarBehavior.floating));
+      return;
+    }
+    if (!mounted) return;
+    final progress = ValueNotifier<double?>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DownloadProgressDialog(progress: progress, label: 'Saving to your photos…'),
+    );
+    try {
+      final bytes = await _downloadWithProgress(memory.imageUrl, progress);
       if (memory.isVideo) {
         final dir = await getTemporaryDirectory();
         final file = File('${dir.path}/${const Uuid().v4()}.mp4');
-        await file.writeAsBytes(response.bodyBytes);
+        await file.writeAsBytes(bytes);
         await Gal.putVideo(file.path, album: 'Two Hearts');
         await file.delete().catchError((_) => file);
       } else {
-        await Gal.putImageBytes(response.bodyBytes, album: 'Two Hearts');
+        await Gal.putImageBytes(bytes, album: 'Two Hearts');
       }
       if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
       messenger.showSnackBar(const SnackBar(
           content: Text('Saved to your photos ♡'), behavior: SnackBarBehavior.floating));
     } catch (e) {
       if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
       messenger.showSnackBar(SnackBar(
         content: Text("Couldn't save: $e"),
         backgroundColor: Colors.redAccent,
@@ -351,73 +380,86 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
             },
           ),
 
-          // Top bar: back + counter
+          // Top bar: back + counter. Also doubles as the "swipe down to open
+          // comments" hit target — mirrors the swipe-up-for-Details handle
+          // below, and lives outside the photo Stack for the same reason
+          // that one does: InteractiveViewer's own pan/zoom would otherwise
+          // fight a vertical drag layered directly over the image.
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: EdgeInsets.fromLTRB(
-                  4, MediaQuery.of(context).padding.top + 4, 16, 8),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black54, Colors.transparent],
+            child: GestureDetector(
+              onVerticalDragEnd: (details) {
+                if (safeIndex < memories.length &&
+                    (details.primaryVelocity ?? 0) > 200) {
+                  _showComments(memories[safeIndex], myUid);
+                }
+              },
+              child: Container(
+                padding: EdgeInsets.fromLTRB(
+                    4, MediaQuery.of(context).padding.top + 4, 16, 8),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.black54, Colors.transparent],
+                  ),
                 ),
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        color: Colors.white),
-                    onPressed: () => context.pop(),
-                  ),
-                  const Spacer(),
-                  if (partnerUid != null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.remove_red_eye_outlined,
-                              color: Colors.white70, size: 15),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${memories[safeIndex].viewCountOf(partnerUid)}',
-                            style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white),
+                      onPressed: () => context.pop(),
                     ),
-                  if (memories.length > 1)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Text(
-                        '${safeIndex + 1} / ${memories.length}',
-                        style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500),
+                    const Spacer(),
+                    if (partnerUid != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.remove_red_eye_outlined,
+                                color: Colors.white70, size: 15),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${memories[safeIndex].viewCountOf(partnerUid)}',
+                              style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
                       ),
+                    if (memories.length > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Text(
+                          '${safeIndex + 1} / ${memories.length}',
+                          style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                      onPressed: () => _showMoreActions(memories[safeIndex]),
                     ),
-                  IconButton(
-                    icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-                    onPressed: () => _showMoreActions(memories[safeIndex]),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
 
           // Comments — a small persistent pill, expanding into a sheet on
-          // tap (see _showComments/_CommentsSheet) rather than a fixed
-          // inline block, so it doesn't compete with the swipe-up Details
-          // handle or the deletion banner for the same bottom-of-screen
-          // space on every single memory.
+          // tap (see _showComments/_CommentsSheet), or via swiping down
+          // anywhere on the top bar above, rather than a fixed inline
+          // block, so it doesn't compete with the swipe-up Details handle
+          // or the deletion banner for the same bottom-of-screen space on
+          // every single memory.
           if (safeIndex < memories.length)
             Positioned(
               left: 12,
@@ -950,6 +992,55 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Shown while saving a memory to the device's photos — real byte-level
+// progress via _downloadWithProgress's streamed response, falling back to
+// an indeterminate bar when the server didn't send a Content-Length.
+class _DownloadProgressDialog extends StatelessWidget {
+  final ValueNotifier<double?> progress;
+  final String label;
+
+  const _DownloadProgressDialog({required this.progress, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AppColors.bgCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: ValueListenableBuilder<double?>(
+          valueListenable: progress,
+          builder: (context, value, _) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: value,
+                    minHeight: 8,
+                    backgroundColor: AppColors.bgCardLight,
+                    valueColor: const AlwaysStoppedAnimation(AppColors.rose),
+                  ),
+                ),
+                if (value != null) ...[
+                  const SizedBox(height: 10),
+                  Text('${(value * 100).clamp(0, 100).round()}%',
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                ],
+              ],
+            );
+          },
+        ),
       ),
     );
   }

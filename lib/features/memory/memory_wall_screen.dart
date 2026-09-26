@@ -7,8 +7,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/firebase/models.dart';
 import '../../core/delight/couple_character.dart';
@@ -28,6 +32,8 @@ class MemoryWallScreen extends ConsumerStatefulWidget {
 
 class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   bool _uploading = false;
+  int _uploadDone = 0;
+  int _uploadTotal = 0;
   // null = show all memories; non-null = filter to a specific collection
   String? _activeCollectionId;
   _TypeFilter _typeFilter = _TypeFilter.all;
@@ -40,10 +46,49 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
   bool _selectMode = false;
   final Set<String> _selectedIds = {};
 
+  // Pinch-to-zoom grid density. 3 columns (bigger photos) is the min, 6
+  // (smaller photos, more per screen) the max — persisted per-device so
+  // the zoom level sticks between sessions, same pattern as the Comfort
+  // settings' SharedPreferences use.
+  static const _gridColumnsPrefsKey = 'memory_grid_columns';
+  static const _minGridColumns = 3;
+  static const _maxGridColumns = 6;
+  int _gridColumns = 3;
+  int _gestureBaseColumns = 3;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      final saved = prefs.getInt(_gridColumnsPrefsKey);
+      if (saved != null && mounted) {
+        setState(() => _gridColumns = saved.clamp(_minGridColumns, _maxGridColumns));
+      }
+    });
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _onScaleStart(ScaleStartDetails details) {
+    _gestureBaseColumns = _gridColumns;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    // Pinch OUT (fingers moving apart, scale > 1) should mean bigger
+    // photos, i.e. FEWER columns — hence dividing, not multiplying.
+    final target =
+        (_gestureBaseColumns / details.scale).round().clamp(_minGridColumns, _maxGridColumns);
+    if (target != _gridColumns) {
+      setState(() => _gridColumns = target);
+    }
+  }
+
+  void _onScaleEnd(ScaleEndDetails details) {
+    SharedPreferences.getInstance().then((prefs) => prefs.setInt(_gridColumnsPrefsKey, _gridColumns));
   }
 
   Future<void> _showAddMemorySheet() async {
@@ -63,7 +108,11 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
       imageQuality: 85,
     );
     if (media.isEmpty || !mounted) return;
-    setState(() => _uploading = true);
+    setState(() {
+      _uploading = true;
+      _uploadDone = 0;
+      _uploadTotal = media.length;
+    });
     // Capture service and ids NOW before any awaits so navigation away
     // doesn't cause ref access errors mid-upload.
     final firestoreService = ref.read(firestoreServiceProvider);
@@ -130,6 +179,8 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
         // happened, and also killed every upload still queued behind it.
         // Now each item fails independently and the rest still land.
         errors.add(e.toString());
+      } finally {
+        if (mounted) setState(() => _uploadDone++);
       }
     }));
 
@@ -232,6 +283,63 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     final svc = ref.read(firestoreServiceProvider);
     for (final id in ids) {
       await svc.requestMemoryDeletion(coupleId, id);
+    }
+  }
+
+  // Bulk "share to other apps" — the multi-select equivalent of the detail
+  // screen's single-item "Forward to Chat"/"Save to Photos", but for
+  // sharing outside the app entirely (share_plus's system share sheet).
+  // Each selected item is downloaded to a temp file first (share_plus needs
+  // a real file path, not a URL), with a progress dialog so a multi-photo
+  // share doesn't look hung on a slow connection.
+  Future<void> _shareSelected() async {
+    final ids = Set<String>.from(_selectedIds);
+    final memories = ref.read(memoriesProvider).value ?? const <MemoryModel>[];
+    final selected = memories.where((m) => ids.contains(m.id)).toList();
+    _exitSelectMode();
+    if (selected.isEmpty || !mounted) return;
+
+    final progress = ValueNotifier<int>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ShareProgressDialog(progress: progress, total: selected.length),
+    );
+
+    final tempFiles = <XFile>[];
+    try {
+      final dir = await getTemporaryDirectory();
+      for (final memory in selected) {
+        try {
+          final response = await http.get(Uri.parse(memory.imageUrl));
+          if (response.statusCode == 200) {
+            final ext = memory.isVideo ? 'mp4' : 'jpg';
+            final file = File('${dir.path}/${const Uuid().v4()}.$ext');
+            await file.writeAsBytes(response.bodyBytes);
+            tempFiles.add(XFile(file.path));
+          }
+        } catch (_) {
+          // Skip whatever fails to download — share the rest.
+        }
+        progress.value++;
+      }
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    if (tempFiles.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Couldn't download those to share."),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+    await Share.shareXFiles(tempFiles);
+    for (final f in tempFiles) {
+      File(f.path).delete().catchError((_) => File(f.path));
     }
   }
 
@@ -478,14 +586,31 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                                     setState(() => _searching = true),
                               ),
                               if (_uploading)
-                                const Padding(
-                                  padding: EdgeInsets.only(right: 4),
-                                  child: SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: AppColors.rose)),
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 4),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (_uploadTotal > 1)
+                                        Padding(
+                                          padding: const EdgeInsets.only(right: 6),
+                                          child: Text('$_uploadDone/$_uploadTotal',
+                                              style: const TextStyle(
+                                                  color: AppColors.textSecondary,
+                                                  fontSize: 12)),
+                                        ),
+                                      SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            value: _uploadTotal > 0
+                                                ? _uploadDone / _uploadTotal
+                                                : null,
+                                            color: AppColors.rose),
+                                      ),
+                                    ],
+                                  ),
                                 )
                               else
                                 IconButton(
@@ -503,9 +628,28 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                 // memory grid keeps scrolling underneath it, all as a
                 // single page rather than a grid scrolling inside a
                 // fixed-chrome shell.
-                child: CustomScrollView(
-                  slivers: [
-                    if (!_selectMode && !_searching) ...[
+                //
+                // Pinch-to-zoom wraps the whole scroll view rather than
+                // just the grid — Flutter's ScaleGestureRecognizer only
+                // actually claims the gesture arena for genuine multi-touch
+                // pinches, so single-finger scrolling underneath is
+                // unaffected (the same technique this app already uses for
+                // InteractiveViewer elsewhere).
+                child: GestureDetector(
+                  onScaleStart: _onScaleStart,
+                  onScaleUpdate: _onScaleUpdate,
+                  onScaleEnd: _onScaleEnd,
+                  child: CustomScrollView(
+                    slivers: [
+                    // Deliberately NOT gated on _selectMode — entering
+                    // select mode (long-press) used to also remove these
+                    // sections from the sliver list, which shrank the
+                    // scrollable content above the grid and made the grid
+                    // visibly jump/shift ("scrolls down a bit" right when
+                    // you long-press). Only the top app-bar row and the
+                    // bottom action bar change for select mode; the
+                    // scrollable content itself now stays exactly as it was.
+                    if (!_searching) ...[
                       const SliverToBoxAdapter(child: SizedBox(height: 4)),
                       const SliverToBoxAdapter(child: _HeroSnapshotCard()),
                       const SliverToBoxAdapter(child: SizedBox(height: 4)),
@@ -537,8 +681,10 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                       selectMode: _selectMode,
                       selectedIds: _selectedIds,
                       onSelectToggle: _onSelectToggle,
+                      columns: _gridColumns,
                     ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               if (_selectMode && _selectedIds.isNotEmpty)
@@ -584,6 +730,15 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
                                 onTap: coupleId.isNotEmpty
                                     ? () => _addSelectedToCollection(coupleId)
                                     : null,
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: _BulkActionPill(
+                                label: 'Share',
+                                color: AppColors.bgCardLight,
+                                textColor: AppColors.textPrimary,
+                                onTap: _shareSelected,
                               ),
                             ),
                             _BulkActionPill(
@@ -928,6 +1083,52 @@ class _BulkActionPill extends StatelessWidget {
         ),
         child: Text(label,
             style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 13)),
+      ),
+    );
+  }
+}
+
+// Shown while a bulk share/export downloads each selected item — a count-
+// based "X of Y" bar rather than a spinner, so a multi-photo share doesn't
+// look hung on a slow connection.
+class _ShareProgressDialog extends StatelessWidget {
+  final ValueNotifier<int> progress;
+  final int total;
+
+  const _ShareProgressDialog({required this.progress, required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AppColors.bgCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: ValueListenableBuilder<int>(
+          valueListenable: progress,
+          builder: (context, done, _) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Preparing to share…',
+                    style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: total == 0 ? null : done / total,
+                    minHeight: 8,
+                    backgroundColor: AppColors.bgCardLight,
+                    valueColor: const AlwaysStoppedAnimation(AppColors.rose),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text('$done of $total',
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -1748,6 +1949,7 @@ class _MemoriesTab extends ConsumerWidget {
   final bool selectMode;
   final Set<String> selectedIds;
   final void Function(String) onSelectToggle;
+  final int columns;
 
   const _MemoriesTab({
     required this.onLongPress,
@@ -1758,6 +1960,7 @@ class _MemoriesTab extends ConsumerWidget {
     required this.selectMode,
     required this.selectedIds,
     required this.onSelectToggle,
+    required this.columns,
   });
 
   Map<String, List<MemoryModel>> _groupByDate(List<MemoryModel> memories) {
@@ -1901,9 +2104,8 @@ class _MemoriesTab extends ConsumerWidget {
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
                       crossAxisSpacing: 8,
                       mainAxisSpacing: 8,
                       childAspectRatio: 0.85,

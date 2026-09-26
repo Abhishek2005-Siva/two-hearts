@@ -225,6 +225,33 @@ Android emulator and no physical device attached**. In that situation:
   fill the cell. **Don't reintroduce this** — always use only one
   dimension unless the target box is guaranteed to match the source's
   aspect ratio.
+  **Pinch-to-zoom grid density**: the wall's `GestureDetector` (wrapping
+  the whole `CustomScrollView`, same "only claims multi-touch, leaves
+  single-finger scroll alone" technique as `InteractiveViewer` elsewhere)
+  drives `_gridColumns` (3–6, persisted in SharedPreferences under
+  `memory_grid_columns`), threaded into `_MemoriesTab`'s `columns` param
+  and from there into the grid's `crossAxisCount`. Wraps the scroll view
+  rather than just the grid so the same gesture works regardless of
+  which section is under your fingers.
+  **Comments open two ways**: tapping the `_CommentsPill`, or swiping
+  down anywhere on the top bar (mirrors the existing swipe-up-for-Details
+  handle at the bottom, both deliberately kept as *dedicated* hit targets
+  outside the photo `Stack` rather than layered on top of it, so neither
+  fights `InteractiveViewer`'s own pan/zoom for the vertical drag).
+  **Bulk "Share" in multi-select**: downloads each selected item to a
+  temp file (share_plus needs real file paths, not URLs) behind a
+  `_ShareProgressDialog` ("N of M"), then hands them all to
+  `Share.shareXFiles` — the multi-select equivalent of the detail
+  screen's single-item Forward-to-Chat/Save-to-Photos, but for sharing
+  outside the app. Distinct from `_exportToDevice` (single-item,
+  save-to-Photos), which now streams its download via
+  `http.Client().send()` and shows real byte-level percentage progress
+  in `_DownloadProgressDialog` instead of blocking on a full `http.get`
+  with no feedback. The wall's own multi-upload picker and
+  `/share-import`'s bulk add both similarly show live "N/M uploaded"
+  progress (count-based, not byte-based — several concurrent uploads
+  make a single aggregate byte progress meaningless) instead of a bare
+  indeterminate spinner.
 - `/share-import` — outside the shell (like `/cinema`): reached when a
   photo/video is shared into the app from elsewhere (Android share
   sheet → `receive_sharing_intent`, see `main.dart`'s listeners), shows a
