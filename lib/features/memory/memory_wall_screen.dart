@@ -20,6 +20,8 @@ import '../../core/delight/delight.dart';
 import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
+import '../../core/utils/image_compression_service.dart';
+import '../../core/utils/motion_photo_service.dart';
 
 enum _TypeFilter { all, photos, videos, favorites }
 
@@ -98,15 +100,13 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
     final picker = ImagePicker();
     // Open native gallery directly — pickMultipleMedia allows selecting both
     // photos and videos in a single unified picker session.
-    // Photos are capped/compressed here (same as every other upload path in
-    // the app): a full-res modern phone photo can exceed Cloudinary's
-    // unsigned-upload size limit and fail the whole batch. Videos are
-    // unaffected by these params and upload as-is.
-    final media = await picker.pickMultipleMedia(
-      maxWidth: 1920,
-      maxHeight: 1920,
-      imageQuality: 85,
-    );
+    // Deliberately NOT passing maxWidth/maxHeight/imageQuality: those make
+    // image_picker decode-and-re-encode the photo, which would silently
+    // strip a Motion Photo's trailing video data before it ever reaches
+    // this code. Compression now happens ourselves afterward, on the still
+    // frame only, via compressImageBytesForUpload — same place every other
+    // upload path in this app (share-import, letters) already does it.
+    final media = await picker.pickMultipleMedia();
     if (media.isEmpty || !mounted) return;
     setState(() {
       _uploading = true;
@@ -151,14 +151,28 @@ class _MemoryWallScreenState extends ConsumerState<MemoryWallScreen> {
           );
           videoCount++;
         } else {
-          final bytes = await xfile.readAsBytes();
-          final url = await CloudinaryService.uploadImage(bytes, folder: 'two_hearts/$coupleId');
+          final rawBytes = await xfile.readAsBytes();
+          // Look for an Android Motion Photo clip in the ORIGINAL bytes
+          // before compressing the still — compression re-encodes the JPEG
+          // and would destroy the trailing video data.
+          final motionBytes = await extractMotionPhotoVideo(rawBytes);
+          final stillBytes = await compressImageBytesForUpload(rawBytes);
+          final url = await CloudinaryService.uploadImage(stillBytes, folder: 'two_hearts/$coupleId');
+          String? motionVideoUrl;
+          if (motionBytes != null) {
+            final dir = await getTemporaryDirectory();
+            final tmp = File('${dir.path}/${const Uuid().v4()}.mp4');
+            await tmp.writeAsBytes(motionBytes);
+            motionVideoUrl = await CloudinaryService.uploadVideo(tmp, folder: 'two_hearts/$coupleId');
+            await tmp.delete().catchError((_) => tmp);
+          }
           await firestoreService.addMemory(
             coupleId,
             MemoryModel(
               id: id,
               uploaderUid: uploaderUid,
               imageUrl: url,
+              motionVideoUrl: motionVideoUrl,
               createdAt: DateTime.now(),
             ),
           );
@@ -2262,6 +2276,36 @@ class _MemoryTile extends StatelessWidget {
                   ),
                 ),
               ),
+              // Motion Photo badge — purely indicative here (no autoplay in
+              // a small grid cell); tap-and-hold to actually play it lives
+              // in the detail screen.
+              if (memory.motionVideoUrl != null)
+                Positioned(
+                  top: hasDeletionRequest ? 26 : 6,
+                  left: 6,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.motion_photos_on_rounded,
+                            color: Colors.white, size: 11),
+                        SizedBox(width: 2),
+                        Text('MOTION',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.3)),
+                      ],
+                    ),
+                  ),
+                ),
               // Deletion badge
               if (hasDeletionRequest)
                 Positioned(

@@ -39,6 +39,19 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
   late PageController _pageCtrl;
   int _currentIndex = 0;
   final Set<String> _countedThisSession = {};
+  // Tap-and-hold on a Motion Photo plays its short embedded clip, mirroring
+  // iOS's own Live Photo interaction — released, it snaps back to the
+  // still. Only one can play at a time (there's only one visible page).
+  String? _playingMotionId;
+
+  void _startMotionPreview(String memoryId) {
+    HapticFeedback.selectionClick();
+    setState(() => _playingMotionId = memoryId);
+  }
+
+  void _stopMotionPreview() {
+    if (_playingMotionId != null) setState(() => _playingMotionId = null);
+  }
 
   @override
   void initState() {
@@ -275,6 +288,9 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
               final partnerRequested =
                   hasDeletion && memory.deletionRequestedBy != myUid;
 
+              final hasMotion = !memory.isVideo && memory.motionVideoUrl != null;
+              final playingMotion = hasMotion && _playingMotionId == memory.id;
+
               return GestureDetector(
                 onTapUp: memory.isVideo ? null : (details) {
                   final width = MediaQuery.of(context).size.width;
@@ -288,11 +304,17 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
                         curve: Curves.easeInOut);
                   }
                 },
+                onLongPressStart:
+                    hasMotion ? (_) => _startMotionPreview(memory.id) : null,
+                onLongPressEnd: hasMotion ? (_) => _stopMotionPreview() : null,
+                onLongPressCancel: hasMotion ? _stopMotionPreview : null,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
                   if (memory.isVideo)
                     _VideoPageItem(url: memory.imageUrl)
+                  else if (playingMotion)
+                    _MotionPhotoLoop(url: memory.motionVideoUrl!)
                   else
                   // Full-screen image with pinch-zoom
                   InteractiveViewer(
@@ -312,6 +334,35 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
                       ),
                     ),
                   ),
+                  if (hasMotion && !playingMotion)
+                    Positioned(
+                      top: MediaQuery.of(context).padding.top + 56,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.black45,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.motion_photos_on_rounded,
+                                  color: Colors.white, size: 14),
+                              SizedBox(width: 5),
+                              Text('Press and hold to play',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
 
                   // Caption gradient + text
                   if (memory.caption != null)
@@ -506,6 +557,53 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+// Plays a Motion Photo's short embedded clip while a finger holds it down —
+// muted (it's a still-photo stand-in, not a video with its own sound) and
+// looping in case the hold outlasts the clip's few seconds.
+class _MotionPhotoLoop extends StatefulWidget {
+  final String url;
+  const _MotionPhotoLoop({required this.url});
+
+  @override
+  State<_MotionPhotoLoop> createState() => _MotionPhotoLoopState();
+}
+
+class _MotionPhotoLoopState extends State<_MotionPhotoLoop> {
+  late final VideoPlayerController _ctrl;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..setVolume(0)
+      ..setLooping(true)
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _initialized = true);
+          _ctrl.play();
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_initialized) return Container(color: Colors.black);
+    return Center(
+      child: AspectRatio(
+        aspectRatio: _ctrl.value.aspectRatio,
+        child: VideoPlayer(_ctrl),
       ),
     );
   }

@@ -252,6 +252,40 @@ Android emulator and no physical device attached**. In that situation:
   progress (count-based, not byte-based — several concurrent uploads
   make a single aggregate byte progress meaningless) instead of a bare
   indeterminate spinner.
+  **Motion Photo preservation (Android only)**:
+  `lib/core/utils/motion_photo_service.dart` detects and extracts the
+  short MP4 clip Pixel/Samsung/etc. camera apps append after a Motion
+  Photo JPEG's real end-of-image marker. There's no official spec; this
+  walks actual JPEG marker-segment structure (correctly stepping over
+  APPn/EXIF/XMP payload lengths and byte-stuffed/restart-marker bytes
+  inside the entropy-coded scan) to find the JPEG's true EOI, then checks
+  whether an MP4 `ftyp` box immediately follows — the same technique used
+  by several open-source motion-photo extractors. A naive "search
+  backward for the last 0xFFD9 byte pair" was considered and rejected:
+  binary video data can easily contain that byte pair by pure
+  coincidence, which would misidentify a point *inside* the appended clip
+  as the photo's end. Verified against a synthetic JPEG containing a
+  deliberate decoy 0xFFD9 inside its fake video trailer (see the
+  session's scratch test) — logic-verified, but still **never tested
+  against a real Motion Photo file or device**, since this sandbox has
+  neither. Wired into both photo-upload paths
+  (`memory_wall_screen.dart._showAddMemorySheet`,
+  `share_import_screen.dart._addAll`): the still frame and the extracted
+  clip (if any) upload separately, with the clip's URL on
+  `MemoryModel.motionVideoUrl`. Necessarily changed the wall's own picker
+  call to drop `maxWidth`/`maxHeight`/`imageQuality` — those make
+  `image_picker` decode-and-re-encode the photo, silently destroying any
+  trailing motion data before this code ever sees it — so that upload
+  path now compresses the still itself afterward via the already-existing
+  `compressImageBytesForUpload`, matching how `/share-import` already
+  worked. A memory with a detected clip shows a small "MOTION" badge on
+  its grid tile (indicative only, no autoplay in a small cell) and, in
+  the detail viewer, press-and-hold plays the looping muted clip in place
+  of the still (mirrors iOS's own Live Photo interaction) with a "Press
+  and hold to play" hint shown until you try it once. iOS Live Photos are
+  a separate, larger scope (need `photo_manager`/`PHAsset`-level picker
+  access, which `image_picker` doesn't expose) and are **not** handled —
+  Live Photos still flatten to a plain still, same as before.
 - `/share-import` — outside the shell (like `/cinema`): reached when a
   photo/video is shared into the app from elsewhere (Android share
   sheet → `receive_sharing_intent`, see `main.dart`'s listeners), shows a

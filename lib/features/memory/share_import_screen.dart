@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:uuid/uuid.dart';
 
@@ -13,6 +14,7 @@ import '../../core/providers/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
 import '../../core/utils/image_compression_service.dart';
+import '../../core/utils/motion_photo_service.dart';
 
 /// Confirms and adds photos/videos shared into the app from elsewhere
 /// (gallery, Files, another app's share sheet) straight into Memories.
@@ -52,21 +54,39 @@ class _ShareImportScreenState extends ConsumerState<ShareImportScreen> {
       try {
         final isVideo = file.type == SharedMediaType.video;
         final id = const Uuid().v4();
-        final url = isVideo
-            ? await CloudinaryService.uploadVideo(
-                File(file.path),
-                folder: 'two_hearts/$coupleId',
-              )
-            : await CloudinaryService.uploadImage(
-                await compressImageBytesForUpload(await File(file.path).readAsBytes()),
-                folder: 'two_hearts/$coupleId',
-              );
+        String? motionVideoUrl;
+        String url;
+        if (isVideo) {
+          url = await CloudinaryService.uploadVideo(
+            File(file.path),
+            folder: 'two_hearts/$coupleId',
+          );
+        } else {
+          final rawBytes = await File(file.path).readAsBytes();
+          // Shared-in files arrive as the original, un-recompressed bytes,
+          // so a Motion Photo's trailing video data is still intact here —
+          // check for it before compressing the still (which re-encodes the
+          // JPEG and would destroy it).
+          final motionBytes = await extractMotionPhotoVideo(rawBytes);
+          url = await CloudinaryService.uploadImage(
+            await compressImageBytesForUpload(rawBytes),
+            folder: 'two_hearts/$coupleId',
+          );
+          if (motionBytes != null) {
+            final dir = await getTemporaryDirectory();
+            final tmp = File('${dir.path}/${const Uuid().v4()}.mp4');
+            await tmp.writeAsBytes(motionBytes);
+            motionVideoUrl = await CloudinaryService.uploadVideo(tmp, folder: 'two_hearts/$coupleId');
+            await tmp.delete().catchError((_) => tmp);
+          }
+        }
         await firestoreService.addMemory(
           coupleId,
           MemoryModel(
             id: id,
             uploaderUid: uploaderUid,
             imageUrl: url,
+            motionVideoUrl: motionVideoUrl,
             createdAt: DateTime.now(),
             isVideo: isVideo,
           ),

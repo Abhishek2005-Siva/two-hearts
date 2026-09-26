@@ -467,6 +467,10 @@ class MemoryModel {
   final bool isVideo;
   final Map<String, int> viewCounts;
   final bool pinned;
+  // Android "Motion Photo" clip extracted from the still's own trailing
+  // MP4 data at upload time (see motion_photo_service.dart) — null for a
+  // plain photo, or if none could be found/extracted. Never set for videos.
+  final String? motionVideoUrl;
 
   const MemoryModel({
     required this.id,
@@ -482,6 +486,7 @@ class MemoryModel {
     this.isVideo = false,
     this.viewCounts = const {},
     this.pinned = false,
+    this.motionVideoUrl,
   });
 
   int viewCountOf(String? uid) => uid == null ? 0 : (viewCounts[uid] ?? 0);
@@ -503,6 +508,7 @@ class MemoryModel {
       isVideo: d['isVideo'] ?? false,
       viewCounts: viewsRaw.map((uid, v) => MapEntry(uid, (v as num).toInt())),
       pinned: d['pinned'] ?? false,
+      motionVideoUrl: d['motionVideoUrl'],
     );
   }
 
@@ -519,6 +525,7 @@ class MemoryModel {
         'pinned': pinned,
         if (collectionId != null) 'collectionId': collectionId,
         if (viewCounts.isNotEmpty) 'viewCounts': viewCounts,
+        if (motionVideoUrl != null) 'motionVideoUrl': motionVideoUrl,
       };
 }
 
