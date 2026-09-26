@@ -236,6 +236,13 @@ class _EntryCard extends StatelessWidget {
               imageUrl: entry.imageUrl,
               fit: BoxFit.cover,
               width: double.infinity,
+              // Full device width, but no need to decode past roughly a
+              // phone screen's physical pixel width — caps decode cost
+              // without a visible quality loss for how this is displayed.
+              memCacheWidth: 1080,
+              fadeInDuration: const Duration(milliseconds: 150),
+              placeholder: (_, _) => const ColoredBox(color: AppColors.bgCard),
+              errorWidget: (_, _, _) => const ColoredBox(color: AppColors.bgCard),
             ),
           ),
           const SizedBox(height: 8),

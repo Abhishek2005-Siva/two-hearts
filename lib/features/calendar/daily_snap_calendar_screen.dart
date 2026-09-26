@@ -753,7 +753,27 @@ class _DayTile extends StatelessWidget {
         return Stack(
           fit: StackFit.expand,
           children: [
-            CachedNetworkImage(imageUrl: entry.imageUrl, fit: BoxFit.cover),
+            // memCacheWidth/Height matter a lot here specifically: every day
+            // with an entry across every visible month decodes one of these
+            // at once, and without a cap each decodes at its full upload
+            // resolution (up to 1920x1920) just to be shown in a ~50px grid
+            // cell. That's what made the calendar feel like it "loads
+            // everything one by one" — not a missing cache (CachedNetworkImage
+            // already disk-caches the bytes), but every open re-decoding
+            // dozens of oversized bitmaps into a size-bounded in-memory
+            // ImageCache that can't hold them all, so most got evicted and
+            // re-decoded again on the next scroll/rebuild too. Capping the
+            // decode target to roughly what a grid cell actually needs fixes
+            // both the CPU cost and the cache-thrashing.
+            CachedNetworkImage(
+              imageUrl: entry.imageUrl,
+              fit: BoxFit.cover,
+              memCacheWidth: 160,
+              memCacheHeight: 160,
+              fadeInDuration: const Duration(milliseconds: 150),
+              placeholder: (_, _) => Container(color: _Cal.emptyTile),
+              errorWidget: (_, _, _) => Container(color: _Cal.emptyTile),
+            ),
             if (entry.mood != null)
               Positioned.fill(
                 child: DecoratedBox(
