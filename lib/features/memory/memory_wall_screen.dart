@@ -1451,7 +1451,7 @@ class _CollectionsRow extends ConsumerWidget {
     // Pinned collections first — stable sort keeps everything else in the
     // provider's own createdAt-descending order within each group, since
     // List.sort in Dart is a stable sort.
-    final collections = [...collectionsAsync.valueOrNull ?? []]
+    final collections = <PhotoCollection>[...collectionsAsync.valueOrNull ?? []]
       ..sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     final memories = memoriesAsync.valueOrNull ?? [];
 
