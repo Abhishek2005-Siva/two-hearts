@@ -84,7 +84,19 @@ class _SpotifyRemoteScreenState extends ConsumerState<SpotifyRemoteScreen>
   Future<void> _refresh() async {
     try {
       final s = await _remote.getState();
-      if (mounted) setState(() => _state = s);
+      if (!mounted) return;
+      setState(() => _state = s);
+      // Surfaces the actual track on the Room screen's partner-activity
+      // banner (via ActivityAnnouncer) instead of the static "Controlling
+      // Spotify" this always showed before — announceActivity itself
+      // dedupes against the previous label, so this only writes when the
+      // track or play state actually changes, not on every 1s poll tick.
+      if (s != null && s.isPlaying && s.title != null) {
+        final artist = s.artist?.isNotEmpty == true ? ' by ${s.artist}' : '';
+        announceActivity('Listening to "${s.title}"$artist');
+      } else {
+        announceActivity('Controlling Spotify');
+      }
     } catch (_) {}
   }
 

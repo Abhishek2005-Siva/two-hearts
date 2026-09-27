@@ -848,6 +848,21 @@ class _HeroSnapshotCardState extends ConsumerState<_HeroSnapshotCard> {
     setState(() => _seed = _rng.nextInt(1 << 31));
   }
 
+  void _openReveal(BuildContext context, MemoryModel pick) {
+    HapticFeedback.mediumImpact();
+    Navigator.of(context).push(PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.black,
+      transitionDuration: const Duration(milliseconds: 420),
+      reverseTransitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (_, _, _) => _HeroRevealScreen(memory: pick),
+      transitionsBuilder: (_, animation, _, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+        child: child,
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final memories = ref.watch(memoriesProvider).valueOrNull ?? [];
@@ -959,13 +974,15 @@ class _HeroSnapshotCardState extends ConsumerState<_HeroSnapshotCard> {
             ),
             const SizedBox(width: 14),
             GestureDetector(
-              onTap: () => context.push('/memory/${pick.id}'),
+              onTap: () => _openReveal(context, pick),
               child: Transform.rotate(
                 angle: 0.06,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Container(
+                    Hero(
+                      tag: 'hero_snapshot_${pick.id}',
+                      child: Container(
                       width: 96,
                       height: 118,
                       padding: const EdgeInsets.fromLTRB(5, 5, 5, 16),
@@ -990,6 +1007,7 @@ class _HeroSnapshotCardState extends ConsumerState<_HeroSnapshotCard> {
                               Container(color: AppColors.bgCardLight),
                         ),
                       ),
+                      ),
                     ),
                     Positioned(
                       right: -8,
@@ -1011,6 +1029,191 @@ class _HeroSnapshotCardState extends ConsumerState<_HeroSnapshotCard> {
                     ),
                   ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Random Snapshot "magic reveal" — a dedicated fullscreen presentation,
+// distinct from the plain memory detail screen, since this is meant to feel
+// like a delightful surprise moment rather than just another way to open a
+// photo. A "See full memory" button still leads to the real detail screen
+// for comments/forward/export/etc. — this reveal is presentation only. ──
+
+class _HeroRevealScreen extends ConsumerStatefulWidget {
+  final MemoryModel memory;
+  const _HeroRevealScreen({required this.memory});
+
+  @override
+  ConsumerState<_HeroRevealScreen> createState() => _HeroRevealScreenState();
+}
+
+class _HeroRevealScreenState extends ConsumerState<_HeroRevealScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      DelightHaptics.soft();
+      FloatingStickers.burst(context,
+          stickers: const ['✨', '💫', '🌸'],
+          count: 10,
+          origin: Offset(MediaQuery.of(context).size.width / 2,
+              MediaQuery.of(context).size.height * 0.42));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final memory = widget.memory;
+    final accent = ref.watch(accentColorProvider);
+    final when = memory.takenAt ?? memory.createdAt;
+
+    return GestureDetector(
+      onVerticalDragEnd: (d) {
+        if ((d.primaryVelocity ?? 0) > 250) Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            // Soft ambient glow behind the card — the "magic" backdrop.
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0, -0.15),
+                    radius: 0.9,
+                    colors: [accent.withValues(alpha: 0.28), Colors.black],
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const SizedBox(width: 4),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Hero(
+                        tag: 'hero_snapshot_${memory.id}',
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 32),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                  color: accent.withValues(alpha: 0.55),
+                                  blurRadius: 40,
+                                  spreadRadius: 4),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: AspectRatio(
+                              aspectRatio: 0.8,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  CachedNetworkImage(
+                                    imageUrl: memory.isVideo
+                                        ? _videoThumb(memory.imageUrl)
+                                        : memory.imageUrl,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, _, _) =>
+                                        Container(color: AppColors.bgCardLight),
+                                  ),
+                                  if (memory.isVideo)
+                                    const Center(
+                                      child: Icon(Icons.play_circle_fill_rounded,
+                                          color: Colors.white70, size: 56),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                          .animate()
+                          .scale(
+                              begin: const Offset(0.82, 0.82),
+                              end: const Offset(1, 1),
+                              duration: 380.ms,
+                              curve: Curves.easeOutBack)
+                          .fadeIn(duration: 280.ms),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 4, 28, 8),
+                    child: Column(
+                      children: [
+                        Text('A moment from ${_timeAgo(when)}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700))
+                            .animate()
+                            .fadeIn(delay: 200.ms, duration: 300.ms),
+                        const SizedBox(height: 6),
+                        Text(
+                          [
+                            DateFormat('MMM d, yyyy · h:mm a').format(when),
+                            if (memory.location != null && memory.location!.isNotEmpty)
+                              memory.location!,
+                          ].join(' • '),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white60, fontSize: 12.5),
+                        ).animate().fadeIn(delay: 280.ms, duration: 300.ms),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                        28, 4, 28, MediaQuery.of(context).padding.bottom + 20),
+                    child: SquishyTap(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        context.push('/memory/${memory.id}');
+                      },
+                      style: TapAnimationStyle.pulse,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(colors: [accent, AppColors.coral]),
+                          borderRadius: BorderRadius.circular(26),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('See full memory',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700)),
+                            SizedBox(width: 6),
+                            Icon(Icons.arrow_forward_rounded,
+                                color: Colors.white, size: 16),
+                          ],
+                        ),
+                      ),
+                    ).animate().fadeIn(delay: 360.ms, duration: 300.ms),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1245,7 +1448,11 @@ class _CollectionsRow extends ConsumerWidget {
     final memoriesAsync = ref.watch(memoriesProvider);
     final coupleId = ref.watch(coupleIdProvider);
     final accent = ref.watch(accentColorProvider);
-    final collections = collectionsAsync.valueOrNull ?? [];
+    // Pinned collections first — stable sort keeps everything else in the
+    // provider's own createdAt-descending order within each group, since
+    // List.sort in Dart is a stable sort.
+    final collections = [...collectionsAsync.valueOrNull ?? []]
+      ..sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     final memories = memoriesAsync.valueOrNull ?? [];
 
     final photosByCollection = <String, List<MemoryModel>>{};
@@ -1331,10 +1538,14 @@ class _CollectionsRow extends ConsumerWidget {
                   icon: _collectionIcon(col.name),
                   collage: _collageFor(col.id, photos),
                   isActive: activeCollectionId == col.id,
+                  pinned: col.pinned,
                   onTap: () {
                     HapticFeedback.selectionClick();
                     onSelect(activeCollectionId == col.id ? null : col.id);
                   },
+                  onLongPress: coupleId == null
+                      ? null
+                      : () => _showCollectionActionsSheet(context, ref, coupleId, col),
                 );
               }),
               // + New collection card
@@ -1530,6 +1741,21 @@ class _CollectionsRow extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: Icon(col.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                  color: AppColors.textPrimary),
+              title: Text(col.pinned ? 'Unpin' : 'Pin to top',
+                  style: const TextStyle(color: AppColors.textPrimary)),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                if (coupleId != null) {
+                  ref
+                      .read(firestoreServiceProvider)
+                      .togglePinCollection(coupleId, col.id, !col.pinned)
+                      .ignore();
+                }
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.edit_outlined, color: AppColors.textPrimary),
               title: const Text('Rename', style: TextStyle(color: AppColors.textPrimary)),
               onTap: () {
@@ -1626,7 +1852,9 @@ class _CollectionCard extends StatelessWidget {
   final IconData icon;
   final List<String> collage;
   final bool isActive;
+  final bool pinned;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const _CollectionCard({
     required this.title,
@@ -1635,13 +1863,16 @@ class _CollectionCard extends StatelessWidget {
     required this.icon,
     required this.collage,
     required this.isActive,
+    this.pinned = false,
     required this.onTap,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
     return SquishyTap(
       onTap: onTap,
+      onLongPress: onLongPress,
       style: TapAnimationStyle.pulse,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -1692,6 +1923,12 @@ class _CollectionCard extends StatelessWidget {
                   child: Icon(icon, color: Colors.white, size: 14),
                 ),
               ),
+              if (pinned)
+                const Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Icon(Icons.push_pin_rounded, color: Colors.white, size: 15),
+                ),
               Positioned(
                 left: 10,
                 right: 10,

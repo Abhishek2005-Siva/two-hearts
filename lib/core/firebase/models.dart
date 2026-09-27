@@ -588,6 +588,7 @@ class PhotoCollection {
   final String createdBy;
   final DateTime createdAt;
   final int photoCount;
+  final bool pinned;
 
   const PhotoCollection({
     required this.id,
@@ -596,6 +597,7 @@ class PhotoCollection {
     required this.createdBy,
     required this.createdAt,
     this.photoCount = 0,
+    this.pinned = false,
   });
 
   factory PhotoCollection.fromDoc(DocumentSnapshot doc) {
@@ -607,6 +609,7 @@ class PhotoCollection {
       createdBy: d['createdBy'] ?? '',
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       photoCount: d['photoCount'] ?? 0,
+      pinned: d['pinned'] ?? false,
     );
   }
 
@@ -616,6 +619,7 @@ class PhotoCollection {
         'createdBy': createdBy,
         'createdAt': Timestamp.fromDate(createdAt),
         'photoCount': photoCount,
+        'pinned': pinned,
       };
 }
 

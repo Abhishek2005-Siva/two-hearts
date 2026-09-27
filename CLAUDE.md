@@ -101,7 +101,20 @@ Android emulator and no physical device attached**. In that situation:
   could glitch on rapid taps). Volume is `tapSoundVolumeProvider` (0.0
   off, up to 1.0), a per-device `SharedPreferences`-backed double
   controlled from You & Me → Comfort's volume slider — 0 skips playback
-  entirely rather than calling `AudioPlayer.play` at zero volume.
+  entirely rather than calling `AudioPlayer.play` at zero volume. An
+  explicit on/off `Switch` sits next to the slider now too
+  (`TapSoundVolumeNotifier.setEnabled`, mirroring the existing "Reduce
+  motion" `Switch` right above it) — muting remembers the volume it was at
+  (`_lastNonZero`) so switching back on restores it instead of resetting
+  to the 0.45 default. **Fixed a real bug**: the shared `_player` never
+  set an `AudioContext`, so it used the platform default — normal audio
+  focus on Android — meaning every single tap briefly paused/ducked
+  whatever else was playing (e.g. Spotify). `_prime()` now calls
+  `setAudioContext` with `AudioContextConfig(focus:
+  AudioContextConfigFocus.mixWithOthers).build()` once, up front — Android
+  gets `AndroidAudioFocus.none` (no focus request at all) and iOS gets the
+  `mixWithOthers` session option, so the tap sound plays alongside
+  anything else without ever touching it.
 - **Delight layer** (`lib/core/delight/delight.dart`): `DelightHaptics`
   (named haptic patterns), `FloatingStickers.burst(context, stickers:,
   count:, origin:)` (small rising/fading emoji particles from a point —
@@ -144,6 +157,41 @@ Android emulator and no physical device attached**. In that situation:
 - `/room/decorate` — **shared 3D room** (see dedicated section below).
 - `/chat` — main chat, snaps, whispers, voice notes, replies/edits,
   read-receipts (see gotcha below), backgrounds.
+  **"Today's Question" card removed entirely** — it was a dismissible
+  inline card (`_DailyPromptCard`) that reappeared every single calendar
+  day with no way to turn it off for good (only "dismissed until
+  tomorrow"), and was reported as actively irritating. Deleted the
+  widget, its dismiss-state fields/SharedPreferences key, and the
+  `kDailyPromptQuestions` import — gone, not just easier to dismiss. The
+  underlying question list still exists and is still used by Together's
+  own user-triggered Random Question dialog (`_showRandomQuestion`,
+  unrelated/unaffected), which was never the thing being complained
+  about.
+  **"Today's Snap" no longer re-prompts after you've already posted** —
+  `captureTodaysSnap` (`daily_snap_calendar_screen.dart`, shared by
+  Chat's own shared-activities card and the Calendar screen's CTA) used
+  to have zero "already posted today" check of its own — only the
+  Calendar screen's *button* happened to hide itself once posted
+  (`_BottomCta`'s `iPostedToday`), but Chat's entry point had no
+  equivalent guard, so tapping it after already posting just opened the
+  picker again and silently overwrote today's entry. `captureTodaysSnap`
+  now checks `dailySnapsProvider` for today's entry before doing
+  anything else, and if you're already in it, shows a snackbar ("You've
+  already posted today's snap ♡") with a "View" action instead of
+  opening the picker.
+  **Chat wallpaper: preview + reposition before it uploads.**
+  `_pickGalleryBackground` used to upload the raw gallery pick
+  immediately, sight unseen, with no way to see how it'd actually look
+  or adjust it. Now pushes `_BackgroundPreviewScreen`: the picked photo
+  live behind two static mock chat bubbles (purely a preview aid, real
+  chat has no dimming overlay on a custom background so neither does
+  this), inside an `InteractiveViewer` pre-fit to cover the screen
+  (same math as `BoxFit.cover`) that can then be freely panned/zoomed.
+  Confirming captures exactly what's visible via a `RepaintBoundary` +
+  `toImage()`/`toByteData(format: png)` — the mock bubbles sit in a
+  sibling widget *outside* that `RepaintBoundary`, so they're never
+  baked into the uploaded image — and only that cropped PNG gets
+  uploaded, not the original full photo.
 - `/memory`, `/memory/:id` — photo/video wall, collections, favorites.
   Collections: the horizontally-scrolling card row's "See all" opens a
   full scrollable list of every collection (`_showAllCollectionsSheet` in
@@ -189,7 +237,10 @@ Android emulator and no physical device attached**. In that situation:
   `Gal.putImageBytes`/`Gal.putVideo` — needs `WRITE_EXTERNAL_STORAGE`
   maxSdkVersion 29 + `requestLegacyExternalStorage` on Android; iOS's
   `NSPhotoLibraryAddUsageDescription` was already present in `Info.plist`
-  from an earlier feature).
+  from an earlier feature). **Forward to Chat no longer shows its own
+  "Sent to chat ♡" snackbar** — reported as an unwanted extra popup, and
+  the forwarded photo/video appearing in chat is already its own
+  confirmation, so the snackbar was just redundant.
   **"Their most-viewed"**: `_PartnerMostViewedCard` on the wall, computed
   from the real per-uid `viewCounts` already tracked by
   `incrementMemoryView` — shows nothing if the partner hasn't viewed
@@ -312,6 +363,27 @@ Android emulator and no physical device attached**. In that situation:
   a separate, larger scope (need `photo_manager`/`PHAsset`-level picker
   access, which `image_picker` doesn't expose) and are **not** handled —
   Live Photos still flatten to a plain still, same as before.
+  **"Magic reveal" for the Random Snapshot card**: tapping its photo used
+  to just push the plain `/memory/:id` detail screen — no different from
+  tapping any grid tile. Now opens `_HeroRevealScreen` (still in
+  `memory_wall_screen.dart`), a dedicated fullscreen presentation reached
+  via a custom fade-in `PageRouteBuilder`: a `Hero` transition (tag
+  `hero_snapshot_${id}`, deliberately distinct from `_MemoryTile`'s own
+  `memory_${id}` Hero tag — both are visible on the wall simultaneously,
+  so they can't share a tag) into a glowing accent-tinted card with a
+  scale+fade entrance, a one-time `FloatingStickers.burst` + soft haptic
+  on open, and a "See full memory" button that pops this screen and
+  pushes the real detail screen (comments/forward/export/etc. all still
+  live there — this reveal is presentation only, not a replacement).
+  **Pinning collections** (distinct from pinning individual memories,
+  above): `PhotoCollection.pinned` + `togglePinCollection`. Long-pressing
+  a collection card (or the ⋮ in "See all") opens the same actions sheet
+  as Rename/Delete, now with a Pin/Unpin entry first. `_CollectionsRow`
+  sorts pinned collections first client-side (`List.sort` is stable, so
+  everything else keeps `watchCollections`' own createdAt-descending
+  order within each group) rather than adding a Firestore composite
+  index — the collection count per couple is small enough that a client
+  sort costs nothing.
 - `/share-import` — outside the shell (like `/cinema`): reached when a
   photo/video is shared into the app from elsewhere (Android share
   sheet → `receive_sharing_intent`, see `main.dart`'s listeners), shows a
@@ -390,6 +462,17 @@ Android emulator and no physical device attached**. In that situation:
 - `/games`, `/dates`, `/places`, `/listen`, `/you`, `/notifications` —
   games hub, date-idea spinner, destinations map, **Spotify Remote** (see
   dedicated section below), profile/settings, notifications inbox.
+  **Notifications visual pass** (`notifications_screen.dart`, reported as
+  "so basic"): rows now group under date headers ("Today"/"Yesterday"/
+  "This week"/"Earlier" — `_dateGroup`/`_groupedRows`, a flat `List<Object>`
+  of either a `String` header or an `AppNotification` fed to one
+  `ListView.builder`, since notifications are already newest-first from
+  `watchNotifications` so a header only needs inserting when the group
+  actually changes going down the list); the header row shows a real
+  unread-count pill next to the title; a read notification's icon circle
+  is now tinted per notification type (`_typeColor`) instead of flat
+  grey, so the list reads as distinct categories at a glance — the
+  unread state still shows the `CoupleCharacter` mascot, unchanged.
 - `/games/uno` — two-player Uno (`uno_screen.dart`). Whole match is ONE
   Firestore doc (`couples/{id}/uno/game`): one listener, one write per
   move. No Skip in the deck — with exactly two players it was identical
@@ -488,6 +571,15 @@ understood and accepted the tradeoff (see below) via a direct question.
   protection, just at install/download time instead of permission-grant
   time. The person has to dismiss/allow it manually (or briefly disable
   Play Protect's scanning) on each new build if it comes up.
+- **Surfaces the actual track to your partner**: `_refresh()` used to only
+  ever call `announceActivity('Controlling Spotify')` once, in
+  `initState` — the Room screen's `_PartnerActivityBanner` could never
+  show what was actually playing, only that Spotify Remote was open at
+  all. Every poll tick now calls `announceActivity('Listening to
+  "$title" by $artist')` while something's actually playing (falling
+  back to the generic string otherwise) — `announceActivity` itself
+  dedupes against the last label, so this only actually writes on a real
+  change (track or play state), not on every 1s tick.
 - Deliberately **doesn't** wire seek/scrub — `MediaSession` seek support
   isn't something every app (Spotify included) is verified to implement
   consistently, so the progress bar is display-only rather than claiming

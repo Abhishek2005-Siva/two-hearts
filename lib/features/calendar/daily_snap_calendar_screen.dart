@@ -57,6 +57,32 @@ Future<bool> captureTodaysSnap(BuildContext context, WidgetRef ref) async {
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (coupleId == null || uid == null) return false;
 
+  // The Calendar screen's own CTA already hid itself once you'd posted
+  // today (see _BottomCta's iPostedToday), but this shared entry point
+  // (Chat's "Today's Snap" card) had no equivalent check at all — it kept
+  // offering to capture a brand new one, silently overwriting today's
+  // entry, every time it was tapped.
+  final todaySnap = ref.read(dailySnapsProvider).valueOrNull?.firstWhere(
+        (s) => s.dateKey == dailySnapDateKey(DateTime.now()),
+        orElse: () => const DailySnap(dateKey: ''),
+      );
+  if (todaySnap != null && todaySnap.entries.containsKey(uid)) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text("You've already posted today's snap ♡"),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'View',
+            onPressed: () =>
+                context.push('/calendar/day/${dailySnapDateKey(DateTime.now())}'),
+          ),
+        ),
+      );
+    }
+    return false;
+  }
+
   final source = await showDialog<ImageSource>(
     context: context,
     builder: (dialogCtx) => AlertDialog(

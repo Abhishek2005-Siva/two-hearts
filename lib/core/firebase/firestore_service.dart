@@ -1110,6 +1110,10 @@ class FirestoreService {
       _db.collection('couples').doc(coupleId).collection('photoCollections').doc(collectionId)
           .update({'name': name});
 
+  Future<void> togglePinCollection(String coupleId, String collectionId, bool pinned) =>
+      _db.collection('couples').doc(coupleId).collection('photoCollections').doc(collectionId)
+          .update({'pinned': pinned});
+
   Stream<List<PhotoCollection>> watchCollections(String coupleId) => _db
       .collection('couples').doc(coupleId).collection('photoCollections')
       .orderBy('createdAt', descending: true)

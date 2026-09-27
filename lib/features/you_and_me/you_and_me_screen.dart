@@ -426,47 +426,63 @@ class _ComfortSection extends ConsumerWidget {
             ),
           ),
           const Divider(color: AppColors.divider, height: 1),
-          // Tap sound
+          // Tap sound — an explicit on/off Switch (matching Reduce Motion's
+          // pattern) plus the volume slider. Muting remembers the current
+          // volume so switching back on restores it instead of resetting to
+          // the 0.45 default.
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
-            child: Row(
+            child: Column(
               children: [
-                Icon(
-                    soundVolume <= 0
-                        ? Icons.volume_off_rounded
-                        : soundVolume < 0.5
-                            ? Icons.volume_down_rounded
-                            : Icons.volume_up_rounded,
-                    color: AppColors.textMuted,
-                    size: 20),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('Tap sound',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
-                      Text('A little sound on buttons and taps',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  width: 110,
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 3,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                Row(
+                  children: [
+                    Icon(
+                        soundVolume <= 0
+                            ? Icons.volume_off_rounded
+                            : soundVolume < 0.5
+                                ? Icons.volume_down_rounded
+                                : Icons.volume_up_rounded,
+                        color: AppColors.textMuted,
+                        size: 20),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Tap sound',
+                              style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600)),
+                          Text('A little sound on buttons and taps',
+                              style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                        ],
+                      ),
                     ),
-                    child: Slider(
-                      value: soundVolume,
-                      onChanged: (val) => ref.read(tapSoundVolumeProvider.notifier).set(val),
-                      activeColor: accent,
-                      inactiveColor: AppColors.bgCardLight,
+                    Switch(
+                      value: soundVolume > 0,
+                      onChanged: (val) =>
+                          ref.read(tapSoundVolumeProvider.notifier).setEnabled(val),
+                      activeThumbColor: accent,
+                    ),
+                  ],
+                ),
+                IgnorePointer(
+                  ignoring: soundVolume <= 0,
+                  child: Opacity(
+                    opacity: soundVolume <= 0 ? 0.4 : 1,
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                      ),
+                      child: Slider(
+                        value: soundVolume,
+                        onChanged: (val) => ref.read(tapSoundVolumeProvider.notifier).set(val),
+                        activeColor: accent,
+                        inactiveColor: AppColors.bgCardLight,
+                      ),
                     ),
                   ),
                 ),

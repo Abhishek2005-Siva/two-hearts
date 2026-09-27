@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui show Image, ImageByteFormat, instantiateImageCodec;
 import 'dart:ui' show ImageFilter;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,12 +11,12 @@ import 'video_call_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:uuid/uuid.dart';
 import 'snap_camera_screen.dart';
@@ -28,7 +29,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/cloudinary_service.dart';
 import '../../shared/widgets/fullscreen_image_viewer.dart';
 import '../calendar/daily_snap_calendar_screen.dart';
-import '../together/together_screen.dart' show kDailyPromptQuestions;
 
 // ── Background enum ───────────────────────────────────────────────────────
 
@@ -75,8 +75,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _searchMode = false;
   bool _activitiesOpen = false;
   String _searchQuery = '';
-  bool _promptDismissed = false;
-  static const _promptDismissKey = 'daily_prompt_dismissed_date';
   final Map<String, GlobalKey> _dateSepKeys = {};
   bool _didJumpToDate = false;
 
@@ -121,27 +119,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
-    _loadPromptDismissed();
-  }
-
-  // The dismiss state used to be plain in-memory `State`, so leaving Chat
-  // and coming back (or just a rebuild) reset it and the card reappeared
-  // every time even after being dismissed. Now it's keyed to today's date
-  // in SharedPreferences — dismissed (or answered) stays gone for the rest
-  // of today, then a new question shows up tomorrow.
-  Future<void> _loadPromptDismissed() async {
-    final prefs = await SharedPreferences.getInstance();
-    final dismissedDate = prefs.getString(_promptDismissKey);
-    final todayKey = dailySnapDateKey(DateTime.now());
-    if (mounted && dismissedDate == todayKey) {
-      setState(() => _promptDismissed = true);
-    }
-  }
-
-  Future<void> _dismissPromptForToday() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_promptDismissKey, dailySnapDateKey(DateTime.now()));
-    if (mounted) setState(() => _promptDismissed = true);
   }
 
   @override
@@ -467,7 +444,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null || !mounted) return;
     final bytes = await picked.readAsBytes();
-    final url = await CloudinaryService.uploadImage(bytes, folder: 'chat_bg');
+    if (!mounted) return;
+    // Used to upload the raw picked file straight away, sight unseen — no
+    // way to tell how it'd actually look behind the chat, or to reposition/
+    // zoom it first. Now a preview screen shows it live behind mock bubbles
+    // and lets it be panned/zoomed before anything uploads.
+    final accent = ref.read(accentColorProvider);
+    final cropped = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        builder: (_) => _BackgroundPreviewScreen(imageBytes: bytes, accent: accent),
+      ),
+    );
+    if (cropped == null || !mounted) return;
+    final url = await CloudinaryService.uploadImage(cropped, folder: 'chat_bg');
     if (!mounted) return;
     await ref.read(firestoreServiceProvider).setChatBackground(
       coupleId,
@@ -632,36 +621,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                     ),
                   ],
                 ),
-              ),
-            if (!_searchMode && !_promptDismissed)
-              _DailyPromptCard(
-                accent: accent,
-                // Previously quoted the question into the composer, so
-                // sending it looked like an ordinary message either partner
-                // had typed. Now it posts directly as a distinct, centered
-                // system message (see _MessageBubble._system) that reads as
-                // "the app asked this," not "I typed this."
-                onTap: () {
-                  final coupleId = ref.read(coupleIdProvider);
-                  final uid = FirebaseAuth.instance.currentUser?.uid;
-                  if (coupleId == null || uid == null) return;
-                  final today = DateTime.now();
-                  final seed = today.year * 10000 + today.month * 100 + today.day;
-                  final question = kDailyPromptQuestions[seed % kDailyPromptQuestions.length];
-                  HapticFeedback.mediumImpact();
-                  ref.read(firestoreServiceProvider).sendMessage(
-                        coupleId,
-                        MessageModel(
-                          id: const Uuid().v4(),
-                          senderId: uid,
-                          content: '💭 Today\'s Question: $question',
-                          type: MessageType.system,
-                          sentAt: DateTime.now(),
-                        ),
-                      );
-                  _dismissPromptForToday();
-                },
-                onDismiss: _dismissPromptForToday,
               ),
             AnimatedSize(
               duration: const Duration(milliseconds: 220),
@@ -999,65 +958,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 /// Today's conversation starter — stable all day (date-seeded pick from
 /// the same curated list Together's Random Question uses), changes
 /// tomorrow. Tapping quotes it into the composer.
-class _DailyPromptCard extends StatelessWidget {
-  final Color accent;
-  final VoidCallback onTap;
-  final VoidCallback onDismiss;
-
-  const _DailyPromptCard({required this.accent, required this.onTap, required this.onDismiss});
-
-  @override
-  Widget build(BuildContext context) {
-    final today = DateTime.now();
-    final seed = today.year * 10000 + today.month * 100 + today.day;
-    final question = kDailyPromptQuestions[seed % kDailyPromptQuestions.length];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-                colors: [accent.withValues(alpha: 0.18), AppColors.coral.withValues(alpha: 0.10)]),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: accent.withValues(alpha: 0.25)),
-          ),
-          child: Row(
-            children: [
-              const Text('💭', style: TextStyle(fontSize: 18)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Today\'s Question',
-                        style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700)),
-                    Text(question,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 13)),
-                  ],
-                ),
-              ),
-              GestureDetector(
-                onTap: onDismiss,
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.close_rounded, color: AppColors.textMuted, size: 16),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ── Shared Activity Cards ─────────────────────────────────────────────────
 
 class _SharedActivitiesRow extends StatelessWidget {
@@ -1300,6 +1200,186 @@ class _ChatAppBar extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Gallery background preview/crop ────────────────────────────────────────
+//
+// Shows the picked photo live behind a couple of mock chat bubbles so it's
+// clear how it'll actually look, inside an InteractiveViewer so it can be
+// panned/zoomed before confirming. Starts pre-fit to cover the screen (same
+// as how it'll actually be displayed via BoxFit.cover), matching what real
+// chat bubbles sit on top of unmodified — real chat wallpaper has no dimming
+// overlay, so neither does this preview.
+
+class _BackgroundPreviewScreen extends StatefulWidget {
+  final Uint8List imageBytes;
+  final Color accent;
+  const _BackgroundPreviewScreen({required this.imageBytes, required this.accent});
+
+  @override
+  State<_BackgroundPreviewScreen> createState() => _BackgroundPreviewScreenState();
+}
+
+class _BackgroundPreviewScreenState extends State<_BackgroundPreviewScreen> {
+  final _captureKey = GlobalKey();
+  final _transformCtrl = TransformationController();
+  ui.Image? _decoded;
+  bool _uploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _decode();
+  }
+
+  Future<void> _decode() async {
+    final codec = await ui.instantiateImageCodec(widget.imageBytes);
+    final frame = await codec.getNextFrame();
+    if (!mounted) return;
+    setState(() => _decoded = frame.image);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fitToScreen());
+  }
+
+  // Starts the crop at whatever scale/offset makes the image cover the
+  // screen (same math as BoxFit.cover) — from there it's a normal
+  // pinch/pan, not a jarring default of "top-left corner at 1:1".
+  void _fitToScreen() {
+    final img = _decoded;
+    if (img == null || !mounted) return;
+    final size = MediaQuery.of(context).size;
+    final scale = math.max(size.width / img.width, size.height / img.height);
+    final dx = (size.width - img.width * scale) / 2;
+    final dy = (size.height - img.height * scale) / 2;
+    setState(() {
+      _transformCtrl.value = Matrix4.identity()
+        ..translateByDouble(dx, dy, 0, 1)
+        ..scaleByDouble(scale, scale, scale, 1);
+    });
+  }
+
+  Future<void> _confirm() async {
+    setState(() => _uploading = true);
+    try {
+      final boundary =
+          _captureKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 2.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final bytes = byteData!.buffer.asUint8List();
+      if (mounted) Navigator.of(context).pop(bytes);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _uploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Couldn't use this photo: $e")),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_decoded == null)
+            const Center(child: CircularProgressIndicator(color: AppColors.rose))
+          else
+            RepaintBoundary(
+              key: _captureKey,
+              child: ClipRect(
+                child: InteractiveViewer(
+                  transformationController: _transformCtrl,
+                  boundaryMargin: const EdgeInsets.all(double.infinity),
+                  minScale: 0.1,
+                  maxScale: 5,
+                  child: RawImage(
+                    image: _decoded,
+                    width: _decoded!.width.toDouble(),
+                    height: _decoded!.height.toDouble(),
+                  ),
+                ),
+              ),
+            ),
+          // Mock bubbles — purely a preview aid, deliberately outside the
+          // RepaintBoundary above so they never end up baked into the
+          // uploaded wallpaper image itself.
+          if (_decoded != null)
+            IgnorePointer(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 140),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _MockBubble(
+                        text: 'miss you already 🥺', alignRight: false, color: AppColors.bgCard),
+                    const SizedBox(height: 8),
+                    _MockBubble(text: 'come here 💕', alignRight: true, color: widget.accent),
+                  ],
+                ),
+              ),
+            ),
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 4, 16, 4),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                      const Expanded(
+                        child: Text('Pinch to zoom, drag to reposition',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.white70, fontSize: 12.5)),
+                      ),
+                      const SizedBox(width: 48),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                      20, 8, 20, MediaQuery.of(context).padding.bottom + 20),
+                  child: GradientButton(
+                    label: _uploading ? 'Setting wallpaper…' : 'Use this wallpaper',
+                    onTap: (_decoded == null || _uploading) ? null : _confirm,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MockBubble extends StatelessWidget {
+  final String text;
+  final bool alignRight;
+  final Color color;
+  const _MockBubble({required this.text, required this.alignRight, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: EdgeInsets.only(left: alignRight ? 48 : 16, right: alignRight ? 16 : 48),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(text,
+            style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w500)),
       ),
     );
   }

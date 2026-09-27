@@ -174,20 +174,31 @@ final tapSoundVolumeProvider =
 
 class TapSoundVolumeNotifier extends Notifier<double> {
   static const _prefsKey = 'tap_sound_volume';
+  // Remembers the volume from just before muting, so the on/off switch can
+  // restore it instead of just snapping back to the 0.45 default every time.
+  double _lastNonZero = 0.45;
 
   @override
   double build() {
     SharedPreferences.getInstance().then((prefs) {
       final saved = prefs.getDouble(_prefsKey);
-      if (saved != null) state = saved;
+      if (saved != null) {
+        state = saved;
+        if (saved > 0) _lastNonZero = saved;
+      }
     });
     return 0.45;
   }
 
   void set(double value) {
     state = value.clamp(0.0, 1.0);
+    if (state > 0) _lastNonZero = state;
     SharedPreferences.getInstance().then((prefs) => prefs.setDouble(_prefsKey, state));
   }
+
+  /// The explicit on/off switch — off mutes (remembering the current
+  /// volume), on restores whatever it was before muting.
+  void setEnabled(bool enabled) => set(enabled ? _lastNonZero : 0.0);
 }
 
 /// Plays the app's one shared tap sound, respecting [tapSoundVolumeProvider]
@@ -208,6 +219,16 @@ class TapSound {
   static Future<void> _prime() async {
     if (_primed) return;
     _primed = true;
+    // Without this, the tap sound requested normal audio focus (the
+    // platform default) — which on Android pauses/ducks whatever else is
+    // playing (e.g. Spotify) for as long as this player holds focus, so
+    // every single tap briefly interrupted background music. mixWithOthers
+    // requests no audio focus at all on Android and sets the
+    // mixWithOthers/ambient category on iOS, so this plays alongside
+    // anything else without ever touching it.
+    await _player.setAudioContext(
+      AudioContextConfig(focus: AudioContextConfigFocus.mixWithOthers).build(),
+    );
     await _player.setSource(AssetSource('sounds/tap.wav'));
   }
 

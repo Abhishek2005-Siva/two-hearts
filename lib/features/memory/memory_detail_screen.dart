@@ -111,6 +111,9 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
     );
   }
 
+  // No confirmation snackbar here on purpose — the forwarded photo/video
+  // shows up in chat itself immediately, which is confirmation enough;
+  // the bottom snackbar was reported as an unwanted extra popup.
   Future<void> _forwardToChat(MemoryModel memory) async {
     final coupleId = ref.read(coupleIdProvider);
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -125,10 +128,6 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
             sentAt: DateTime.now(),
           ),
         );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Sent to chat ♡'), behavior: SnackBarBehavior.floating),
-    );
   }
 
   // Streams the download instead of a plain http.get so a large video's

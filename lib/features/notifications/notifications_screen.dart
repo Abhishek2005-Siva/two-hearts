@@ -31,6 +31,34 @@ String _typeEmoji(String type) => switch (type) {
       _ => '✨',
     };
 
+/// A per-type tint for the icon circle, so the inbox reads as a set of
+/// distinct categories at a glance instead of every row looking identical.
+Color _typeColor(String type) => switch (type) {
+      'wildcard_request' || 'wildcard' => AppColors.gold,
+      'book' || 'journal' || 'recipe' => AppColors.lavender,
+      'letter' => AppColors.rose,
+      'daily_snap' || 'daily_snap_comment' || 'daily_snap_reaction' ||
+      'memory_bulk_upload' || 'memory_comment' =>
+        AppColors.coral,
+      'streak_milestone' => AppColors.gold,
+      'memory_deletion_request' || 'memory_deletion_approved' => AppColors.rose,
+      'place' => AppColors.lavender,
+      _ => AppColors.rose,
+    };
+
+/// Groups notifications into simple, glanceable date buckets — matches the
+/// same "Today/Yesterday/date" language _absoluteTime already uses.
+String _dateGroup(DateTime from) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final d = DateTime(from.year, from.month, from.day);
+  final diff = today.difference(d).inDays;
+  if (diff == 0) return 'Today';
+  if (diff == 1) return 'Yesterday';
+  if (diff < 7) return 'This week';
+  return 'Earlier';
+}
+
 String _relativeTime(DateTime from) {
   final diff = DateTime.now().difference(from);
   if (diff.inSeconds < 60) return 'Just now';
@@ -64,6 +92,25 @@ String _absoluteTime(DateTime from) {
   return '$datePart, $time';
 }
 
+/// Flattens notifications into a single list of rows for one ListView.builder
+/// — a `String` row is a date-group header ("Today"/"Yesterday"/etc.), any
+/// other row is an [AppNotification]. Notifications are already newest-first
+/// from the provider, so a header is only inserted when the group actually
+/// changes going down the (already-sorted) list.
+List<Object> _groupedRows(List<AppNotification> notifications) {
+  final rows = <Object>[];
+  String? lastGroup;
+  for (final n in notifications) {
+    final g = _dateGroup(n.createdAt);
+    if (g != lastGroup) {
+      rows.add(g);
+      lastGroup = g;
+    }
+    rows.add(n);
+  }
+  return rows;
+}
+
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
 
@@ -75,6 +122,7 @@ class NotificationsScreen extends ConsumerWidget {
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final notificationsAsync = ref.watch(notificationsProvider);
     final notifications = notificationsAsync.valueOrNull ?? [];
+    final rows = _groupedRows(notifications);
     final unreadIds = notifications
         .where((n) => n.isUnreadFor(myUid))
         .map((n) => n.id)
@@ -112,11 +160,32 @@ class NotificationsScreen extends ConsumerWidget {
                       onPressed: () => Navigator.maybePop(context),
                     ),
                     Expanded(
-                      child: Text('Notifications',
-                          style: Theme.of(context)
-                              .textTheme
-                              .displayMedium
-                              ?.copyWith(fontSize: 20)),
+                      child: Row(
+                        children: [
+                          Text('Notifications',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .displayMedium
+                                  ?.copyWith(fontSize: 20)),
+                          if (unreadIds.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                    colors: [accent, AppColors.coral]),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text('${unreadIds.length}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w800)),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                     if (unreadIds.isNotEmpty && coupleId != null)
                       TextButton(
@@ -143,9 +212,32 @@ class NotificationsScreen extends ConsumerWidget {
                         : ListView.builder(
                             padding: EdgeInsets.fromLTRB(16 * density.factor,
                                 8 * density.factor, 16 * density.factor, 32 * density.factor),
-                            itemCount: notifications.length,
+                            itemCount: rows.length,
                             itemBuilder: (context, i) {
-                              final n = notifications[i];
+                              final row = rows[i];
+                              if (row is String) {
+                                return Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                      4, i == 0 ? 0 : 18, 4, 10),
+                                  child: Row(
+                                    children: [
+                                      Text(row.toUpperCase(),
+                                          style: TextStyle(
+                                              color: accent,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w800,
+                                              letterSpacing: 1)),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Container(
+                                            height: 1,
+                                            color: AppColors.divider),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                              final n = row as AppNotification;
                               final unread = n.isUnreadFor(myUid);
                               final pendingRequest = n.type == 'wildcard_request' && n.refId != null
                                   ? pendingWildcardById[n.refId]
@@ -275,11 +367,11 @@ class _NotificationTile extends StatelessWidget {
                 width: 42,
                 height: 42,
                 alignment: Alignment.center,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [AppColors.bgCardLight, AppColors.bgCardLight],
-                  ),
+                  color: _typeColor(notification.type).withValues(alpha: 0.16),
+                  border: Border.all(
+                      color: _typeColor(notification.type).withValues(alpha: 0.3)),
                 ),
                 child: Text(_typeEmoji(notification.type),
                     style: const TextStyle(fontSize: 18)),
