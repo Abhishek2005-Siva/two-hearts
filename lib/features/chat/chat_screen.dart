@@ -1080,7 +1080,7 @@ class _SharedActivitiesRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      ('🎵', 'Listen Together', onListenTogether),
+      ('🎵', 'Spotify Remote', onListenTogether),
       ('🎬', 'Watch Together', onWatchTogether),
       ('🎨', 'Play Scribble', onPlayScribble),
       ('📸', 'Today\'s Snap', onTodaysSnap),

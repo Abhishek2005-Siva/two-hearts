@@ -84,24 +84,26 @@
                 <data android:mimeType="video/*"/>
             </intent-filter>
         </activity>
-        <!-- Spotify OAuth (flutter_web_auth_2) callback:
-             twohearts-spotify://callback -->
-        <activity
-            android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
-            android:exported="true"
-            android:taskAffinity="">
-            <intent-filter android:label="flutter_web_auth_2">
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="twohearts-spotify"/>
-            </intent-filter>
-        </activity>
         <!-- Foreground service that keeps screen capture alive on Android 14+ -->
         <service
             android:name=".ScreenCaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection"/>
+        <!-- Spotify Remote (lib/features/listen): grants access to Android's
+             system MediaSession list (play/pause/skip/track-info for other
+             apps, e.g. Spotify) — the OS bundles that under the same
+             permission as reading notifications, so this must be declared
+             as a NotificationListenerService even though it never actually
+             reads notification content. See SpotifyListenerService.kt. -->
+        <service
+            android:name=".SpotifyListenerService"
+            android:label="Two Hearts"
+            android:exported="false"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
         <!-- Shows the partner's latest drawing sent from the in-app Draw
              screen; see DrawingWidgetProvider.kt -->
         <receiver
@@ -130,5 +132,10 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Package visibility (Android 11+): needed for MainActivity to
+             check whether Spotify is installed / launch it directly
+             (Spotify Remote), rather than getPackageInfo silently acting
+             like it's never installed. -->
+        <package android:name="com.spotify.music"/>
     </queries>
 </manifest>

@@ -109,7 +109,7 @@ running normally` is printed, ignore this section and use the plain
   a full reboot that cleared it).
 - The Tailscale IP for your phone stays stable across sessions, so you
   can save the `adb connect` command for next time.
-- All native features (camera, screen share, Spotify OAuth, WebRTC calls)
+- All native features (camera, screen share, Spotify Remote, WebRTC calls)
   work exactly as they would from a local `flutter run`, since this is a
   real device, not an emulator.
 - Two-person features (calls, screen share, sync) still need a **second**

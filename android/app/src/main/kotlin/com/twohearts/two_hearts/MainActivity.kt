@@ -1,6 +1,9 @@
 package com.twohearts.two_hearts
 
 import android.content.Intent
+import android.media.MediaMetadata
+import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -96,6 +99,88 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        // Spotify Remote (lib/features/listen): local-only Spotify control
+        // via Android's system MediaSession framework — see
+        // SpotifyListenerService for why this needs "notification access"
+        // and why that's the only permission involved (no Spotify API).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "two_hearts/spotify_remote")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isEnabled" -> result.success(SpotifyListenerService.isEnabled(this))
+                    "openSettings" -> {
+                        SpotifyListenerService.openSettings(this)
+                        result.success(null)
+                    }
+                    "openSpotify" -> result.success(openOrInstallSpotify())
+                    "getState" -> result.success(spotifyStateMap())
+                    "playPause" -> {
+                        val controller = SpotifyListenerService.spotifyController(this)
+                        val playing = controller?.playbackState?.state == PlaybackState.STATE_PLAYING
+                        if (playing) controller?.transportControls?.pause()
+                        else controller?.transportControls?.play()
+                        result.success(null)
+                    }
+                    "skipNext" -> {
+                        SpotifyListenerService.spotifyController(this)
+                            ?.transportControls?.skipToNext()
+                        result.success(null)
+                    }
+                    "skipPrevious" -> {
+                        SpotifyListenerService.spotifyController(this)
+                            ?.transportControls?.skipToPrevious()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /** Launches Spotify if installed, or its Play Store listing if not. */
+    private fun openOrInstallSpotify(): Boolean {
+        val launchIntent = packageManager.getLaunchIntentForPackage(
+            SpotifyListenerService.SPOTIFY_PACKAGE
+        )
+        if (launchIntent != null) {
+            startActivity(launchIntent)
+            return true
+        }
+        val marketIntent = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("market://details?id=${SpotifyListenerService.SPOTIFY_PACKAGE}")
+        )
+        try {
+            startActivity(marketIntent)
+        } catch (e: Exception) {
+            startActivity(
+                Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse(
+                        "https://play.google.com/store/apps/details?id=" +
+                            SpotifyListenerService.SPOTIFY_PACKAGE
+                    )
+                )
+            )
+        }
+        return false
+    }
+
+    /** Null if Spotify has no active media session right now. */
+    private fun spotifyStateMap(): Map<String, Any?>? {
+        val controller = SpotifyListenerService.spotifyController(this) ?: return null
+        val metadata = controller.metadata
+        val playbackState = controller.playbackState
+        return mapOf(
+            "title" to metadata?.getString(MediaMetadata.METADATA_KEY_TITLE),
+            "artist" to metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST),
+            "album" to metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM),
+            "durationMs" to (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L),
+            "positionMs" to (playbackState?.position ?: 0L),
+            "isPlaying" to (playbackState?.state == PlaybackState.STATE_PLAYING),
+            "artUri" to (
+                metadata?.getString(MediaMetadata.METADATA_KEY_ART_URI)
+                    ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+                ),
+        )
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

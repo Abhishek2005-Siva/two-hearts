@@ -575,7 +575,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen>
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      // Listen Together — tap to open the shared Spotify room
+                      // Spotify Remote — tap to open the local Spotify controller
                       SquishyTap(
                         style: TapAnimationStyle.pulse,
                         onTap: () {

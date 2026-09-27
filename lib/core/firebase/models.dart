@@ -985,7 +985,7 @@ class Furniture3DItem {
 }
 
 /// The couple's chosen floor / wall / lighting style — one shared singleton
-/// per couple, following the same doc shape as cinema/listen sessions.
+/// per couple, following the same doc shape as the cinema session.
 class HomeRoomStyle {
   final String floorId;
   final String wallId;
@@ -1121,6 +1121,15 @@ class WildCard {
   final bool redeemed;
   final DateTime? redeemedAt;
   final String? requestId; // set if this card fulfilled a request
+  // Whether the receiving partner has explicitly accepted this card yet.
+  // Before this existed, a granted card just silently appeared in the
+  // shared list with only a notification+chat message to go on — there
+  // was no way to actually act on "you got a Wildcard" from inside the
+  // Wildcards screen itself. New cards default to unaccepted so they
+  // surface in their own section until the recipient acts on them;
+  // fromDoc defaults missing data to true so every card that existed
+  // before this field shipped doesn't suddenly show up as "new."
+  final bool accepted;
 
   const WildCard({
     required this.id,
@@ -1132,6 +1141,7 @@ class WildCard {
     this.redeemed = false,
     this.redeemedAt,
     this.requestId,
+    this.accepted = false,
   });
 
   factory WildCard.fromDoc(DocumentSnapshot doc) {
@@ -1147,6 +1157,7 @@ class WildCard {
       redeemed: d['redeemed'] ?? false,
       redeemedAt: (d['redeemedAt'] as Timestamp?)?.toDate(),
       requestId: d['requestId'],
+      accepted: d['accepted'] ?? true,
     );
   }
 
@@ -1159,6 +1170,7 @@ class WildCard {
         'redeemed': redeemed,
         if (redeemedAt != null) 'redeemedAt': Timestamp.fromDate(redeemedAt!),
         if (requestId != null) 'requestId': requestId,
+        'accepted': accepted,
       };
 }
 

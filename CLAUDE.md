@@ -374,11 +374,22 @@ Android emulator and no physical device attached**. In that situation:
   Notifications for a request now carry a `refId` (the wildcardRequests
   doc id) so a still-pending one can show inline Accept/Decline buttons
   right in the notification tile, not just a route to this screen.
+  **Accepting a granted card**: `WildCard.accepted` (defaults `false` for
+  a newly-given card, `true` when reading pre-existing Firestore docs so
+  history that predates this field doesn't retroactively show as "new").
+  A granted card used to only ever produce a chat message + notification
+  saying "you got a Wildcard," with no actual action anywhere — tapping
+  either just routed here with nothing to do. Any card where
+  `givenBy != you && !accepted` now surfaces in its own "NEW FOR YOU"
+  section at the top of this screen (`_NewCardTile`, above even the
+  granter's pending-requests section) with a real **Accept ♡** button
+  (`acceptWildcard`); it's excluded from the main grid until accepted, so
+  it doesn't show twice.
 - `/books` — shared reading wishlist / read-together tracker with real
   PDF-in-app reading and per-partner page progress.
 - `/games`, `/dates`, `/places`, `/listen`, `/you`, `/notifications` —
-  games hub, date-idea spinner, destinations map, Spotify Listen
-  Together (OAuth PKCE), profile/settings, notifications inbox.
+  games hub, date-idea spinner, destinations map, **Spotify Remote** (see
+  dedicated section below), profile/settings, notifications inbox.
 - `/games/uno` — two-player Uno (`uno_screen.dart`). Whole match is ONE
   Firestore doc (`couples/{id}/uno/game`): one listener, one write per
   move. No Skip in the deck — with exactly two players it was identical
@@ -398,6 +409,75 @@ Android emulator and no physical device attached**. In that situation:
   card can also never be played as your last card, so nobody "wins" on
   a prompt. Turn and legality checks live in `FirestoreService` and are
   re-validated there even though the UI only offers legal moves.
+
+## Spotify Remote (`/listen`) — replaced Listen Together, read this first
+
+**This used to be "Listen Together"**: search Spotify's catalog, browse
+playlists, and mirror play/pause/track/position between both partners'
+phones in real time — all via the real Spotify Web API + OAuth
+(Authorization Code with PKCE), needing a Spotify Developer app,
+`SPOTIFY_CLIENT_ID`, a registered redirect URI, and Premium on both sides.
+The user explicitly asked to remove that API-based approach entirely in
+favor of a zero-setup, no-API alternative, after confirming they
+understood and accepted the tradeoff (see below) via a direct question.
+
+- **What it is now**: a purely local remote for whatever's already
+  playing in the Spotify app on *this* phone — play/pause, skip
+  next/previous, and now-playing track/art/position — via Android's
+  system `MediaSession` framework. This is the exact same OS-level
+  mechanism Bluetooth headset buttons, car head units, and Android Auto
+  already use to control Spotify; it isn't a Spotify-specific integration
+  at all, since any well-behaved Android media app exposes transport
+  controls through it. **No Spotify API, OAuth, developer account, or
+  Client ID involved anywhere.**
+- **What was necessarily lost, and can't be recovered without the real
+  API**: searching Spotify's catalog by name, browsing playlists, adding
+  to queue, and — most importantly — the actual cross-device sync that
+  made it "Listen Together" (search a song, have it start playing on both
+  phones at the same position). A `MediaSession` can only ever be read on
+  the device it's running on; there is no mechanism to reach into a
+  partner's phone this way. If real synchronized listening is wanted
+  again later, that requires bringing back the Spotify Web API — there's
+  no way to get search/sync/playlists without it.
+- **iOS is not supported at all** (unlike some other Android-only
+  features in this app, this isn't a "not implemented yet," it's a hard
+  platform wall): Apple's `MPNowPlayingInfoCenter`/`MPRemoteCommandCenter`
+  only let an app control *its own* playback, with no public API for one
+  app to read or control another app's now-playing session. The screen
+  detects this via `Platform.isAndroid` and shows an honest notice instead
+  of pretending to work.
+- **Implementation**: `SpotifyListenerService.kt` (a
+  `NotificationListenerService` — Android bundles "can see active media
+  sessions" under the same permission as "can read notifications," there
+  is no narrower one, even though this never reads notification content)
+  + `MainActivity.kt`'s `two_hearts/spotify_remote` `MethodChannel`
+  (`isEnabled`/`openSettings`/`openSpotify`/`getState`/`playPause`/
+  `skipNext`/`skipPrevious`) on the Android side; `spotify_remote_service.dart`
+  + `spotify_remote_screen.dart` on the Dart side. `spotify_remote_screen.dart`
+  polls `getState()` every second (matching the old screen's own polling
+  cadence for the Web API) rather than wiring a live native callback —
+  simpler and more robust to Spotify's session appearing/disappearing as
+  it's killed/restarted, and this can't be iteratively debugged against a
+  real device in this sandbox anyway.
+- Deliberately **doesn't** wire seek/scrub — `MediaSession` seek support
+  isn't something every app (Spotify included) is verified to implement
+  consistently, so the progress bar is display-only rather than claiming
+  a capability that hasn't been confirmed to actually work.
+- Removed entirely: `spotify_service.dart`, `spotify_config.dart`, the old
+  `listen_together_screen.dart`, the `flutter_web_auth_2`/`crypto`
+  pubspec dependencies, the `flutter_web_auth_2` `CallbackActivity` +
+  `twohearts-spotify://` manifest entries, the whole Firestore
+  `listen`-session sync surface (`joinListen`/`leaveListen`/
+  `listenHeartbeat`/`setListenTrack`/`updateListenPlayback`/
+  `endListenSession`/`syncSpotifyPlaylists`/`syncSpotifyAccountId` and
+  `listenSessionProvider`), and the CI workflow's
+  `--dart-define=SPOTIFY_CLIENT_ID=...` build arg — the `SPOTIFY_CLIENT_ID`
+  GitHub Actions secret itself is now unused and can be deleted from repo
+  settings whenever, though leaving it there is harmless (nothing reads
+  it anymore).
+- Room screen and Chat's shared-activities row both still link to
+  `/listen`, relabeled "Spotify Remote" instead of "Listen Together" to
+  match what it actually does now.
 
 ## Cost (Firestore reads/writes) — don't regress these
 

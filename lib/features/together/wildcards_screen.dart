@@ -582,10 +582,15 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
     final redeemedCount = cards.where((c) => c.redeemed).length;
     final fromMeCount = cards.where((c) => c.givenBy == uid).length;
     final forMeCount = cards.length - fromMeCount;
+    // Cards someone gave you that you haven't accepted yet — surfaced in
+    // their own section instead of the main grid (below) until acted on.
+    final pendingAcceptance =
+        cards.where((c) => c.givenBy != uid && !c.accepted).toList();
+    final gridCards = cards.where((c) => c.givenBy == uid || c.accepted).toList();
     final visibleCards = switch (_filter) {
-      _CardFilter.all => cards,
-      _CardFilter.fromMe => cards.where((c) => c.givenBy == uid).toList(),
-      _CardFilter.forMe => cards.where((c) => c.givenBy != uid).toList(),
+      _CardFilter.all => gridCards,
+      _CardFilter.fromMe => gridCards.where((c) => c.givenBy == uid).toList(),
+      _CardFilter.forMe => gridCards.where((c) => c.givenBy != uid).toList(),
     };
 
     return Scaffold(
@@ -638,6 +643,31 @@ class _WildcardsScreenState extends ConsumerState<WildcardsScreen>
                   padding: EdgeInsets.fromLTRB(20 * density.factor, 8 * density.factor,
                       20 * density.factor, 110 * density.factor),
                   children: [
+                    if (pendingAcceptance.isNotEmpty) ...[
+                      const Text('NEW FOR YOU',
+                          style: TextStyle(
+                              color: AppColors.gold,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1)),
+                      const SizedBox(height: 8),
+                      for (final card in pendingAcceptance)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _NewCardTile(
+                            card: card,
+                            onAccept: () async {
+                              final coupleId = ref.read(coupleIdProvider);
+                              if (coupleId == null) return;
+                              HapticFeedback.mediumImpact();
+                              await ref
+                                  .read(firestoreServiceProvider)
+                                  .acceptWildcard(coupleId, card.id);
+                            },
+                          ),
+                        ),
+                      const SizedBox(height: 20),
+                    ],
                     if (isGranter && pendingRequests.isNotEmpty) ...[
                       const Text('REQUESTED',
                           style: TextStyle(
@@ -868,6 +898,57 @@ class _RequestTile extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Unaccepted card — the actual "accept a Wildcard" action ────────────────
+
+class _NewCardTile extends StatelessWidget {
+  final WildCard card;
+  final VoidCallback onAccept;
+
+  const _NewCardTile({required this.card, required this.onAccept});
+
+  @override
+  Widget build(BuildContext context) {
+    final isJoker = card.rank == WildcardRank.joker;
+    final color = isJoker ? const Color(0xFF7B4E9E) : _suitColor(card.suit);
+    final rankLabel = _rankLabel(card.rank);
+    final suitSymbol = _suitSymbol(card.suit);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.bgCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.4), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              _CornerMark(
+                  isJoker: isJoker, rankLabel: rankLabel, suitSymbol: suitSymbol, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  card.favorText,
+                  style: GoogleFonts.caveat(
+                      color: AppColors.textPrimary, fontSize: 19, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          GradientButton(
+            label: 'Accept ♡',
+            onTap: onAccept,
+            cuteStickers: const ['🃏', '💖'],
           ),
         ],
       ),

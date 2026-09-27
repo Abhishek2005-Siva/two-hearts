@@ -437,14 +437,6 @@ final cinemaSessionProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   return ref.read(firestoreServiceProvider).watchCinemaSession(coupleId);
 });
 
-// ── Listen Together (Spotify) ────────────────────────────────────────────
-
-final listenSessionProvider = StreamProvider<Map<String, dynamic>?>((ref) {
-  final coupleId = ref.watch(coupleIdProvider);
-  if (coupleId == null) return Stream.value(null);
-  return ref.read(firestoreServiceProvider).watchListenSession(coupleId);
-});
-
 // Theme mode / text scale / layout density / reduce motion now live in
 // ../theme/comfort_settings.dart (re-exported above) — kept together since
 // they're all per-device "comfort" preferences with identical persistence.
