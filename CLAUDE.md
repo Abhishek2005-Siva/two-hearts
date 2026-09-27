@@ -451,14 +451,43 @@ understood and accepted the tradeoff (see below) via a direct question.
   sessions" under the same permission as "can read notifications," there
   is no narrower one, even though this never reads notification content)
   + `MainActivity.kt`'s `two_hearts/spotify_remote` `MethodChannel`
-  (`isEnabled`/`openSettings`/`openSpotify`/`getState`/`playPause`/
-  `skipNext`/`skipPrevious`) on the Android side; `spotify_remote_service.dart`
-  + `spotify_remote_screen.dart` on the Dart side. `spotify_remote_screen.dart`
-  polls `getState()` every second (matching the old screen's own polling
-  cadence for the Web API) rather than wiring a live native callback —
-  simpler and more robust to Spotify's session appearing/disappearing as
-  it's killed/restarted, and this can't be iteratively debugged against a
-  real device in this sandbox anyway.
+  (`isEnabled`/`openAppInfo`/`openSettings`/`openSpotify`/`getState`/
+  `playPause`/`skipNext`/`skipPrevious`) on the Android side;
+  `spotify_remote_service.dart` + `spotify_remote_screen.dart` on the Dart
+  side. `spotify_remote_screen.dart` polls `getState()` every second
+  (matching the old screen's own polling cadence for the Web API) rather
+  than wiring a live native callback — simpler and more robust to
+  Spotify's session appearing/disappearing as it's killed/restarted, and
+  this can't be iteratively debugged against a real device in this
+  sandbox anyway.
+- **Granting access is a two-step, partly-unautomatable flow, and the UI
+  says so.** Because the app isn't installed from the Play Store, Android
+  13+ blocks this permission behind "restricted settings": the person has
+  to open the app's own Settings page, tap the ⋮ overflow menu, and
+  confirm "Allow restricted settings" themselves *before* the actual
+  Notification Access toggle (a separate settings screen) will do
+  anything. That one confirmation tap is deliberately impossible for any
+  app — this one included — to trigger programmatically; it exists
+  specifically to stop apps from silently granting themselves exactly
+  this kind of access, which is the whole reason it can't be "fixed" in
+  code beyond what's already done here. `_accessPane()` shows both steps
+  as explicit numbered cards (`_AccessStep`) with their own deep-link
+  buttons — step 1 opens `ACTION_APPLICATION_DETAILS_SETTINGS` directly
+  (`openAppInfo`/`openAppInfoSettings`, skipping "find it in the full app
+  list"), step 2 opens `ACTION_NOTIFICATION_LISTENER_SETTINGS` as before.
+  `_SpotifyRemoteScreenState` also mixes in `WidgetsBindingObserver` and
+  re-checks access on every `AppLifecycleState.resumed` — neither
+  settings screen hands back a result this app can await directly, and
+  the two-step flow means the person now bounces out to Settings and back
+  at least once, sometimes twice.
+- **This also means installing the app at all can trip Google Play
+  Protect**, which flags sideloaded APKs requesting notification-listener
+  access and suggests installing from the Play Store instead (not
+  applicable — this is a private, unpublished app). There's no code-side
+  fix for that either; it's the same deliberate anti-stalkerware
+  protection, just at install/download time instead of permission-grant
+  time. The person has to dismiss/allow it manually (or briefly disable
+  Play Protect's scanning) on each new build if it comes up.
 - Deliberately **doesn't** wire seek/scrub — `MediaSession` seek support
   isn't something every app (Spotify included) is verified to implement
   consistently, so the progress bar is display-only rather than claiming

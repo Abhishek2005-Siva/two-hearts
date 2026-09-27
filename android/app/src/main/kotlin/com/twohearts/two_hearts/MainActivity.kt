@@ -107,6 +107,10 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "isEnabled" -> result.success(SpotifyListenerService.isEnabled(this))
+                    "openAppInfo" -> {
+                        SpotifyListenerService.openAppInfo(this)
+                        result.success(null)
+                    }
                     "openSettings" -> {
                         SpotifyListenerService.openSettings(this)
                         result.success(null)

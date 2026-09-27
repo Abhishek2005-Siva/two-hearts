@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
+import android.net.Uri
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -35,6 +36,28 @@ class SpotifyListenerService : NotificationListenerService() {
         fun openSettings(context: Context) {
             context.startActivity(
                 Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+
+        /**
+         * Deep-links straight to this app's own "App info" page — skips
+         * having to find it in the full app list. On Android 13+, a
+         * sideloaded app (installed from anywhere other than the Play
+         * Store) has its sensitive permissions — notification access
+         * included — blocked here until the person taps the ⋮ overflow
+         * menu and confirms "Allow restricted settings" themselves. That
+         * specific tap can't be triggered by any app, this one included —
+         * it's deliberately non-scriptable, which is the entire point of
+         * the protection (it exists to stop apps from silently granting
+         * themselves exactly this kind of access). Landing here directly,
+         * with an explicit instruction for that one manual tap, is as far
+         * as this can be automated.
+         */
+        fun openAppInfo(context: Context) {
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.parse("package:${context.packageName}"))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         }

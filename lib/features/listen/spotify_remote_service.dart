@@ -25,9 +25,18 @@ class SpotifyRemoteService {
   Future<bool> isAccessGranted() async =>
       (await _channel.invokeMethod<bool>('isEnabled')) ?? false;
 
-  /// Opens Android's system "Notification access" settings page so the
-  /// user can enable this app — there is no in-app runtime permission
-  /// dialog for this, it's a manual settings toggle.
+  /// Step 1 of granting access on Android 13+: deep-links straight to this
+  /// app's own "App info" page (skips hunting for it in the full app
+  /// list). From there the person still has to tap the ⋮ overflow menu and
+  /// confirm "Allow restricted settings" themselves — Android deliberately
+  /// makes that one tap impossible for any app to trigger on its own,
+  /// since the whole point of the protection is stopping apps from
+  /// silently granting themselves sensitive permissions like this one.
+  Future<void> openAppInfoSettings() => _channel.invokeMethod('openAppInfo');
+
+  /// Step 2: Android's system "Notification access" settings page, where
+  /// the actual toggle for this app lives (only actionable once step 1's
+  /// restriction has been lifted).
   Future<void> openAccessSettings() => _channel.invokeMethod('openSettings');
 
   /// Launches Spotify if installed (returns true), or its Play Store
